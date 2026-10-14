@@ -3,6 +3,7 @@ import { World, Vec2 } from 'planck';
 import { LEVEL, buildLevel, groundYAt, drawSky, drawParallax, drawTerrain, drawForeground } from './level.js';
 import { Player } from './player.js';
 import { loadSavedGun, EQUIP_PRESETS, QUALITY } from './gunPresets.js';
+import { computeArmorMods } from './affixes.js';
 import { WeaponWheel } from './wheel.js';
 import { Dummy } from './enemies.js';
 import { WaveDirector } from './waves.js';
@@ -66,6 +67,18 @@ function syncArmorFromInventory() {
   player.loadout.head = h ? VISUAL().head : null;
   player.loadout.torso = b ? VISUAL().body : null;
   player.armorQuality = { head: h?.quality ?? null, body: b?.quality ?? null };
+  // 词条聚合:防具词缀 → 玩家属性(HP上限/移速/吸血/掉率/金币/近战)
+  const mh = h ? computeArmorMods('head', h.affixes || []) : null;
+  const mb = b ? computeArmorMods('body', b.affixes || []) : null;
+  player.armorMods = { head: mh, body: mb };
+  player.armorLifestealPct = (mh?.lifesteal || 0) + (mb?.lifesteal || 0);
+  player.dropRatePct = (mh?.dropRatePct || 0) + (mb?.dropRatePct || 0);
+  player.coinGainPct = (mh?.coinGainPct || 0) + (mb?.coinGainPct || 0);
+  player.meleeDmgMul = 1 + ((mh?.meleeDmgPct || 0) + (mb?.meleeDmgPct || 0)) / 100;
+  player.meleeLsPct = (mb?.meleeLifesteal || 0);
+  player.healOnKill = (mh?.healOnKill || 0) + (mb?.healOnKill || 0);
+  pstate.maxHp = 30 + (mh?.hpMaxFlat || 0) + (mb?.hpMaxFlat || 0);
+  pstate.hp = Math.min(pstate.hp, pstate.maxHp);
 }
 window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves }); // 调试句柄
 window.__actx = () => actx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
@@ -74,6 +87,7 @@ window.__actx = () => actx; // 调试:声音问题先看 state('suspended' = 自
 window.addEventListener('storage', (e) => {
   if (e.key === 'contra-gun-primary' && player.weapon === 'rifle') {
     player.gunDef = loadSavedGun();
+    player.gunMods = computeGunMods(player.gunDef.affixes || []);
   }
   if (e.key === 'contra-equip-head' || e.key === 'contra-equip-torso') {
     player.reloadLoadout();
@@ -438,7 +452,7 @@ function step(dt) {
         });
       }
       // 敌人:扇形伤害(真实伤害:枪托 20 / 盾撞 35);盾牌冲撞额外大击退
-      const dmg = ev.shield ? 35 : 20;
+      const dmg = (ev.shield ? 35 : 20) * (player.meleeDmgMul || 1);
       const reach = 1.5;
       for (const e of enemies) {
         const dx = e.x - ev.x, dy = e.y - ev.y;
@@ -447,6 +461,8 @@ function step(dt) {
         if ((dx * ev.dx + dy * ev.dy) / (dist || 1) < 0.35) continue; // 约 ±70° 扇形
         e.hurt?.(dmg);
         e.knockback?.(dx / dist * (ev.shield ? 9 : 3.5), ev.shield ? 4 : 2);
+        // 汲血词条:近战命中回血
+        if (player.meleeLsPct) pstate.hp = Math.min(pstate.maxHp, pstate.hp + player.meleeLsPct);
       }
     } else if (ev.type === 'reload') {
       beep(300, 170, 0.09, 'square', 0.045);
@@ -522,6 +538,12 @@ function step(dt) {
         if (!zone) continue;
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;
         const res = e.hit(zone, b.damage * mult, { x: b.vx / (sp || 1), y: b.vy / (sp || 1) });
+        // 吸血词条:按造成伤害回血(护甲吸收的部分减半)
+        const lsPct = (player.lifestealPct || 0);
+        if (lsPct > 0) {
+          const heal = b.damage * mult * (res.absorbed ? 0.5 : 1) * (lsPct / 100);
+          pstate.hp = Math.min(pstate.maxHp, pstate.hp + heal);
+        }
         burst(b.x, b.y, 4, zone === 'head' ? '#ffd77a' : '#c9563c', 3);
         // 受击数字:护甲灰 / 普通红 / 爆头金粗
         const shown = Math.round(b.damage * mult * 10) / 10;
@@ -687,12 +709,19 @@ function step(dt) {
         burst(ev.x, ev.y, 12, '#c9563c', 4);
         burst(ev.x, ev.y, 16, '#ffd24a', 6.5); // 金币炸开更大更亮
         beep(220, 60, 0.3, 'sawtooth', 0.08);
-        // 掉落:金币 3~8 + 存活护甲 50% 概率掉 0 耐久同品质装备
-        for (let ci = 0; ci < ev.coins; ci++) {
+        // 掉落:金币 3~8(贪婪/掠夺加成)+ 装备(猎手/幸运加成)
+        const coinN = Math.round(ev.coins * (1 + (player.coinGainPct || 0) / 100));
+        for (let ci = 0; ci < coinN; ci++) {
           pickups.push({ type: 'coin', x: ev.x, y: ev.y - 0.3, vx: (Math.random() - 0.5) * 11, vy: 4.5 + Math.random() * 6, t: Math.random() * 6 });
         }
+        const dropCh = 0.5 * (1 + (player.dropRatePct || 0) / 100);
         for (const drop of ev.drops) {
+          if (Math.random() > dropCh) continue;
           pickups.push({ type: 'armor', slot: drop.slot, quality: drop.quality, x: ev.x + (Math.random() - 0.5) * 0.6, y: ev.y - 0.3, vx: (Math.random() - 0.5) * 3, vy: 3 + Math.random() * 2, t: 0 });
+        }
+        // 击杀回血(回春词条)
+        if (player.healOnKill) {
+          pstate.hp = Math.min(pstate.maxHp, pstate.hp + player.healOnKill);
         }
       } else if (ev.type === 'respawn') {
         beep(300, 600, 0.15, 'sine', 0.04);

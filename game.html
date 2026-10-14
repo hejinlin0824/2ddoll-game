@@ -75,6 +75,11 @@
   </head>
   <body>
     <div id="wrap"><canvas id="game"></canvas></div>
+    <script>
+      window.__pageErrors = [];
+      window.addEventListener("error", (e) => window.__pageErrors.push(String((e && e.message) || e)));
+      window.addEventListener("unhandledrejection", (e) => window.__pageErrors.push("unhandled: " + String(e && e.reason)));
+    </script>
     <div id="hud-top" class="hud">
       <span class="pill">A / D 前后走</span><span class="pill">W 跳</span><span class="pill">S 趴下</span><span class="pill">鼠标瞄准 · 空格/左键 射击</span>
       <span class="pill">Q/1/2 切换主副武器</span><span class="pill">Tab 武器轮盘(子弹时间) · T 切换装备</span><span class="pill">R 布娃娃测试</span><span class="pill">E 复位</span><span class="pill">G 背包</span>

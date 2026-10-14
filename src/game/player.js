@@ -7,6 +7,7 @@
 import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from './level.js';
 import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from './gunPresets.js';
+import { computeGunMods, rollAffixes } from './affixes.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
@@ -154,8 +155,17 @@ export class Player {
     this.heat = 0;
     this.weapon = 'rifle'; // rifle=主武器(双手,用设计器里的枪) | pistol=副武器(单手手枪)
     this.gunDef = loadSavedGun(); // 设计器数据
+    // 主武器词条:没有就掷一对(持久化在枪数据里,换枪/重设计会重掷)
+    if (!this.gunDef.affixes?.length) {
+      try {
+        this.gunDef.affixes = rollAffixes('gun', 'rare');
+        localStorage.setItem('contra-gun-primary', JSON.stringify(this.gunDef));
+      } catch { /* 忽略 */ }
+    }
+    this.gunMods = computeGunMods(this.gunDef.affixes || []);
     this.gunAngle = 0;            // 枪的世界指向角
     this._limbsMirrored = false;  // 面朝左时肘/膝限位要镜像
+    this.moveMul = 1;             // 移速加成(装备词缀)
     this.loadout = this.loadoutOpt
       ? { head: { ...this.loadoutOpt.head }, torso: { ...this.loadoutOpt.torso } }
       : { head: loadEquip('head'), torso: loadEquip('torso') }; // 穿戴
@@ -176,10 +186,30 @@ export class Player {
       hipF: 0.05, kneeF: -0.08, hipB: -0.05, kneeB: -0.12 };
   }
 
-  // 当前武器的词条(主武器用设计器数据里带的,手枪用固定词条)
+  // 当前武器的属性(基础词条 + 主武器词缀聚合);手枪不 tgt 主武器词缀
   stats() {
-    const s = this.weapon === 'rifle' ? this.gunDef?.stats : PISTOL_STATS;
+    const base = this.weapon === 'rifle' ? this.gunDef?.stats : PISTOL_STATS;
+    const s = { ...(base || DEFAULT_STATS) };
+    const m = this.weapon === 'rifle' ? this.gunMods : null;
+    if (m) {
+      s.damage = Math.round(s.damage * m.dmgMul * 10) / 10;
+      s.rpm = Math.round(s.rpm * m.rpmMul);
+      s.mag = Math.max(1, Math.round(s.mag + m.magFlat));
+      s.spread = +(s.spread * m.spreadMul).toFixed(2);
+      s.reload = +(s.reload * m.reloadMul).toFixed(2);
+      s.range = Math.round(s.range * m.rangeMul);
+      s.armorDmgMul = m.armorDmgMul;
+    }
     return s || DEFAULT_STATS;
+  }
+
+  // 吸血总百分比(主武器词缀 + 防具词缀)
+  get lifestealPct() {
+    return (this.gunMods?.lifesteal || 0) + (this.armorLifestealPct || 0);
+  }
+  get moveSpeedPct() {
+    const m = this.armorMods || {};
+    return (m.head?.moveSpeedPct || 0) + (m.body?.moveSpeedPct || 0);
   }
 
   ammoInfo() {
@@ -470,7 +500,7 @@ export class Player {
       this.gunAnchor = { x: hand.x, y: hand.y };
     }
 
-    const speed = this.prone ? 1.9 : 4.6;
+    const speed = (this.prone ? 1.9 : 4.6) * (1 + (this.moveSpeedPct || 0) / 100);
     let targetVx = dir * speed;
     // 移动方向上有墙就不再硬塞速度,否则会和碰撞求解器打架,把角色弹飞
     if (dir !== 0) {
@@ -578,7 +608,7 @@ export class Player {
             weapon: this.weapon, stats: st, parts,
           });
           // 熟练度成长 + 后坐力热量积累(词条 recoil 缩放);localStorage 每 10 发存一次(同步 IO 别太频)
-          this.heat = Math.min(1, this.heat + 0.26 * st.recoil * (1.25 - 0.5 * this.skill));
+          this.heat = Math.min(1, this.heat + 0.26 * st.recoil * (1.25 - 0.5 * this.skill) * (this.gunMods?.heatMul || 1));
           this.skill = Math.min(1, this.skill + 0.006);
           this._shotN = (this._shotN || 0) + 1;
           if (this._shotN % 10 === 0) { try { localStorage.setItem('contra-skill', String(this.skill)); } catch { /* 忽略 */ } }

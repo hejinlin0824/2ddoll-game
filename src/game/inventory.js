@@ -1,6 +1,8 @@
-// 背包与经济:金币 + 装备实例(品质/耐久),穿戴绑定,修复/升级/合成/锻造。
-// 存档 'contra-inv' = { coins, items: [{id, slot, quality, dur, maxDur, equipped}] }
+// 背包与经济:金币 + 装备实例(品质/耐久/词缀),穿戴绑定,修复/升级/合成/锻造。
+// 存档 'contra-inv' = { coins, items: [{id, slot, quality, dur, maxDur, equipped, affixes}] }
 // 装备 = 消耗品:碎了不清空存档,留在背包里等修复。
+// 词条领域(词缀定义/掷取/聚合)在 affixes.js —— 本层只管实例与持久化。
+import { rollAffixes, AFFIX_BY_ID } from './affixes.js';
 const KEY = 'contra-inv';
 export const QUALITY_ORDER = ['broken', 'normal', 'fine', 'rare', 'epic', 'legendary'];
 let seq = Date.now() % 100000;
@@ -49,14 +51,20 @@ export function invSpend(n) {
 }
 
 // 新装备实例(掉落/奖励用);dur 默认满,可传 0(敌人掉落的破损件)
+// 掷两条词缀(1 前缀 + 1 后缀),耐久上限吃"全耐久/护甲耐久"词条加成
 export function invAddItem(slot, quality, dur) {
   invLoad();
   const q = quality;
   const base = slot === 'head' ? 12 : 24;
   // 品质倍率
   const mul = { broken: 0.5, normal: 1, fine: 1.3, rare: 1.6, epic: 2, legendary: 2.6 }[q] ?? 1;
-  const maxDur = Math.round(base * mul * 10) / 10;
-  const it = { id: 'i' + (seq++).toString(36) + Math.floor(Math.random() * 999).toString(36), slot, quality: q, dur: dur ?? maxDur, maxDur, equipped: false };
+  const affixes = rollAffixes(slot, q);
+  const durPct = affixes.reduce((t, a) => {
+    const def = AFFIX_BY_ID[a.id];
+    return def && (def.stat === 'allDurPct' || (slot === 'head' && def.stat === 'helmetDurPct') || (slot === 'body' && def.stat === 'armorDurPct')) ? t + a.v : t;
+  }, 0);
+  const maxDur = Math.round(base * mul * (1 + durPct / 100) * 10) / 10;
+  const it = { id: 'i' + (seq++).toString(36) + Math.floor(Math.random() * 999).toString(36), slot, quality: q, dur: dur ?? maxDur, maxDur, equipped: false, affixes };
   inv.items.push(it);
   invSave();
   return it;
@@ -99,9 +107,14 @@ export function invRepair(id) {
 }
 
 // 升级品质:下一档,费用按档位;耐久上限按新品质倍率放大,当前耐久等比跟随
+// 强化概率制:普通→优良 99%,优良→稀有 80%,稀有→高级 70%,高级→传说 8%;失败吞金
 export const UPGRADE_COST = { broken: 10, normal: 15, fine: 25, rare: 40, epic: 60 };
+export const UPGRADE_RATE = { normal: 0.99, fine: 0.8, rare: 0.7, epic: 0.08 };
 export function invUpgradeCost(quality) {
   return UPGRADE_COST[quality] ?? undefined;
+}
+export function invUpgradeRate(quality) {
+  return UPGRADE_RATE[quality] ?? undefined;
 }
 
 export function invUpgrade(id) {
@@ -112,13 +125,17 @@ export function invUpgrade(id) {
   if (i < 0 || i >= QUALITY_ORDER.length - 1) return { ok: false, msg: '已是最高品质' };
   const cost = UPGRADE_COST[it.quality] ?? 20;
   if (!invSpend(cost)) return { ok: false, msg: '金币不足' };
+  // 概率判定:失败吞金不退
+  if (Math.random() > (UPGRADE_RATE[QUALITY_ORDER[i]] ?? 1)) {
+    return { ok: false, msg: `强化失败…(${cost} 金币已消耗)` };
+  }
   const mul = { broken: 0.5, normal: 1, fine: 1.3, rare: 1.6, epic: 2, legendary: 2.6 };
   const cur = mul[it.quality] ?? 1, nxt = mul[QUALITY_ORDER[i + 1]] ?? 1;
   it.maxDur = Math.round(it.maxDur / cur * nxt * 10) / 10;
   it.dur = Math.min(it.maxDur, Math.round(it.dur / cur * nxt * 10) / 10);
   it.quality = QUALITY_ORDER[i + 1];
   invSave();
-  return { ok: true, msg: `已升级为 ${it.quality}` };
+  return { ok: true, msg: `强化成功!已升级为 ${it.quality}` };
 }
 
 // 合成:3 件同槽位同品质 → 1 件下一档品质(耐久取三件中最高上限)
