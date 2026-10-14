@@ -4,7 +4,7 @@
 // 伤害:部位倍率 头×2/身×1/腿×0.2;头盔/背心消耗品先扣耐久,归零 → 布娃娃倒地(受击方向)。
 import { Player } from './player.js';
 import { Vec2 } from 'planck';
-import { QUALITY, ARMOR_BASE_DUR, loadSavedGun, EQUIP_PRESETS } from './gunPresets.js';
+import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from './gunPresets.js';
 
 const ALERT_R = 12, DEALERT_R = 16;
 // 绿头巾敌兵配色(和主角区分)
@@ -23,7 +23,7 @@ export class Dummy {
     this.min = opts.min ?? -5;
     this.max = opts.max ?? 5;
     this.quality = opts.quality || 'normal';
-    this.maxHp = 30;
+    this.maxHp = 10; // 普通小兵脆一点,玩家打起来爽
     this.events = [];       // 对外事件(main 消费:开枪/死亡/重生)
     this.alive = true;
     this.hp = this.maxHp;
@@ -46,7 +46,10 @@ export class Dummy {
       // 固定穿预设原画装备(不读 localStorage,和玩家自定义装备解耦)
       loadout: { head: EQUIP_PRESETS.helmet_military, torso: EQUIP_PRESETS.vest_light },
     });
-    this.p.gunDef = loadSavedGun();
+    // 随机一把枪:不再和玩家用同一把(内置预设池里抽)
+    const pool = Object.keys(GUN_PRESETS);
+    this.gunName = pool[Math.floor(Math.random() * pool.length)];
+    this.p.gunDef = { ...GUN_PRESETS[this.gunName] };
     this.p.ammo = this.p.gunDef.stats.mag;
     this.hp = this.maxHp;
     this.stuckT = 0;
@@ -57,9 +60,10 @@ export class Dummy {
 
   resetArmor() {
     const q = QUALITY[this.quality];
+    const gruntMul = 0.5; // 小兵护甲也脆一些,整体击杀节奏更快
     this.armor = {
-      head: { dur: ARMOR_BASE_DUR.head * q.durMul, max: ARMOR_BASE_DUR.head * q.durMul, quality: this.quality },
-      body: { dur: ARMOR_BASE_DUR.body * q.durMul, max: ARMOR_BASE_DUR.body * q.durMul, quality: this.quality },
+      head: { dur: ARMOR_BASE_DUR.head * q.durMul * gruntMul, max: ARMOR_BASE_DUR.head * q.durMul * gruntMul, quality: this.quality },
+      body: { dur: ARMOR_BASE_DUR.body * q.durMul * gruntMul, max: ARMOR_BASE_DUR.body * q.durMul * gruntMul, quality: this.quality },
     };
   }
 

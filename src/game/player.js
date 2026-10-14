@@ -148,10 +148,6 @@ export class Player {
     this.recoilT = 0;
     this.fallVy = 0;
     this.t = 0;
-    // 后坐力手感:连发枪口上抬(前三发稳定),松开回落;未复位继续打直接上扬
-    this.recoilClimb = 0;
-    this.burstN = 0;
-    this.sinceShot = 99;
 
     // 熟练度系统:开枪成长;后坐力热量越高散布越大,熟练度越高压制越好
     try { this.skill = clamp(parseFloat(localStorage.getItem('contra-skill')) || 0.15, 0.1, 1); } catch { this.skill = 0.15; }
@@ -427,9 +423,9 @@ export class Player {
       this.aimAlpha = Math.atan2(input.aim.y - S.y, input.aim.x - S.x);
       this.facing = input.aim.x >= S.x ? 1 : -1;
     }
-    // 枪的当前指向角(瞄准时=光标方向+连发上抬,否则=前臂甩动方向)
+    // 枪的当前指向角(瞄准时=光标方向,否则=前臂甩动方向)
     const gd0 = this.armLF.getWorldVector(Vec2(0, -1));
-    this.gunAngle = (this.aimAlpha != null ? this.aimAlpha + this.recoilClimb * this.facing
+    this.gunAngle = (this.aimAlpha != null ? this.aimAlpha
       : Math.atan2(gd0.y, gd0.x));
     // facing 已被鼠标瞄准覆盖,此处才是最终朝向 —— 限位跟随最终朝向
     this.setLimbMirror(this.facing === -1);
@@ -505,11 +501,6 @@ export class Player {
     this.fireCd -= dt;
     this.recoilT = Math.max(0, this.recoilT - dt);
     this.meleeT = Math.max(0, this.meleeT - dt);
-    // 后坐力回落:停火 0.13s 后枪口开始回落,0.4s 后连发宽限重置
-    this.sinceShot += dt;
-    if (this.sinceShot > 0.13) this.recoilClimb = Math.max(0, this.recoilClimb - dt * 2.4);
-    if (this.sinceShot > 0.4) this.burstN = 0;
-    this.visualShake = (this.visualShake || 0) * Math.exp(-8 * dt); // 连发后坐力震颤消退
     this.heat = Math.max(0, this.heat - dt * (0.35 + 0.4 * this.skill));
     if (this.reloadT > 0) {
       this.reloadT -= dt;
@@ -548,15 +539,9 @@ export class Player {
           this.fireCd = 60 / st.rpm;
           this.ammo--;
           this.recoilT = 0.08;
-          // 后坐力上抬:前三发稳定,连发后越抬越高;停火 0.13s 内再开枪不享受宽限
-          this.sinceShot = 0;
-          this.burstN = Math.min(30, this.burstN + 1);
-          const grace = Math.max(0, Math.min(1, (this.burstN - 3) / 3));
-          this.recoilClimb = Math.min(0.22, this.recoilClimb + (0.010 + 0.012 * st.recoil) * (0.25 + 0.75 * grace));
-          this.visualShake = Math.min(1, (this.visualShake || 0) + 0.38); // 连发震颤积累
           // 散布:后坐力热量越高越散;熟练度越高压制越好;词条 spread 是相对系数
           const spread = (0.012 + 0.075 * this.heat) * (1.35 - 0.75 * this.skill) * st.spread;
-          const baseA = Math.atan2(dir.y, dir.x) + this.recoilClimb * this.facing; // 上抬的弹道
+          const baseA = Math.atan2(dir.y, dir.x); // 无后坐力上抬,弹道即光标方向
           const parts = [];
           for (let i = 0; i < st.pellets; i++) {
             // 多弹丸(霰弹枪):扇形均布 + 各自抖动,pelletSpread 决定散射半角;
@@ -665,12 +650,6 @@ export class Player {
   draw(ctx, w2s, ppm, time) {
     const P = (b) => w2s(b.getPosition().x, b.getPosition().y);
     const R = (b) => -b.getAngle(); // 屏幕 y 翻转,角度取反
-    // 连发后坐力:整身小幅高频震颤,随开枪积累、停火快速消退
-    ctx.save();
-    if (this.visualShake > 0.01) {
-      const s = this.visualShake * (ppm / 52);
-      ctx.translate((Math.random() - 0.5) * 3.2 * s, (Math.random() - 0.5) * 2.4 * s);
-    }
 
     const cap = (b, d, color, wGrow = 0) => {
       const [x, y] = P(b);
@@ -911,6 +890,5 @@ export class Player {
     cap(this.armUF, D.upperArm, this.C.skin);
     cap(this.armLF, D.foreArm, this.C.skin);
     hand(this.armLF);
-    ctx.restore();
   }
 }
