@@ -38,6 +38,8 @@ export class Dummy {
   }
 
   spawnEnemy() {
+    // 必须销毁旧实例的刚体,否则每次死亡重生都泄漏 10 体+9 关节,越玩越卡
+    if (this.p) this.p.destroy();
     this.p = new Player(this.world, Vec2(this.spawn.x, this.spawn.y), {
       palette: ENEMY_PALETTE,
       // 固定穿预设原画装备(不读 localStorage,和玩家自定义装备解耦)
@@ -46,6 +48,7 @@ export class Dummy {
     this.p.gunDef = loadSavedGun();
     this.p.ammo = this.p.gunDef.stats.mag;
     this.hp = this.maxHp;
+    this.stuckT = 0;
     this.resetArmor();
   }
 
@@ -137,9 +140,10 @@ export class Dummy {
     if (this.alert && playerAlive) {
       this.face = pp.x >= tp.x ? 1 : -1;
       ai.aim = { x: pp.x + (Math.random() - 0.5) * 0.7, y: pp.y + (Math.random() - 0.5) * 0.5 };
-      // 走位:保持 6~10m
-      if (dist > 10) vx = this.face * 1.7;
-      else if (dist < 5) vx = -this.face * 1.2;
+      // 走位:保持 6~10m(卡墙换边时方向翻转)
+      const sf = this.strafeFlip || 1;
+      if (dist > 10) vx = this.face * 1.7 * sf;
+      else if (dist < 5) vx = -this.face * 1.2 * sf;
       // 点射:1.5s 一轮,一轮 2~4 发
       this.fireT -= dt;
       if (this.fireT <= 0) { this.burstLeft = 2 + Math.floor(Math.random() * 3); this.fireT = 1.5 + Math.random(); }
@@ -149,13 +153,26 @@ export class Dummy {
       }
     } else if (this.behavior === 'patrol') {
       const target = this.spawn.x + (this.patrolDir > 0 ? this.max : this.min);
-      if ((this.patrolDir > 0 && tp.x >= target) || (this.patrolDir < 0 && tp.x <= target)) this.patrolDir *= -1;
+      // 提前 0.3m 掉头(滞后):防止在边界处来回抖动
+      if ((this.patrolDir > 0 && tp.x >= target - 0.3) || (this.patrolDir < 0 && tp.x <= target + 0.3)) this.patrolDir *= -1;
       vx = this.patrolDir * 1.1;
       this.face = this.patrolDir;
     }
 
     if (vx < -0.05) ai.left = true;
     if (vx > 0.05) ai.right = true;
+
+    // 卡墙检测:想走但实际速度≈0 → 跳一下脱困 + 掉头(巡逻换向 / 战斗换边)
+    const avx = Math.abs(this.p.torso.getLinearVelocity().x);
+    if ((ai.left || ai.right) && avx < 0.25) {
+      this.stuckT = (this.stuckT || 0) + dt;
+      if (this.stuckT > 0.8) {
+        this.stuckT = 0;
+        ai.jumpPressed = true; // 跳可脱困卡台阶/卡边角,对边界抖动也无害
+        if (this.alert) this.strafeFlip = -(this.strafeFlip || 1);
+        else this.patrolDir *= -1;
+      }
+    } else this.stuckT = 0;
 
     this.p.update(dt, ai);
     // 内部 Player 的开枪/换弹事件转发给 main(子弹以 enemy 阵营生成)
