@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>枪械设计器 — 魂斗罗·布娃娃</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: #141a26; color: #e8e2d4;
+        font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+        display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 18px;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; letter-spacing: 1px; }
+      .sub { font-size: 12px; opacity: 0.65; margin-bottom: 12px; }
+      .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+      select, button {
+        background: rgba(255,255,255,0.08); color: #e8e2d4; border: 1px solid rgba(255,255,255,0.22);
+        border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+      }
+      button:hover, select:hover { border-color: rgba(232,160,76,0.8); }
+      button.active { background: rgba(232,160,76,0.9); color: #2a1c0c; border-color: transparent; font-weight: 600; }
+      button.primary { background: rgba(232,160,76,0.9); color: #2a1c0c; font-weight: 600; border: none; }
+      canvas { background: #1b2231; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; cursor: crosshair; }
+      .panel { display: flex; gap: 22px; margin-top: 12px; align-items: flex-start; }
+      .props { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; min-height: 34px; }
+      .props label { opacity: 0.7; font-size: 12px; }
+      .props input {
+        width: 58px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.22);
+        color: #e8e2d4; border-radius: 6px; padding: 4px 6px; font-size: 13px;
+      }
+      .props input[type="color"] { padding: 1px; width: 40px; height: 28px; cursor: pointer; }
+      .hint { font-size: 12px; opacity: 0.6; margin-top: 10px; line-height: 1.9; max-width: 900px; }
+      .legend { display: inline-flex; align-items: center; gap: 5px; margin-right: 14px; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+      #toast {
+        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+        background: rgba(232,160,76,0.95); color: #2a1c0c; font-weight: 600;
+        border-radius: 999px; padding: 8px 22px; font-size: 14px; opacity: 0; transition: opacity 0.25s;
+        pointer-events: none;
+      }
+      a.back { color: rgba(232,160,76,0.9); font-size: 13px; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <h1>武器与装备设计器</h1>
+    <div class="sub">上:用元素拼主武器,标记前后手握点与枪口 · 下:定制头盔/防弹衣,穿上后跟随身体部件 · <a class="back" href="./game.html">← 返回游戏</a></div>
+
+    <div class="bar">
+      <select id="preset"></select>
+      <span style="opacity:0.4">|</span>
+      <span id="palette" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+      <span style="opacity:0.4">|</span>
+      <button id="save" class="primary">💾 保存到游戏</button>
+      <button id="clear">清空</button>
+      <button id="reset">恢复预设</button>
+    </div>
+
+    <canvas id="cv" width="520" height="200"></canvas>
+
+    <div class="panel">
+      <div class="props" id="props">
+        <span style="opacity:0.5">点击画布里的部件编辑属性</span>
+      </div>
+    </div>
+
+    <div class="hint">
+      <span class="legend"><span class="dot" style="background:#ff9a3c"></span>前手:副手,握住前握点(护木)</span>
+      <span class="legend"><span class="dot" style="background:#4d9fff"></span>后手:瞄准手(游戏里伸直),握住枪把</span>
+      <span class="legend"><span class="dot" style="background:#ffd24a"></span>枪口:子弹出发点</span>
+      <br />
+      标尺:200px = 1 米,建议整枪长度 130~190px。设计会自动存草稿;点「保存到游戏」后,回到游戏页即可生效(游戏页开着时会自动刷新武器)。
+    </div>
+
+    <div class="bar" style="margin-top:18px">
+      <b style="font-size:15px">🪖 装备定制</b>
+      <button id="eq-slot-head">🪖 头盔</button>
+      <button id="eq-slot-torso">🦺 防弹衣</button>
+      <select id="eq-preset"></select>
+      <label style="font-size:12px;opacity:0.7">防御
+        <input id="eq-defense" type="number" min="0" max="0.8" step="0.05"
+          style="width:58px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.22);color:#e8e2d4;border-radius:6px;padding:4px 6px" />
+      </label>
+      <button id="eq-save" class="primary">💾 穿上</button>
+      <button id="eq-clear">脱下</button>
+    </div>
+    <canvas id="eqcv" width="440" height="200"></canvas>
+    <div class="hint">装备绘制在身体部件的局部空间(200px = 1m):头盔原点 = 头部圆心(半径 30px),防弹衣原点 = 躯干中心(60×104px)。虚线为身体参考轮廓,拖动部件调整,「穿上」后游戏内实时生效。</div>
+    <div id="toast"></div>
+
+    <script type="module" src="/src/game/editor.js"></script>
+  </body>
+</html>
