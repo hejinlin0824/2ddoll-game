@@ -89,7 +89,7 @@ export class Dummy {
   // 击中部位:有甲先扣耐久(承伤=伤害),归零报碎;无甲扣血。dir = 子弹方向(死亡布娃娃受力)
   hit(zone, dmg, dir) {
     if (!this.alive) return null;
-    this.flashT = 0.09; // 受击闪白
+    this.flashT = 0.14; // 受击闪白
     let broke = null;
     const armor = this.armor[zone];
     if (armor && armor.dur > 0) {
@@ -227,9 +227,9 @@ export class Dummy {
   draw(c, w2s, ppm, time) {
     if (this.flashT > 0.01) {
       c.save();
-      c.translate((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 3);
+      c.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 4);
       this.p.draw(c, w2s, ppm, time);
-      this.p.drawFlash(c, w2s, Math.min(0.7, this.flashT / 0.09));
+      this.p.drawFlash(c, w2s, Math.min(0.9, this.flashT / 0.14));
       c.restore();
     } else {
       this.p.draw(c, w2s, ppm, time);

@@ -18,7 +18,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = W; canvas.height = H;
 // 狙击放大镜离屏画布(准星处的圆形倍率视野)
-const SCV = 224;
+const SCV = 448;
 const scopeCv = document.createElement('canvas');
 scopeCv.width = SCV; scopeCv.height = SCV;
 const sctx = scopeCv.getContext('2d');
@@ -504,14 +504,20 @@ function step(dt) {
       }
       if (blocked) { bullets.splice(i, 1); continue; }
     }
+    // 尸体阻挡:双方子弹都会被尸体拦下并推动尸体(直到自然消失)
+    for (const e of enemies) {
+      if (e.alive) continue;
+      const dz = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
+      if (dz) {
+        e.corpseHit({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }, b.faction === 'player' ? 2.2 : 1.2);
+        burst(b.x, b.y, 3, '#c9563c', 2.5);
+        bullets.splice(i, 1); consumed = true; break;
+      }
+    }
+    if (consumed) continue;
     if (b.faction === 'player') {
       // 玩家子弹 vs 敌人部位(手臂不判定,子弹穿过)
       for (const e of enemies) {
-        if (!e.alive) { // 尸体受击:子弹继续推动布娃娃(死亡残响)
-          const dz = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
-          if (dz) { e.corpseHit({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }); burst(b.x, b.y, 3, '#c9563c', 2.5); bullets.splice(i, 1); consumed = true; break; }
-          continue;
-        }
         const zone = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
         if (!zone) continue;
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;
@@ -650,11 +656,11 @@ function step(dt) {
     if (playerAlivePk && distP < 0.45) { // 拾取
       if (pk.type === 'coin') {
         invAddCoins(1);
-        floaters.push({ x: pk.x, y: gy, vy: 1.2, text: '+1', color: '#ffc21c', size: 10, bold: false, life: 0.6, max: 0.6 });
+        floaters.push({ x: pk.x, y: gy, vy: 1.5, text: '+1', color: '#ffd24a', size: 14, bold: true, life: 0.75, max: 0.75, vx: (Math.random() - 0.5) * 1.2, rot: (Math.random() - 0.5) * 0.2 });
         beep(880, 1320, 0.07, 'square', 0.04);
       } else {
         invAddDrop(pk.slot, pk.quality);
-        floaters.push({ x: pk.x, y: gy, vy: 1.2, text: `获得${pk.slot === 'head' ? '头盔' : '防弹衣'}`, color: QUALITY[pk.quality]?.color ?? '#fff', size: 11, bold: false, life: 1, max: 1 });
+        floaters.push({ x: pk.x, y: gy, vy: 1.2, text: `拾获 ${pk.slot === 'head' ? '头盔' : '防弹衣'} · ${(QUALITY[pk.quality]?.label || '').toUpperCase()}`, color: QUALITY[pk.quality]?.color ?? '#fff', size: 11, bold: false, life: 1, max: 1 });
         beep(400, 800, 0.1, 'square', 0.05);
       }
       pickups.splice(i, 1);
@@ -795,9 +801,22 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   drawParallax(c, VW, VH, camO.x, PPM);
   drawTerrain(c, LEVEL.rects, w2sC, ppmZ);
 
-  // 掉落物:金币(旋转金闪)/装备(品质色箱子)
+  // 掉落物:品质光柱 + 金币(旋转金闪)/ 迷你盔甲(具体形状,非文字)
   for (const pk of pickups) {
     const [px, py] = w2sC(pk.x, pk.y);
+    const qc = QUALITY[pk.quality]?.color ?? '#9fb0c4';
+
+    if (pk.type === 'armor') {
+      // 品质光柱:对应颜色的垂直光束,让玩家远远看出品质
+      const bh = 78;
+      const grad = ctx.createLinearGradient(px, py - bh, px, py + 8);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.55, qc + '59');
+      grad.addColorStop(1, qc + 'cc');
+      ctx.fillStyle = grad;
+      ctx.fillRect(px - 9, py - bh, 18, bh + 8);
+    }
+
     if (pk.type === 'coin') {
       const spin = Math.abs(Math.sin(pk.t * 4 + pk.x * 7));
       const bob = Math.sin(pk.t * 3 + pk.x * 5) * 2.5;
@@ -808,15 +827,31 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
       ctx.strokeStyle = '#a87808'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.ellipse(px, py + bob, 6.5 * spin + 1.2, 6.5, 0, 0, Math.PI * 2); ctx.stroke();
     } else {
-      const qc = QUALITY[pk.quality]?.color ?? '#9fb0c4';
-      ctx.fillStyle = 'rgba(15, 12, 8, 0.55)';
-      ctx.beginPath(); ctx.roundRect(px - 9, py - 12, 18, 24, 4); ctx.fill();
-      ctx.strokeStyle = qc; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.roundRect(px - 9, py - 12, 18, 24, 4); ctx.stroke();
-      ctx.fillStyle = qc;
-      ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText(pk.slot === 'head' ? '盔' : '甲', px, py + 4);
-      ctx.textAlign = 'start';
+      const bob = Math.sin(pk.t * 2.6 + pk.x * 3) * 2;
+      ctx.save();
+      ctx.translate(px, py + bob);
+      ctx.strokeStyle = 'rgba(15,12,8,0.5)'; ctx.lineWidth = 1.5;
+      if (pk.slot === 'head') {
+        // 迷你钢盔:圆顶 + 盔沿
+        ctx.fillStyle = '#4a5a3a';
+        ctx.beginPath(); ctx.arc(0, 2, 11, Math.PI, 0); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#2f3a26';
+        ctx.beginPath(); ctx.roundRect(-13, 1, 26, 5, 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(15,12,8,0.5)';
+        ctx.beginPath(); ctx.arc(0, 2, 11, Math.PI, 0); ctx.stroke();
+      } else {
+        // 迷你防弹衣:主体 + 领口 + 两格弹匣袋
+        ctx.fillStyle = '#3d4652';
+        ctx.beginPath(); ctx.roundRect(-13, -14, 26, 27, 5); ctx.fill();
+        ctx.fillStyle = qc;
+        ctx.beginPath(); ctx.roundRect(-13, -14, 26, 9, [5, 5, 0, 0]); ctx.fill();
+        ctx.fillStyle = qc + 'cc';
+        ctx.beginPath(); ctx.roundRect(-8, -2, 7, 8, 2); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(1, -2, 7, 8, 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(15,12,8,0.5)';
+        ctx.beginPath(); ctx.roundRect(-13, -14, 26, 27, 5); ctx.stroke();
+      }
+      ctx.restore();
     }
   }
 
@@ -997,7 +1032,7 @@ function render(time) {
   // 距玩家越远镜内越模糊+越灰蒙 —— 模拟枪械有效射程与侦察极限
   if (aimP && cam.scoped > 0.03) {
     const a = Math.min(1, cam.scoped * 1.4);
-    const R = 102;
+    const R = Math.round(H * 0.3); // 随画布高度缩放(写死会在大窗口里变成小圆圈)
     const px = clamp(mouse.cx, R + 6, W - R - 6);
     const py = clamp(mouse.cy, R + 6, H - R - 6);
     const MAG = 2.6;
