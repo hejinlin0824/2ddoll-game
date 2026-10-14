@@ -24,6 +24,8 @@ export class Dummy {
     this.max = opts.max ?? 5;
     this.quality = opts.quality || 'normal';
     this.maxHp = 10; // 普通小兵脆一点,玩家打起来爽
+    this.respawn = opts.respawn !== false; // 波次模式 false:死亡后由波次管理器清理
+    this.armorMul = opts.armorMul ?? 1;
     this.events = [];       // 对外事件(main 消费:开枪/死亡/重生)
     this.alive = true;
     this.hp = this.maxHp;
@@ -60,10 +62,9 @@ export class Dummy {
 
   resetArmor() {
     const q = QUALITY[this.quality];
-    const gruntMul = 0.5; // 小兵护甲也脆一些,整体击杀节奏更快
     this.armor = {
-      head: { dur: ARMOR_BASE_DUR.head * q.durMul * gruntMul, max: ARMOR_BASE_DUR.head * q.durMul * gruntMul, quality: this.quality },
-      body: { dur: ARMOR_BASE_DUR.body * q.durMul * gruntMul, max: ARMOR_BASE_DUR.body * q.durMul * gruntMul, quality: this.quality },
+      head: { dur: ARMOR_BASE_DUR.head * q.durMul * this.armorMul, max: ARMOR_BASE_DUR.head * q.durMul * this.armorMul, quality: this.quality },
+      body: { dur: ARMOR_BASE_DUR.body * q.durMul * this.armorMul, max: ARMOR_BASE_DUR.body * q.durMul * this.armorMul, quality: this.quality },
     };
   }
 
@@ -108,7 +109,7 @@ export class Dummy {
   // 死亡:布娃娃倒地(Player.setRagdoll 自带关节瘫软),掉落由事件抛给 main
   die(dir) {
     this.alive = false;
-    this.respawnT = 3.5;
+    this.respawnT = this.respawn ? 3.5 : 0;
     this.p.setRagdoll(true);
     const v = this.p.torso.getLinearVelocity();
     this.p.torso.setLinearVelocity(Vec2(dir.x * 3 + v.x, dir.y * 1.5 + 2.5));
@@ -129,16 +130,25 @@ export class Dummy {
   // AI:合成虚拟手柄驱动内部 Player
   update(dt, player, playerAlive) {
     if (!this.alive) {
-      this.respawnT -= dt;
-      if (this.respawnT <= 0) {
-        // 出生点若被玩家/其他敌人占着,向远离玩家一侧偏移,避免重叠弹射
-        let sx = this.spawn.x;
-        if (player) {
-          const pdx = player.torso.getPosition().x - sx;
-          if (Math.abs(pdx) < 1.6) sx -= Math.sign(pdx || 1) * 2.2;
+      if (this.respawn) {
+        this.respawnT -= dt;
+        if (this.respawnT <= 0) {
+          // 出生点若被玩家/其他敌人占着,向远离玩家一侧偏移,避免重叠弹射
+          let sx = this.spawn.x;
+          if (player) {
+            const pdx = player.torso.getPosition().x - sx;
+            if (Math.abs(pdx) < 1.6) sx -= Math.sign(pdx || 1) * 2.2;
+          }
+          this.spawnEnemy({ x: sx, y: this.spawn.y });
+          this.events.push({ type: 'respawn', x: sx, y: this.spawn.y });
         }
-        this.spawnEnemy({ x: sx, y: this.spawn.y });
-        this.events.push({ type: 'respawn', x: sx, y: this.spawn.y });
+        return;
+      }
+      // 波次模式:尸体保留 6 秒(布娃娃残响),之后销毁刚体并标记,由 main 移出注册表
+      this.deadT = (this.deadT || 0) + dt;
+      if (this.deadT > 6 && !this.destroyed) {
+        this.destroyed = true;
+        this.p.destroy();
       }
       return;
     }

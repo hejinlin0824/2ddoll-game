@@ -548,7 +548,7 @@ export class Player {
             // 伤害归一:整枪基础伤害 = 1,弹丸均分(部位倍率在命中端结算)
             const arc = st.pellets > 1 ? (i / (st.pellets - 1) - 0.5) * 2 * (st.pelletSpread ?? 0.12) : 0;
             const a = baseA + arc + (Math.random() + Math.random() - 1) * spread * 0.5;
-            parts.push({ dx: Math.cos(a), dy: Math.sin(a), damage: 1 }); // 霰弹每颗弹丸独立 1 伤
+            parts.push({ dx: Math.cos(a), dy: Math.sin(a), damage: st.damage }); // 每颗弹丸 = 武器伤害×部位倍率(命中端结算)
           }
           this.events.push({
             type: st.mode === 'hitscan' ? 'hitscanShot' : 'shot',

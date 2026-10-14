@@ -5,6 +5,7 @@ import { Player } from './player.js';
 import { loadSavedGun, EQUIP_PRESETS, QUALITY } from './gunPresets.js';
 import { WeaponWheel } from './wheel.js';
 import { Dummy } from './enemies.js';
+import { WaveDirector } from './waves.js';
 import { invLoad, invGet, invEquipped, invSetEquipped, invSave, invAddCoins, invAddDrop } from './inventory.js';
 import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire } from './backpack.js';
 import { QUALITY as Q } from './gunPresets.js';
@@ -65,7 +66,7 @@ function syncArmorFromInventory() {
   player.loadout.torso = b ? VISUAL().body : null;
   player.armorQuality = { head: h?.quality ?? null, body: b?.quality ?? null };
 }
-window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate }); // 调试句柄
+window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves }); // 调试句柄
 window.__actx = () => actx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
 
 // 枪械设计器保存后,游戏页实时换枪/换装(storage 事件跨标签页触发)
@@ -229,10 +230,21 @@ const beams = [];      // 狙击 hitscan 光束(视觉)
 const debris = [];     // 护甲碎片:头盔击飞 / 背心碎裂
 export const enemies = []; // 敌人注册表 {x,y,radius,hurt,knockback,zoneAt,hit}
 let flashT = 0, flashPos = { x: 0, y: 0 }, flashR = 26, flashAng = 0;
-// 测试敌人:站桩士兵(普通品质头盔+背心,会开枪,死后 3s 重生)
-enemies.push(new Dummy(world, Vec2(10, 0.72), { behavior: 'guard', quality: 'normal' }));
-enemies.push(new Dummy(world, Vec2(21, 0.72), { behavior: 'patrol', min: -5, max: 5, quality: 'normal' }));
-enemies.push(new Dummy(world, Vec2(35, 0.72), { behavior: 'patrol', min: -4, max: 4, quality: 'normal' }));
+
+// 波次系统:敌人从地图最右侧刷新,按波推进(15 波,难度从无甲到全金装)
+const ENEMY_DMG_MUL = 0.35; // 敌方子弹伤害统一打折(玩家血条 30 才有意义)
+const waves = new WaveDirector(world, {
+  onEvent: (ev) => {
+    const p = player.torso.getPosition();
+    if (ev.type === 'wave') {
+      floaters.push({ x: p.x, y: p.y + 2.1, vy: 1.1, text: `—— 第 ${ev.wave} 波 · ${ev.count} 人 ——`, color: '#ffb14a', size: 24, bold: true, life: 1.6, max: 1.6 });
+      beep(330, 660, 0.18, 'square', 0.07);
+    } else if (ev.type === 'allclear') {
+      floaters.push({ x: p.x, y: p.y + 2.1, vy: 0.9, text: '全部清场!你赢了 🎉', color: '#ffd24a', size: 28, bold: true, life: 3, max: 3 });
+      beep(523, 1046, 0.4, 'square', 0.09);
+    }
+  },
+});
 
 // 伤害归一:单发基础伤害 = 1(部位倍率在命中时结算:头×2/身×1/腿×0.2/手臂不判定)
 // st = 武器词条;faction = 'player' | 'enemy'
@@ -540,8 +552,10 @@ function step(dt) {
             beep(500, 170, 0.18, 'square', 0.08);
           }
           invSave();
-        } else {
-          pstate.hp = Math.max(0, pstate.hp - dmg);
+      } else {
+        // 敌方子弹:玩家防御(0~0.8)减免后扣血
+        const dmg = b.damage * mult * (1 - Math.min(0.8, player.defense));
+        pstate.hp = Math.max(0, pstate.hp - dmg);
           hitFlashT = 0.3;
           floaters.push({ x: b.x + (Math.random() - 0.5) * 0.15, y: b.y, vy: 2.3 + Math.random() * 0.9, vx: (Math.random() - 0.5) * 1.6, rot: (Math.random() - 0.5) * 0.34, age: 0, text: String(Math.round(dmg * 10) / 10), color: '#ff5b4a', size: 17, bold: false, life: 0.72, max: 0.72 });
           burst(b.x, b.y, 5, '#c9563c', 3.5);
@@ -647,13 +661,14 @@ function step(dt) {
     if (pickups.length > 80 && pk.t > 25) pickups.splice(i, 1); // 数量兜底,金币常驻等玩家
   }
 
-  // 敌人更新 + 开火事件(敌人是 AI 驱动的 Player 实例,开枪走同一套弹道管线)
+  // 波次推进 + 敌人更新 + 开火事件(敌人是 AI 驱动的 Player 实例,开枪走同一套弹道管线)
   const playerAlive = pstate.hp > 0 && !player.ragdoll;
+  waves.update(dt, enemies, player, playerAlive);
   for (const e of enemies) {
     e.update(dt, player, playerAlive);
     for (const ev of e.events) {
       if (ev.type === 'shot') {
-        for (const pt of ev.parts) spawnBullet(ev.x, ev.y, pt.dx, pt.dy, ev.stats, 1, 'enemy');
+        for (const pt of ev.parts) spawnBullet(ev.x, ev.y, pt.dx, pt.dy, ev.stats, pt.damage * ENEMY_DMG_MUL, 'enemy');
         flashT = 0.05; flashPos = { x: ev.x, y: ev.y }; flashR = 20;
         flashAng = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
         gunSynth(ev.stats?.sfx, 0.55);
@@ -672,6 +687,10 @@ function step(dt) {
       }
     }
     e.events.length = 0;
+  }
+  // 清理已销毁刚体的敌人(波次模式的尸体 6 秒后回收)
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    if (enemies[i].destroyed) enemies.splice(i, 1);
   }
 
   flashT = Math.max(0, flashT - dt);
@@ -744,6 +763,21 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // ---- 渲染 ----
 // 世界绘制(主视图与狙击放大镜共用,只差相机/画布/倍率)
+// 敌人小血条:头顶一条,活着才显示
+function drawEnemyBars(c, enemies, w2sC, scale) {
+  const k = scale / 52; // 随缩放/分辨率归一
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const ratio = Math.max(0, Math.min(1, e.hp / e.maxHp));
+    const [bx, by] = w2sC(e.x, e.y + 1.04);
+    const w = 46 * k, h = 5 * k;
+    c.fillStyle = 'rgba(10, 10, 14, 0.55)';
+    c.fillRect(bx - w / 2 - 1, by - h / 2 - 1, w + 2, h + 2);
+    c.fillStyle = ratio > 0.5 ? '#7ac74f' : ratio > 0.25 ? '#ffd166' : '#ff5b4a';
+    c.fillRect(bx - w / 2, by - h / 2, w * ratio, h);
+  }
+}
+
 function drawWorld(c, camO, VW, VH, ppmZ, time) {
   const zl = ppmZ / PPM; // 像素尺寸随倍率缩放
   const z = zl;
@@ -769,6 +803,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 敌人
   for (const e of enemies) e.draw(c, w2sC, ppmZ, time);
+  drawEnemyBars(c, enemies, w2sC, PPM * camO.zoom);
 
   // 子弹曳光:沿速度反向的渐变拖尾,越快越长(主武器更粗更长)
   for (const b of bullets) {
@@ -808,6 +843,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 敌人
   for (const e of enemies) e.draw(c, w2sC, ppmZ, time);
+  drawEnemyBars(c, enemies, w2sC, PPM * camO.zoom);
 
   // 受击数字(漫画果冻风:弹出过冲→回弹→淡出,描边)
   for (const f of floaters) {
@@ -1098,3 +1134,5 @@ function frame(now) {
 
 requestAnimationFrame(frame);
 window.__frame = frame; // 调试:后台标签页 rAF 会整体暂停(AGENT.md 坑 7),可手动推帧
+// 调试:确定性批量推帧(后台标签页验证用)——__frame(0) 的 dt 恒为 0 不会推进,用这个
+window.__frameN = (n) => { for (let i = 0; i < n; i++) frame(last + (1000 / 60) * (i + 1)); };
