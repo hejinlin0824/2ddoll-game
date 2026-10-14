@@ -102,6 +102,26 @@ src/game/
   曳光随速度自动变长,越飞越快越有劲儿。别改回线性加速,会被毙。
 - 后坐力系统已按用户要求整体移除(无上抬/无震颤/无推背);别加回来。
 
+### 词条系统(affixes.js,DDD 领域层)
+- **词缀 = 纯数据定义**(40 条:20 前缀 + 20 后缀),物品实例只存 affixes: [{id, v}] 引用;
+  **最终属性 = 基础词条 × 词缀聚合**(affixes.js 的 computeGunMods / computeArmorMods 纯函数)。
+  新增词条 = 在 AFFIXES 加一条数据,消费端零改动。
+- 获取:rollAffixes(kind, quality) → 1 前缀 + 1 后缀(同属性键去重);品质档(broken/normal→1,
+  fine/rare→2,epic/legendary→3)决定数值区间;future: true 的词条只展示不掷取。
+- 属性键:dmgPct/rpmPct/magFlat/spreadRed/reloadRed/rangePct/armorDmgPct/heatRed/lifesteal/
+  dropRate/coinGain/hpMaxFlat/moveSpeed/defenseFlat/meleeDmgPct/healOnKill/allDurPct/
+  helmetDurPct/armorDurPct + future(burn/poison/slow/dodge/knockRes/eliteDrop/reflect/revive)。
+- 消费端接线:player.stats() 吃枪词缀(computeGunMods);syncArmorFromInventory 吃防具词缀
+  (computeArmorMods → hpMax/移速/吸血/掉率/金币/近战/回春);枪击吸血在 main 命中结算;
+  汲血在近战命中;回春在击杀;掉率/金币在死亡掉落。
+- **强化概率制**(inventory.js UPGRADE_RATE):普通→优良 99% / 优良→稀有 80% / 稀有→高级 70%
+  / 高级→传说 8%;**失败吞金不退**(用户明确要求)。按钮显示成功率。
+- 物品名格式:"A且B的xxx"(如"吸血且扩容的AK-47"),itemTitle() 生成,背包卡片展示词条行。
+- ⚠️ **吞错误排查口诀**:功能"静默无效"先查 try/catch 是否吞了 ReferenceError
+  (曾发生:rollAffixes 未导入,catch{} 吞掉 → 词条永远空)。
+- ⚠️ **调试推帧必须传真实递增时间戳**:__frame(0) 的 dt 恒为 0 不会推进世界,
+  用 __frameN(n)(内部递增 16.7ms),否则"世界冻结"是测试假象。
+
 ### 狙击枪(hitscan + 放大镜 + 站桩)
 - AWP mode='hitscan':开枪不生成子弹,发 hitscanShot 事件 → main.js castRay(slab 法射线 vs 地形 AABB)
   → beams[] 光束(0.16s 衰减三层描边)。沿途伤害:applyHitscanDamage 按沿线投影排序,
