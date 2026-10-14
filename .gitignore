@@ -1,2 +1,5 @@
 node_modules/
 dist/
+
+# 已废弃的文件音效(合成器方案替代),不进仓库
+public/sfx/

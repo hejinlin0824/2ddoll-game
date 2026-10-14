@@ -188,6 +188,9 @@ function draw() {
     ctx.beginPath();
     ctx.roundRect(p.x, p.y, p.w, p.h, 3);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(15,12,8,0.45)'; // 与游戏内渲染一致,所见即所得
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
     if (i === selected) {
       ctx.strokeStyle = '#ff9a3c';
       ctx.lineWidth = 2;
@@ -278,7 +281,12 @@ function eqLoad(slot, presetKey) {
 }
 
 function eqSave() {
-  if (!eqParts.length) { saveEquip(eqSlot, null); toast(`已脱下${EQUIP_SLOTS[eqSlot].label}`); return; }
+  if (!eqParts.length) {
+    // 存空 parts = 明确"脱下"(区别于从没保存过 → 游戏里穿出厂默认装备)
+    saveEquip(eqSlot, { slot: eqSlot, name: '未穿戴', defense: 0, meterScale: METER_SCALE, parts: [] });
+    toast(`已脱下${EQUIP_SLOTS[eqSlot].label}`);
+    return;
+  }
   saveEquip(eqSlot, {
     name: `自定义${EQUIP_SLOTS[eqSlot].label}`,
     slot: eqSlot,
@@ -351,10 +359,25 @@ function eqDraw() {
   }
 
   eqParts.forEach((p, i) => {
-    eqctx.fillStyle = p.color;
-    eqctx.beginPath();
-    eqctx.roundRect(p.x + cx, p.y + cy, p.w, p.h, 4);
-    eqctx.fill();
+    if (p.img) {
+      // 工坊图片零件:编辑器里画占位框(游戏内才是真图)
+      eqctx.setLineDash([4, 3]);
+      eqctx.strokeStyle = 'rgba(140,190,255,0.8)';
+      eqctx.lineWidth = 1.5;
+      eqctx.strokeRect(p.x + cx, p.y + cy, p.w, p.h);
+      eqctx.setLineDash([]);
+      eqctx.fillStyle = 'rgba(140,190,255,0.85)';
+      eqctx.font = '10px sans-serif';
+      eqctx.fillText('图', p.x + cx + p.w / 2 - 5, p.y + cy + p.h / 2 + 3);
+    } else {
+      eqctx.fillStyle = p.color;
+      eqctx.beginPath();
+      eqctx.roundRect(p.x + cx, p.y + cy, p.w, p.h, 4);
+      eqctx.fill();
+      eqctx.strokeStyle = 'rgba(15,12,8,0.45)'; // 与游戏内渲染一致
+      eqctx.lineWidth = 1.5;
+      eqctx.stroke();
+    }
     if (i === eqSelected) {
       eqctx.strokeStyle = '#ff9a3c';
       eqctx.lineWidth = 2;

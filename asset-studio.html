@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>装备工坊 — 抠图与穿戴</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; background: #0b0e16; color: #f0e6d2; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; }
+      body { padding: 18px 24px 40px; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .sub { font-size: 12px; opacity: 0.6; margin-bottom: 16px; }
+      a.back { color: #f0e6d2; font-size: 13px; text-decoration: none; opacity: 0.75; }
+      a.back:hover { opacity: 1; }
+      .cols { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+      .panel {
+        background: rgba(20, 26, 42, 0.75); border: 1px solid rgba(244, 233, 216, 0.14);
+        border-radius: 12px; padding: 14px 16px;
+      }
+      .panel h2 { font-size: 14px; margin: 0 0 10px; color: #ffb84d; }
+      canvas { background: #10141f; border-radius: 8px; display: block; }
+      #edcv { background: repeating-conic-gradient(#1a2130 0 25%, #141a28 0 50%) 0 0/16px 16px; cursor: crosshair; }
+      #wcv { cursor: grab; }
+      button, label.btn {
+        background: rgba(232, 160, 76, 0.16); color: #f0e6d2; border: 1px solid rgba(232, 160, 76, 0.45);
+        border-radius: 8px; padding: 5px 12px; font-size: 12px; cursor: pointer; display: inline-block;
+      }
+      button:hover, label.btn:hover { background: rgba(232, 160, 76, 0.3); }
+      button:disabled { opacity: 0.4; cursor: default; }
+      button.on { background: rgba(232, 160, 76, 0.55); border-color: #e8a04c; }
+      .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+      .row label { font-size: 12px; opacity: 0.8; }
+      input[type="range"] { width: 130px; }
+      input[type="number"] { width: 56px; background: #10141f; color: #f0e6d2; border: 1px solid rgba(244,233,216,0.25); border-radius: 6px; padding: 3px 6px; }
+      #gallery { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; min-height: 54px; }
+      #gallery .item { width: 54px; height: 54px; border: 2px solid rgba(244,233,216,0.25); border-radius: 8px; background:
+        repeating-conic-gradient(#1a2130 0 25%, #141a28 0 50%) 0 0/12px 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+      #gallery .item.sel { border-color: #ffb84d; }
+      #gallery .item img { max-width: 48px; max-height: 48px; background: repeating-conic-gradient(#e8ebf2 0 25%, #ffffff 0 50%) 0 0/10px 10px; }
+      .hint { font-size: 11px; opacity: 0.55; margin-top: 6px; line-height: 1.6; }
+      #toast { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); background: rgba(232,160,76,0.9); color: #241a08;
+        padding: 8px 20px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+      .slotbtn.active { background: rgba(232,160,76,0.55); border-color: #e8a04c; }
+      .placed { font-size: 12px; opacity: 0.85; margin: 4px 0; }
+      .placed b { color: #ffb84d; }
+    </style>
+  </head>
+  <body>
+    <a class="back" href="./game.html">← 返回游戏</a>&nbsp;&nbsp;<a class="back" href="./weapon-editor.html">枪械设计器</a>
+    <h1>装备工坊</h1>
+    <div class="sub">加载你的 PNG → 点掉背景色 → 拉到小人身上摆好 → 保存,游戏里实时穿上</div>
+
+    <div class="cols">
+      <div class="panel">
+        <h2>① 抠图台</h2>
+        <div class="row">
+          <label class="btn">加载 PNG<input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden /></label>
+          <button id="undo" disabled>撤销</button>
+          <button id="reset" disabled>还原</button>
+          <button id="saveAsset" disabled>保存为素材</button>
+        </div>
+        <div class="row">
+          <label>容差 <input id="tol" type="range" min="4" max="120" value="42" /></label>
+          <label><input id="connected" type="checkbox" /> 只抠连通区域</label>
+          <label><input id="gradient" type="checkbox" /> 渐变背景(边缘扩散)</label>
+          <button id="picker" class="on">取色抠图</button>
+          <button id="eraser">橡皮擦</button>
+          <button id="autokey">一键去底</button>
+        </div>
+        <canvas id="edcv" width="560" height="360"></canvas>
+        <div class="hint" id="edHint">先加载 PNG。取色抠图:点一下画面里的背景色,相近颜色全部变透明(容差越大抠得越多;背景有渐变就勾「只抠连通区域」多点几次);橡皮擦:按住涂抹手动擦。棋盘格 = 透明区。⚠️ 背景没抠干净的话,游戏里会带着一块背景。</div>
+      </div>
+
+      <div class="panel">
+        <h2>② 穿戴台</h2>
+        <div class="row">
+          <button id="slotHead" class="slotbtn active">🪖 头盔</button>
+          <button id="slotTorso" class="slotbtn">🦺 防弹衣</button>
+          <label>防御 <input id="defense" type="number" min="0" max="0.8" step="0.05" value="0.35" /></label>
+        </div>
+        <div class="row"><span style="font-size:12px;opacity:0.7">素材库(浅色格上若能看到深色块 = 背景没抠干净;双击删除):</span></div>
+        <div id="gallery"></div>
+        <canvas id="wcv" width="400" height="470"></canvas>
+        <div class="row">
+          <label>缩放 <input id="scale" type="range" min="20" max="260" value="100" /></label>
+          <label>旋转 <input id="rot" type="range" min="-180" max="180" value="0" /></label>
+          <button id="fitBox">对齐标准位置</button>
+          <button id="delPlaced">移除选中</button>
+        </div>
+        <div class="row">
+          <button id="saveEquip" style="background:rgba(232,160,76,0.55);border-color:#e8a04c">💾 保存穿戴(游戏内实时生效)</button>
+          <button id="clearEquip">脱下</button>
+        </div>
+        <div class="hint">上传的图会自动适配到预设头盔/防弹衣的<strong>标准位置和大小</strong>(换贴图式,位置天生正确)。"对齐标准位置"可一键复位;拖动/滚轮微调。</div>
+        <div class="placed" id="placedInfo"></div>
+      </div>
+    </div>
+    <div id="toast"></div>
+    <script type="module" src="/src/game/studio.js"></script>
+  </body>
+</html>

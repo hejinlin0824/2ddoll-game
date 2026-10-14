@@ -6,7 +6,7 @@
 // 按 R 关掉全部电机 = 纯布娃娃(瘫倒),E 复位。
 import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from './level.js';
-import { loadSavedGun, loadEquip } from './gunPresets.js';
+import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from './gunPresets.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
@@ -38,10 +38,14 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const wrapPi = (x) => ((x + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
 
 export class Player {
-  constructor(world, spawn) {
+  // opts.palette: 覆盖配色(敌兵换绿头巾/深色裤,和主角区分)
+  // opts.loadout: 固定穿戴(敌兵穿预设原画,不读 localStorage —— 和玩家自定义装备解耦)
+  constructor(world, spawn, opts = {}) {
     this.world = world;
     this.spawn = { x: spawn.x, y: spawn.y };
     this.events = [];
+    this.C = { ...COLOR, ...(opts.palette || {}) };
+    this.loadoutOpt = opts.loadout || null;
     this.build();
   }
 
@@ -144,6 +148,10 @@ export class Player {
     this.recoilT = 0;
     this.fallVy = 0;
     this.t = 0;
+    // 后坐力手感:连发枪口上抬(前三发稳定),松开回落;未复位继续打直接上扬
+    this.recoilClimb = 0;
+    this.burstN = 0;
+    this.sinceShot = 99;
 
     // 熟练度系统:开枪成长;后坐力热量越高散布越大,熟练度越高压制越好
     try { this.skill = clamp(parseFloat(localStorage.getItem('contra-skill')) || 0.15, 0.1, 1); } catch { this.skill = 0.15; }
@@ -152,9 +160,35 @@ export class Player {
     this.gunDef = loadSavedGun(); // 设计器数据
     this.gunAngle = 0;            // 枪的世界指向角
     this._limbsMirrored = false;  // 面朝左时肘/膝限位要镜像
-    this.loadout = { head: loadEquip('head'), torso: loadEquip('torso') }; // 穿戴
+    this.loadout = this.loadoutOpt
+      ? { head: { ...this.loadoutOpt.head }, torso: { ...this.loadoutOpt.torso } }
+      : { head: loadEquip('head'), torso: loadEquip('torso') }; // 穿戴
+    // ---- 武器词条状态:弹药/换弹/盾牌/近战 ----
+    this.ammo = this.stats().mag;
+    this.reloadT = 0;
+    this.meleeT = 0;
+    this.shield = false;
+    try {
+      const hp = parseFloat(localStorage.getItem('contra-shield-hp'));
+      this.shieldHp = clamp(Number.isFinite(hp) ? hp : 100, 0, 100);
+      if (localStorage.getItem('contra-shield') === '1' && this.shieldHp > 0) {
+        this.shield = true;
+        this.weapon = 'pistol'; // 盾牌只能配手枪
+      }
+    } catch { this.shieldHp = 100; }
     this.pose = { torso: 0, neck: 0, shF: 0.15, elF: 0.55, shB: -0.2, elB: 0.5,
       hipF: 0.05, kneeF: -0.08, hipB: -0.05, kneeB: -0.12 };
+  }
+
+  // 当前武器的词条(主武器用设计器数据里带的,手枪用固定词条)
+  stats() {
+    const s = this.weapon === 'rifle' ? this.gunDef?.stats : PISTOL_STATS;
+    return s || DEFAULT_STATS;
+  }
+
+  ammoInfo() {
+    const st = this.stats();
+    return { ammo: this.ammo, mag: st.mag, reloadT: this.reloadT };
   }
 
   destroy() {
@@ -227,8 +261,52 @@ export class Player {
 
   setWeapon(w) {
     if (w === this.weapon) return;
+    if (w === 'rifle' && this.shield) this.setShield(false); // 盾牌只能配手枪
     this.weapon = w;
     this.recoilT = 0;
+    this.ammo = this.stats().mag; // 换枪满弹匣
+    this.reloadT = 0;
+  }
+
+  // ---- 防弹盾牌:举盾时只能用手枪;盾面挡敌方子弹,耐久打光会碎 ----
+  setShield(on) {
+    if (this.shield === on) return;
+    this.shield = on;
+    if (on && this.weapon !== 'pistol') {
+      this.weapon = 'pistol';
+      this.recoilT = 0;
+      this.ammo = this.stats().mag;
+      this.reloadT = 0;
+    }
+    try { localStorage.setItem('contra-shield', on ? '1' : '0'); } catch { /* 忽略 */ }
+    this.events.push({ type: 'shield', on });
+  }
+
+  damageShield(dmg) {
+    if (!this.shield || this.shieldHp <= 0) return false;
+    this.shieldHp = Math.max(0, this.shieldHp - dmg);
+    try { localStorage.setItem('contra-shield-hp', String(this.shieldHp)); } catch { /* 忽略 */ }
+    if (this.shieldHp <= 0) this.setShield(false); // 碎了
+    return true;
+  }
+
+  // 盾牌阻挡盒(世界坐标):盾面垂直于威胁方向,g = 威胁方向单位向量
+  shieldOBB() {
+    const p = this.torso.getPosition();
+    const gx = Math.cos(this.gunAngle), gy = Math.sin(this.gunAngle);
+    return { x: p.x + gx * 0.5, y: p.y + gy * 0.5 + 0.05, gx, gy, ht: 0.07, hw: 0.34 };
+  }
+
+  // ---- 近战(V):枪托前捅;举盾时是盾牌冲撞,带击退 ----
+  melee() {
+    if (this.ragdoll || this.meleeT > 0 || this.reloadT > 0) return;
+    this.meleeT = 0.32;
+    const p = this.torso.getPosition();
+    this.events.push({
+      type: 'melee', shield: this.shield,
+      x: p.x + this.facing * 0.3, y: p.y,
+      dx: Math.cos(this.gunAngle), dy: Math.sin(this.gunAngle),
+    });
   }
 
   // 面朝左时,肘/膝的弯曲方向镜像,关节限位要跟着翻,
@@ -299,6 +377,20 @@ export class Player {
 
     // 空中开火同样举枪瞄准
     if (input.fire && !this.prone && this.grounded === false) { t.shF = 1.48; t.elF = 0.1; }
+
+    // 举盾:副手(远臂)前举托盾
+    if (this.shield) { t.shB = 1.15; t.elB = 0.3; }
+    // 近战突刺:枪托前捅 / 盾牌冲撞(出手快,收手慢)
+    if (this.meleeT > 0) {
+      const lunge = Math.sin((1 - this.meleeT / 0.32) * Math.PI);
+      if (this.shield) {
+        t.shB = 1.15 + 0.75 * lunge; t.elB = Math.max(0.05, 0.3 - 0.25 * lunge);
+        t.torso = -0.07 * lunge;
+      } else {
+        t.shF = 1.55; t.elF = 0.04;
+        t.torso = -0.09 * lunge;
+      }
+    }
     return t;
   }
 
@@ -322,7 +414,10 @@ export class Player {
     this.jumpBuf = input.jumpPressed ? 0.12 : Math.max(0, this.jumpBuf - dt);
 
     this.prone = input.down && this.grounded;
+    const sniper = this.weapon === 'rifle' && this.gunDef.stats?.mode === 'hitscan';
+    this.sniperStance = sniper;
     let dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    if (sniper) dir = 0; // 狙击站桩:持栓动枪时不能移动
     if (dir !== 0) this.facing = dir;
 
     // 鼠标瞄准:枪臂直指光标,角色面向光标一侧
@@ -332,9 +427,10 @@ export class Player {
       this.aimAlpha = Math.atan2(input.aim.y - S.y, input.aim.x - S.x);
       this.facing = input.aim.x >= S.x ? 1 : -1;
     }
-    // 枪的当前指向角(瞄准时=光标方向,否则=前臂甩动方向)
+    // 枪的当前指向角(瞄准时=光标方向+连发上抬,否则=前臂甩动方向)
     const gd0 = this.armLF.getWorldVector(Vec2(0, -1));
-    this.gunAngle = this.aimAlpha != null ? this.aimAlpha : Math.atan2(gd0.y, gd0.x);
+    this.gunAngle = (this.aimAlpha != null ? this.aimAlpha + this.recoilClimb * this.facing
+      : Math.atan2(gd0.y, gd0.x));
     // facing 已被鼠标瞄准覆盖,此处才是最终朝向 —— 限位跟随最终朝向
     this.setLimbMirror(this.facing === -1);
 
@@ -385,8 +481,9 @@ export class Player {
     }
     if (this.grounded) this.fallVy = 0; else this.fallVy = Math.min(this.fallVy, vy);
 
-    if (this.jumpBuf > 0 && this.coyote > 0 && !this.prone) {
-      torso.setLinearVelocity(Vec2(torso.getLinearVelocity().x, 11));
+    if (this.jumpBuf > 0 && this.coyote > 0 && !this.prone && !sniper) {
+      // 全身一起起跳(四肢通过关节拖拽会偷走躯干动量,单给躯干加速度跳不高)
+      for (const b of this.allBodies) b.setLinearVelocity(Vec2(b.getLinearVelocity().x, 13));
       this.jumpBuf = 0; this.coyote = 0; this.grounded = false;
       this.events.push({ type: 'jump' });
     }
@@ -407,8 +504,23 @@ export class Player {
     // ---- 开火 ----
     this.fireCd -= dt;
     this.recoilT = Math.max(0, this.recoilT - dt);
+    this.meleeT = Math.max(0, this.meleeT - dt);
+    // 后坐力回落:停火 0.13s 后枪口开始回落,0.4s 后连发宽限重置
+    this.sinceShot += dt;
+    if (this.sinceShot > 0.13) this.recoilClimb = Math.max(0, this.recoilClimb - dt * 2.4);
+    if (this.sinceShot > 0.4) this.burstN = 0;
+    this.visualShake = (this.visualShake || 0) * Math.exp(-8 * dt); // 连发后坐力震颤消退
     this.heat = Math.max(0, this.heat - dt * (0.35 + 0.4 * this.skill));
-    if (input.fire && this.fireCd <= 0) {
+    if (this.reloadT > 0) {
+      this.reloadT -= dt;
+      if (this.reloadT <= 0) {
+        this.reloadT = 0;
+        this.ammo = this.stats().mag;
+        this.events.push({ type: 'reloaded' });
+      }
+    }
+    if (input.fire && this.fireCd <= 0 && this.reloadT <= 0 && this.meleeT <= 0) {
+      const st = this.stats();
       const rifle = this.weapon === 'rifle';
       const gunDir = this.armLF.getWorldVector(Vec2(0, -1));
       const hand = this.armLF.getWorldPoint(Vec2(0, -D.foreArm.h / 2));
@@ -429,23 +541,44 @@ export class Player {
         dir = { x: gunDir.x, y: gunDir.y };
       }
       if (ready) {
-        this.fireCd = rifle ? 1 / 8.5 : 1 / 4;
-        this.recoilT = 0.08;
-        // 散布:后坐力热量越高越散;熟练度越高压制越好
-        const spread = (0.012 + 0.075 * this.heat) * (1.35 - 0.75 * this.skill);
-        const a = Math.atan2(dir.y, dir.x) + (Math.random() + Math.random() - 1) * spread;
-        this.events.push({
-          type: 'shot', x: muzzle.x, y: muzzle.y,
-          dx: Math.cos(a), dy: Math.sin(a),
-          weapon: this.weapon,
-        });
-        // 熟练度成长 + 后坐力热量积累
-        this.heat = Math.min(1, this.heat + (rifle ? 0.3 : 0.22) * (1.25 - 0.5 * this.skill));
-        this.skill = Math.min(1, this.skill + 0.006);
-        try { localStorage.setItem('contra-skill', String(this.skill)); } catch { /* 忽略 */ }
-        // 后坐力:熟练度高时对枪口上跳/推背的控制更好;主武器更沉
-        const kick = (rifle ? 1.15 : 0.7) * (1.25 - 0.5 * this.skill);
-        torso.applyLinearImpulse(Vec2(-this.facing * kick, 0), torso.getPosition());
+        if (this.ammo <= 0) {
+          this.reloadT = st.reload; // 打空自动换弹
+          this.events.push({ type: 'reload' });
+        } else {
+          this.fireCd = 60 / st.rpm;
+          this.ammo--;
+          this.recoilT = 0.08;
+          // 后坐力上抬:前三发稳定,连发后越抬越高;停火 0.13s 内再开枪不享受宽限
+          this.sinceShot = 0;
+          this.burstN = Math.min(30, this.burstN + 1);
+          const grace = Math.max(0, Math.min(1, (this.burstN - 3) / 3));
+          this.recoilClimb = Math.min(0.22, this.recoilClimb + (0.010 + 0.012 * st.recoil) * (0.25 + 0.75 * grace));
+          this.visualShake = Math.min(1, (this.visualShake || 0) + 0.38); // 连发震颤积累
+          // 散布:后坐力热量越高越散;熟练度越高压制越好;词条 spread 是相对系数
+          const spread = (0.012 + 0.075 * this.heat) * (1.35 - 0.75 * this.skill) * st.spread;
+          const baseA = Math.atan2(dir.y, dir.x) + this.recoilClimb * this.facing; // 上抬的弹道
+          const parts = [];
+          for (let i = 0; i < st.pellets; i++) {
+            // 多弹丸(霰弹枪):扇形均布 + 各自抖动,pelletSpread 决定散射半角;
+            // 伤害归一:整枪基础伤害 = 1,弹丸均分(部位倍率在命中端结算)
+            const arc = st.pellets > 1 ? (i / (st.pellets - 1) - 0.5) * 2 * (st.pelletSpread ?? 0.12) : 0;
+            const a = baseA + arc + (Math.random() + Math.random() - 1) * spread * 0.5;
+            parts.push({ dx: Math.cos(a), dy: Math.sin(a), damage: 1 }); // 霰弹每颗弹丸独立 1 伤
+          }
+          this.events.push({
+            type: st.mode === 'hitscan' ? 'hitscanShot' : 'shot',
+            x: muzzle.x, y: muzzle.y,
+            weapon: this.weapon, stats: st, parts,
+          });
+          // 熟练度成长 + 后坐力热量积累(词条 recoil 缩放);localStorage 每 10 发存一次(同步 IO 别太频)
+          this.heat = Math.min(1, this.heat + 0.26 * st.recoil * (1.25 - 0.5 * this.skill));
+          this.skill = Math.min(1, this.skill + 0.006);
+          this._shotN = (this._shotN || 0) + 1;
+          if (this._shotN % 10 === 0) { try { localStorage.setItem('contra-skill', String(this.skill)); } catch { /* 忽略 */ } }
+          // 后坐力:熟练度高时对枪口上跳/推背的控制更好;词条 recoil 放大
+          const kick = (rifle ? 1.15 : 0.7) * st.recoil * (1.25 - 0.5 * this.skill);
+          torso.applyLinearImpulse(Vec2(-this.facing * kick, 0), torso.getPosition());
+        }
       }
     }
 
@@ -532,6 +665,12 @@ export class Player {
   draw(ctx, w2s, ppm, time) {
     const P = (b) => w2s(b.getPosition().x, b.getPosition().y);
     const R = (b) => -b.getAngle(); // 屏幕 y 翻转,角度取反
+    // 连发后坐力:整身小幅高频震颤,随开枪积累、停火快速消退
+    ctx.save();
+    if (this.visualShake > 0.01) {
+      const s = this.visualShake * (ppm / 52);
+      ctx.translate((Math.random() - 0.5) * 3.2 * s, (Math.random() - 0.5) * 2.4 * s);
+    }
 
     const cap = (b, d, color, wGrow = 0) => {
       const [x, y] = P(b);
@@ -563,24 +702,50 @@ export class Player {
       const [x, y] = P(fb);
       ctx.save();
       ctx.translate(x, y); ctx.rotate(R(fb));
-      ctx.fillStyle = COLOR.skin;
+      ctx.fillStyle = this.C.skin;
       ctx.beginPath(); ctx.arc(0, D.foreArm.h / 2 * ppm, 3.6, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     };
 
     // 装备:在对应身体部件的局部空间里绘制(纸娃娃挂点式)
+    // parts 支持两种零件:矩形 {x,y,w,h,color,r} / 图片 {img:素材id,x,y,w,h,rot}
+    const assetImgs = new Map(); // 素材图缓存(id -> HTMLImageElement)
+    const assetImage = (id) => {
+      if (assetImgs.has(id)) return assetImgs.get(id);
+      const src = loadAssets()[id];
+      if (!src) { assetImgs.set(id, null); return null; }
+      const im = new Image();
+      im.src = src; // 异步解码,未就绪的帧先跳过,就绪后自然出现
+      assetImgs.set(id, im);
+      return im;
+    };
     const drawEquip = (eq) => {
       if (!eq?.parts?.length) return;
       const k = ppm / (eq.meterScale || 200);
       ctx.save();
       ctx.scale(k, k);
+      // 纸娃娃镜像:朝左时装备整体左右翻转(图片零件有方向性,不翻会"背对"朝向)
+      if (this.facing === -1) ctx.scale(-1, 1);
+      ctx.strokeStyle = 'rgba(15,12,8,0.45)';
+      ctx.lineWidth = 1.5 / k; // 描边固定屏幕 1.5px,不被设计坐标缩放变细
       for (const p of eq.parts) {
+        if (p.img) {
+          const im = assetImage(p.img);
+          if (im && im.complete && im.naturalWidth) {
+            ctx.save();
+            ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+            ctx.rotate(p.rot || 0);
+            const cr = p.crop;
+            if (cr && cr.sw > 0 && cr.sh > 0) ctx.drawImage(im, cr.sx, cr.sy, cr.sw, cr.sh, -p.w / 2, -p.h / 2, p.w, p.h);
+            else ctx.drawImage(im, -p.w / 2, -p.h / 2, p.w, p.h);
+            ctx.restore();
+          }
+          continue;
+        }
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.roundRect(p.x, p.y, p.w, p.h, p.r ?? 4);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(15,12,8,0.4)'; // 深描边让装备轮廓从背景里跳出来
-        ctx.lineWidth = 1.5;
         ctx.stroke();
       }
       ctx.restore();
@@ -605,29 +770,41 @@ export class Player {
           ctx.beginPath();
           ctx.roundRect(p.x, p.y, p.w, p.h, 3);
           ctx.fill();
+          ctx.strokeStyle = 'rgba(15,12,8,0.45)'; // 深描边,夜色背景下枪身轮廓才看得清
+          ctx.lineWidth = 1.5 / k;
+          ctx.stroke();
         }
         ctx.restore();
         return;
       }
-      // 副武器:手枪(锚定手部,+y 沿枪口方向,小一号)
+      // 副武器:手枪(锚定手部,x 向枪口)。滑套画在轴线上方(-y),
+      // 朝左时垂直镜像保证滑套永远朝上 —— 不镜像的话往右打手枪会上下颠倒
       ctx.save();
-      ctx.translate(x, y); ctx.rotate(-this.gunAngle);
-      const L = 0.22 * ppm;
-      const w = D.foreArm.h * ppm * 0.8;
-      ctx.fillStyle = COLOR.wood;
-      ctx.fillRect(-w * 0.7, -2, w * 1.0, L * 0.38);
-      ctx.fillStyle = COLOR.gun;
-      ctx.fillRect(-w * 0.5, -1, w * 0.75, L);
-      ctx.fillRect(-w * 0.9, L * 0.45, w * 1.6, 2.6);
+      ctx.translate(x, y);
+      ctx.rotate(-this.gunAngle);
+      if (this.gunMirrored) ctx.scale(1, -1);
+      const L = 0.24 * ppm;
+      const sh = 0.07 * ppm;
+      const gw = D.foreArm.h * ppm * 0.8;
+      ctx.fillStyle = this.C.gun;
+      ctx.fillRect(-gw * 0.35, -sh, gw * 0.7 + L * 0.6, sh); // 滑套
+      ctx.fillStyle = '#2f333b';
+      ctx.fillRect(gw * 0.25, -sh * 0.9, L * 0.28, sh * 0.9); // 套筒前段
+      ctx.fillStyle = this.C.wood;
+      ctx.fillRect(-gw * 0.32, 0, gw * 0.52, L * 0.42);       // 握把(轴线下)
+      ctx.strokeStyle = 'rgba(15,12,8,0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-gw * 0.35, -sh, gw * 0.7 + L * 0.6, sh);
+      ctx.strokeRect(-gw * 0.32, 0, gw * 0.52, L * 0.42);
       ctx.restore();
     };
 
     // 远侧肢体(暗色)→ 躯干 → 头 → 近侧腿 → 枪 → 近侧臂
-    cap(this.armUB, D.upperArm, COLOR.skinDark);
-    cap(this.armLB, D.foreArm, COLOR.skinDark);
+    cap(this.armUB, D.upperArm, this.C.skinDark);
+    cap(this.armLB, D.foreArm, this.C.skinDark);
     hand(this.armLB);
-    boot(this.legLB, COLOR.pantsDark, COLOR.bootDark);
-    cap(this.legUB, D.thigh, COLOR.pantsDark);
+    boot(this.legLB, this.C.pantsDark, this.C.bootDark);
+    cap(this.legUB, D.thigh, this.C.pantsDark);
 
     // 躯干
     {
@@ -635,7 +812,7 @@ export class Player {
       ctx.save();
       ctx.translate(x, y); ctx.rotate(R(this.torso));
       const w = D.torso.w * ppm, h = D.torso.h * ppm;
-      ctx.fillStyle = COLOR.skin;
+      ctx.fillStyle = this.C.skin;
       ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
       // 弹药带
       ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 4;
@@ -649,6 +826,48 @@ export class Player {
       ctx.restore();
     }
 
+    // 防弹盾牌:副手前举的大板盾,轻微朝瞄准方向倾斜;耐久低出现裂纹
+    if (this.shield && this.shieldHp > 0) {
+      const hw = this.armLB.getWorldPoint(Vec2(0, -D.foreArm.h / 2));
+      const [hx, hy] = w2s(hw.x, hw.y);
+      const gx = Math.cos(this.gunAngle), gy = Math.sin(this.gunAngle);
+      ctx.save();
+      ctx.translate(hx + gx * 0.07 * ppm, hy + gy * 0.07 * ppm);
+      ctx.rotate(clamp(-this.gunAngle * 0.35, -0.55, 0.55));
+      const w = 0.30 * ppm, h = 0.74 * ppm;
+      ctx.fillStyle = '#9fb0c4';
+      ctx.beginPath();
+      ctx.roundRect(-w / 2, -h / 2, w, h, [w * 0.32, w * 0.32, w * 0.5, w * 0.5]);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(15,12,8,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // 观察窗
+      ctx.fillStyle = '#59c2ff';
+      ctx.beginPath();
+      ctx.roundRect(-w * 0.22, -h * 0.34, w * 0.44, h * 0.12, 2.5);
+      ctx.fill();
+      // 加强筋
+      ctx.strokeStyle = 'rgba(70,82,100,0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -h * 0.18); ctx.lineTo(0, h * 0.3);
+      ctx.stroke();
+      // 耐久裂纹(低于 60% 越来越碎)
+      if (this.shieldHp < 60) {
+        const k = 1 - this.shieldHp / 60;
+        ctx.strokeStyle = `rgba(20,22,30,${0.35 + 0.4 * k})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(-w * 0.3, h * 0.1);
+        ctx.lineTo(w * 0.1, h * 0.24);
+        ctx.lineTo(-w * 0.12, h * 0.38);
+        if (k > 0.5) { ctx.moveTo(w * 0.3, -h * 0.2); ctx.lineTo(-w * 0.02, -h * 0.02); }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // 头 + 红头巾
     {
       const [x, y] = P(this.head);
@@ -656,21 +875,21 @@ export class Player {
       ctx.translate(x, y); ctx.rotate(R(this.head));
       const r = D.headR * ppm;
       // 脖子(随头旋转,始终连接头与颈关节锚点;画在身体 -y 方向,朝向躯干)
-      ctx.strokeStyle = COLOR.skin; ctx.lineWidth = 0.078 * ppm; ctx.lineCap = 'round';
+      ctx.strokeStyle = this.C.skin; ctx.lineWidth = 0.078 * ppm; ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(0, 0.03 * ppm);
       ctx.lineTo(0, 0.33 * ppm);
       ctx.stroke();
-      ctx.fillStyle = COLOR.skin;
+      ctx.fillStyle = this.C.skin;
       ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
       // 头巾(头顶 2/5)
-      ctx.fillStyle = COLOR.bandana;
+      ctx.fillStyle = this.C.bandana;
       ctx.beginPath();
       ctx.roundRect(-r, -r, r * 2, r * 0.85, [r, r, r * 0.3, r * 0.3]);
       ctx.fill();
       // 飘带(脑后,随时间摆动)
       const flap = Math.sin(time * 8) * 2.5;
-      ctx.strokeStyle = COLOR.bandana; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+      ctx.strokeStyle = this.C.bandana; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(-this.facing * r * 0.8, -r * 0.4);
       ctx.quadraticCurveTo(-this.facing * r * 1.7, -r * 0.7 + flap, -this.facing * r * 2.3, -r * 0.15 + flap * 1.6);
@@ -686,11 +905,12 @@ export class Player {
       ctx.restore();
     }
 
-    boot(this.legLF, COLOR.pants, COLOR.boot);
-    cap(this.legUF, D.thigh, COLOR.pants);
+    boot(this.legLF, this.C.pants, this.C.boot);
+    cap(this.legUF, D.thigh, this.C.pants);
     gun();
-    cap(this.armUF, D.upperArm, COLOR.skin);
-    cap(this.armLF, D.foreArm, COLOR.skin);
+    cap(this.armUF, D.upperArm, this.C.skin);
+    cap(this.armLF, D.foreArm, this.C.skin);
     hand(this.armLF);
+    ctx.restore();
   }
 }

@@ -23,6 +23,49 @@
       #hud-top a { text-decoration: none; color: #f0e6d2; }
       #hud-top a:hover { border-color: rgba(232, 160, 76, 0.7); }
       #hud-state { bottom: 14px; left: 20px; font-size: 12px; opacity: 0.75; }
+      /* 背包 UI */
+      #bp { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(4, 6, 12, 0.55); }
+      .bp-panel {
+        width: 560px; max-height: 82vh; overflow: auto; background: rgba(16, 20, 32, 0.96);
+        border: 1px solid rgba(244, 233, 216, 0.25); border-radius: 14px; padding: 16px 18px;
+        color: #f0e6d2;
+      }
+      .bp-head { display: flex; justify-content: space-between; align-items: center; font-size: 15px; margin-bottom: 8px; }
+      .bp-head .bp-close { font-size: 11px; opacity: 0.55; }
+      .bp-hint { font-size: 11px; opacity: 0.55; margin: 6px 0 10px; line-height: 1.6; }
+      #bpGrid { display: flex; flex-wrap: wrap; gap: 10px; min-height: 90px; }
+      .bp-card {
+        width: 150px; background: rgba(10, 14, 24, 0.8); border: 2px solid #aab0b8; border-radius: 10px;
+        padding: 8px; display: flex; gap: 8px; cursor: pointer;
+      }
+      .bp-icon { width: 34px; height: 40px; display: flex; align-items: center; justify-content: center;
+        border: 1px dashed rgba(244,233,216,0.3); border-radius: 8px; }
+      .bp-info { font-size: 11px; line-height: 1.45; flex: 1; }
+      .bp-dur { height: 4px; width: 100%; background: rgba(244,233,216,0.15); border-radius: 2px; overflow: hidden; }
+      .bp-dur > div { height: 100%; }
+      .bp-btns { display: flex; flex-direction: column; gap: 4px; }
+      .bp-btns button { padding: 2px 6px; font-size: 10px; border-radius: 5px; }
+      .bp-actions { display: flex; gap: 8px; margin-top: 12px; }
+      /* 左上角角色面板 */
+      #pnl { position: fixed; top: 60px; left: 14px; z-index: 6; display: flex; gap: 10px; align-items: center;
+        background: rgba(10, 14, 24, 0.72); border: 1px solid rgba(244,233,216,0.18); border-radius: 14px;
+        padding: 10px 12px; backdrop-filter: blur(6px); }
+      #pnl .ava { width: 52px; height: 52px; border-radius: 12px; position: relative; overflow: hidden;
+        background: linear-gradient(180deg, #22304d 0%, #16203a 100%); border: 2px solid rgba(244,233,216,0.3); }
+      #pnl .ava .face { position: absolute; left: 10px; top: 16px; width: 30px; height: 30px; border-radius: 50%; background: #e2b088; }
+      #pnl .ava .band { position: absolute; left: 8px; top: 12px; width: 34px; height: 13px; border-radius: 10px 10px 4px 4px; background: #d8302c; }
+      #pnl .ava .eye { position: absolute; left: 30px; top: 32px; width: 4px; height: 4px; border-radius: 50%; background: #222; }
+      #pnl .bars { display: flex; flex-direction: column; gap: 5px; width: 130px; }
+      #pnl .bar { height: 10px; background: rgba(244,233,216,0.12); border-radius: 5px; overflow: hidden; position: relative; }
+      #pnl .bar > div { height: 100%; border-radius: 5px; }
+      #pnl .hp > div { background: linear-gradient(90deg, #e0523c, #ff8a5c); }
+      #pnl .lt { font-size: 9px; opacity: 0.85; position: absolute; left: 6px; top: -1px; text-shadow: 0 1px 2px #000; }
+      #pnl .slots { display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
+      #pnl .slot { border: 1px solid rgba(244,233,216,0.3); border-radius: 7px; padding: 2px 8px; background: rgba(10,14,24,0.6); min-width: 74px; text-align: center; }
+      #pnl .slot small { opacity: 0.55; }
+
+      #bpToast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); background: rgba(232,160,76,0.92); color: #241a08;
+        padding: 6px 18px; border-radius: 999px; font-size: 12px; opacity: 0; transition: opacity 0.3s; z-index: 30; pointer-events: none; }
       #hud-ragdoll {
         top: 16px; right: 20px; font-size: 13px; color: #ff8484; display: none;
         background: rgba(60, 10, 10, 0.5); border: 1px solid rgba(255, 120, 120, 0.4);
@@ -34,12 +77,38 @@
     <div id="wrap"><canvas id="game"></canvas></div>
     <div id="hud-top" class="hud">
       <span class="pill">A / D 前后走</span><span class="pill">W 跳</span><span class="pill">S 趴下</span><span class="pill">鼠标瞄准 · 空格/左键 射击</span>
-      <span class="pill">Q/1/2 切换主副武器</span><span class="pill">R 布娃娃测试</span><span class="pill">E 复位</span>
+      <span class="pill">Q/1/2 切换主副武器</span><span class="pill">Tab 武器轮盘(子弹时间) · T 切换装备</span><span class="pill">R 布娃娃测试</span><span class="pill">E 复位</span><span class="pill">G 背包</span>
       <a class="pill" href="./weapon-editor.html" style="text-decoration:none">🎨 枪械设计器</a>
       <a class="pill" href="./index.html">← 返回陈列馆</a>
     </div>
+    <div id="pnl" class="hud">
+      <div class="ava"><div class="face"></div><div class="band"></div><div class="eye"></div></div>
+      <div class="bars">
+        <div class="bar hp"><div id="pnlHp" style="width:100%"></div><span class="lt" id="pnlHpText">30/30</span></div>
+        <div class="bar" id="pnlHelmBar" style="border:1px solid rgba(244,233,216,0.25)"><div id="pnlHelm" style="width:100%;background:#59c2ff"></div><span class="lt" id="pnlHelmText"></span></div>
+        <div class="bar" id="pnlVestBar" style="border:1px solid rgba(244,233,216,0.25)"><div id="pnlVest" style="width:100%;background:#ffb84d"></div><span class="lt" id="pnlVestText"></span></div>
+      </div>
+      <div class="slots">
+        <div class="slot" id="pnlMain">主武器</div>
+        <div class="slot" id="pnlSide">手枪</div>
+      </div>
+    </div>
     <div id="hud-state" class="hud"></div>
     <div id="hud-ragdoll" class="hud"></div>
+    <div id="bp">
+      <div class="bp-panel">
+        <div class="bp-head"><span>🎒 背包 · 💰 <span id="bpCoins">0</span></span><span class="bp-close">按 G 关闭</span></div>
+        <div class="bp-hint">点卡片按钮:装备/卸下 · 修复(1金/点) · 升级品质 · 锻造(上限+50%)。合成:点「合成」进入选择模式 → 选 3 件同槽位同品质 → 再点合成确认。敌人掉的装备都是 0 耐久,修好才能穿。</div>
+        <div id="bpGrid"></div>
+        <div class="bp-actions"><button id="bpCombine">合成(3 件同品质)</button></div>
+      </div>
+    </div>
+    <div id="bpToast"></div>
+    <script>
+      window.__errs = [];
+      window.addEventListener('error', (e) => { window.__errs.push(String(e.message).slice(0, 300)); });
+      window.addEventListener('unhandledrejection', (e) => { window.__errs.push('rej: ' + String(e.reason).slice(0, 300)); });
+    </script>
     <script type="module" src="/src/game/main.js"></script>
   </body>
 </html>

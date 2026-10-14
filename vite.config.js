@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         game: 'game.html',
         editor: 'weapon-editor.html',
+        studio: 'asset-studio.html',
       },
     },
   },
