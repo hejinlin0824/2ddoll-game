@@ -37,10 +37,11 @@ export class Dummy {
     this.spawnEnemy();
   }
 
-  spawnEnemy() {
+  spawnEnemy(pos) {
     // 必须销毁旧实例的刚体,否则每次死亡重生都泄漏 10 体+9 关节,越玩越卡
     if (this.p) this.p.destroy();
-    this.p = new Player(this.world, Vec2(this.spawn.x, this.spawn.y), {
+    const at = pos || Vec2(this.spawn.x, this.spawn.y);
+    this.p = new Player(this.world, at, {
       palette: ENEMY_PALETTE,
       // 固定穿预设原画装备(不读 localStorage,和玩家自定义装备解耦)
       loadout: { head: EQUIP_PRESETS.helmet_military, torso: EQUIP_PRESETS.vest_light },
@@ -49,6 +50,8 @@ export class Dummy {
     this.p.ammo = this.p.gunDef.stats.mag;
     this.hp = this.maxHp;
     this.stuckT = 0;
+    this.alive = true;   // ★ 之前漏了这行:重生后 alive 一直是 false,敌人永久脑死亡冻在原地
+    this.respawnT = 0;
     this.resetArmor();
   }
 
@@ -123,7 +126,16 @@ export class Dummy {
   update(dt, player, playerAlive) {
     if (!this.alive) {
       this.respawnT -= dt;
-      if (this.respawnT <= 0) { this.spawnEnemy(); this.events.push({ type: 'respawn', x: this.spawn.x, y: this.spawn.y }); }
+      if (this.respawnT <= 0) {
+        // 出生点若被玩家/其他敌人占着,向远离玩家一侧偏移,避免重叠弹射
+        let sx = this.spawn.x;
+        if (player) {
+          const pdx = player.torso.getPosition().x - sx;
+          if (Math.abs(pdx) < 1.6) sx -= Math.sign(pdx || 1) * 2.2;
+        }
+        this.spawnEnemy({ x: sx, y: this.spawn.y });
+        this.events.push({ type: 'respawn', x: sx, y: this.spawn.y });
+      }
       return;
     }
     const ai = this.ai;
