@@ -5,6 +5,9 @@
 import { Player } from './player.js';
 import { Vec2 } from 'planck';
 import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from './gunPresets.js';
+import { LEVEL } from './level.js';
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const ALERT_R = 12, DEALERT_R = 16;
 // 绿头巾敌兵配色(和主角区分)
@@ -129,6 +132,16 @@ export class Dummy {
 
   // AI:合成虚拟手柄驱动内部 Player
   update(dt, player, playerAlive) {
+    // 地图边界:活人/尸体都不许走出地图(击退/巡逻越界一律拦回)
+    {
+      const tp0 = this.p.torso.getPosition();
+      const bL = LEVEL.bounds.left + 0.6, bR = LEVEL.bounds.right - 0.6;
+      if (tp0.x < bL || tp0.x > bR) {
+        this.p.torso.setPosition(Vec2(clamp(tp0.x, bL, bR), tp0.y));
+        const v = this.p.torso.getLinearVelocity();
+        this.p.torso.setLinearVelocity(Vec2(clamp(v.x, -2, 2), v.y));
+      }
+    }
     if (!this.alive) {
       if (this.respawn) {
         this.respawnT -= dt;

@@ -295,7 +295,8 @@ export class Player {
 
   // ---- 近战(V):枪托前捅;举盾时是盾牌冲撞,带击退 ----
   melee() {
-    if (this.ragdoll || this.meleeT > 0 || this.reloadT > 0) return;
+    // 换弹不阻塞近战(否则按 V 经常被无声吞掉,手感极差)
+    if (this.ragdoll || this.meleeT > 0) return;
     this.meleeT = 0.32;
     const p = this.torso.getPosition();
     this.events.push({

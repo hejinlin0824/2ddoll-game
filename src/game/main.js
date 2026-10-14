@@ -436,12 +436,13 @@ function step(dt) {
           life: 0.25, size: 2.5, color: '#cfd6e4', grav: 0.4,
         });
       }
-      // 敌人:扇形伤害;盾牌冲撞额外击退(敌人数组就绪后生效)
-      const dmg = ev.shield ? 2 : 1; // 伤害归一
+      // 敌人:扇形伤害(真实伤害:枪托 20 / 盾撞 35);盾牌冲撞额外大击退
+      const dmg = ev.shield ? 35 : 20;
+      const reach = 1.5;
       for (const e of enemies) {
         const dx = e.x - ev.x, dy = e.y - ev.y;
         const dist = Math.hypot(dx, dy);
-        if (dist > 1.25) continue;
+        if (dist > reach) continue;
         if ((dx * ev.dx + dy * ev.dy) / (dist || 1) < 0.35) continue; // 约 ±70° 扇形
         e.hurt?.(dmg);
         e.knockback?.(dx / dist * (ev.shield ? 9 : 3.5), ev.shield ? 4 : 2);
@@ -659,6 +660,9 @@ function step(dt) {
       continue;
     }
     if (pickups.length > 80 && pk.t > 25) pickups.splice(i, 1); // 数量兜底,金币常驻等玩家
+    // 掉落物不许漂出地图
+    if (pk.x < LEVEL.bounds.left + 0.5) { pk.x = LEVEL.bounds.left + 0.5; pk.vx = Math.abs(pk.vx) * 0.4; }
+    if (pk.x > LEVEL.bounds.right - 0.5) { pk.x = LEVEL.bounds.right - 0.5; pk.vx = -Math.abs(pk.vx) * 0.4; }
   }
 
   // 波次推进 + 敌人更新 + 开火事件(敌人是 AI 驱动的 Player 实例,开枪走同一套弹道管线)
@@ -788,6 +792,31 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   drawSky(c, VW, VH);
   drawParallax(c, VW, VH, camO.x, PPM);
   drawTerrain(c, LEVEL.rects, w2sC, ppmZ);
+
+  // 掉落物:金币(旋转金闪)/装备(品质色箱子)
+  for (const pk of pickups) {
+    const [px, py] = w2sC(pk.x, pk.y);
+    if (pk.type === 'coin') {
+      const spin = Math.abs(Math.sin(pk.t * 4 + pk.x * 7));
+      const bob = Math.sin(pk.t * 3 + pk.x * 5) * 2.5;
+      ctx.fillStyle = 'rgba(255, 210, 74, 0.16)';
+      ctx.beginPath(); ctx.arc(px, py + bob, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd24a';
+      ctx.beginPath(); ctx.ellipse(px, py + bob, 6.5 * spin + 1.2, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#a87808'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(px, py + bob, 6.5 * spin + 1.2, 6.5, 0, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      const qc = QUALITY[pk.quality]?.color ?? '#9fb0c4';
+      ctx.fillStyle = 'rgba(15, 12, 8, 0.55)';
+      ctx.beginPath(); ctx.roundRect(px - 9, py - 12, 18, 24, 4); ctx.fill();
+      ctx.strokeStyle = qc; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(px - 9, py - 12, 18, 24, 4); ctx.stroke();
+      ctx.fillStyle = qc;
+      ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(pk.slot === 'head' ? '盔' : '甲', px, py + 4);
+      ctx.textAlign = 'start';
+    }
+  }
 
   // 角色影子
   {
