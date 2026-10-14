@@ -231,6 +231,27 @@ export class Player {
     return (this.loadout.head?.defense || 0) + (this.loadout.torso?.defense || 0);
   }
 
+  // 受击闪白:整具布娃娃罩白色半透明(近战/枪击命中反馈用)
+  drawFlash(ctx, w2s, alpha) {
+    if (alpha <= 0) return;
+    const dims = [D.torso, { w: D.headR * 2, h: D.headR * 2 },
+      D.upperArm, D.foreArm, D.upperArm, D.foreArm, D.thigh, D.calf, D.thigh, D.calf];
+    this.allBodies.forEach((b, i) => {
+      const d = dims[i];
+      const [x, y] = w2s(b.getPosition().x, b.getPosition().y);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-b.getAngle());
+      ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.85, alpha)})`;
+      if (i === 1) {
+        ctx.beginPath(); ctx.arc(0, 0, d.w / 2, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.roundRect(-d.w / 2, -d.h / 2, d.w, d.h, d.w / 2 * 0.9); ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
   // 枪械设计坐标(px,原点=后手握点/枪把,瞄准手就握在这)→ 世界坐标(米)
   gunPoint(gp) {
     const g = this.gunDef;

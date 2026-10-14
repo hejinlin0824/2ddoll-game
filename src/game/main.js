@@ -57,6 +57,7 @@ const VISUAL = () => ({ head: EQUIP_PRESETS.helmet_military, body: EQUIP_PRESETS
 invLoad();                  // 背包存档(首次自动发新手装)
 syncArmorFromInventory();   // 玩家外观/耐久绑定到已装备实例
 bpInit(() => syncArmorFromInventory()); // 背包里装备/修复/升级后同步到玩家
+bpWire(); // ★ 绑定合成/背包按钮事件(漏掉这行合成按钮就是死的)
 
 function syncArmorFromInventory() {
   const h = invEquipped('head'), b = invEquipped('body');
@@ -678,10 +679,11 @@ function step(dt) {
         gunSynth(ev.stats?.sfx, 0.55);
       } else if (ev.type === 'died') {
         burst(ev.x, ev.y, 12, '#c9563c', 4);
+        burst(ev.x, ev.y, 16, '#ffd24a', 6.5); // 金币炸开更大更亮
         beep(220, 60, 0.3, 'sawtooth', 0.08);
         // 掉落:金币 3~8 + 存活护甲 50% 概率掉 0 耐久同品质装备
         for (let ci = 0; ci < ev.coins; ci++) {
-          pickups.push({ type: 'coin', x: ev.x, y: ev.y - 0.3, vx: (Math.random() - 0.5) * 7, vy: 3 + Math.random() * 4, t: Math.random() * 6 });
+          pickups.push({ type: 'coin', x: ev.x, y: ev.y - 0.3, vx: (Math.random() - 0.5) * 11, vy: 4.5 + Math.random() * 6, t: Math.random() * 6 });
         }
         for (const drop of ev.drops) {
           pickups.push({ type: 'armor', slot: drop.slot, quality: drop.quality, x: ev.x + (Math.random() - 0.5) * 0.6, y: ev.y - 0.3, vx: (Math.random() - 0.5) * 3, vy: 3 + Math.random() * 2, t: 0 });

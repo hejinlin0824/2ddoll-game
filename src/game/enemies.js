@@ -29,6 +29,8 @@ export class Dummy {
     this.maxHp = 10; // 普通小兵脆一点,玩家打起来爽
     this.respawn = opts.respawn !== false; // 波次模式 false:死亡后由波次管理器清理
     this.armorMul = opts.armorMul ?? 1;
+    this.excludeGun = opts.excludeGun || null; // 不与玩家撞枪
+    this.flashT = 0;     // 受击闪白
     this.events = [];       // 对外事件(main 消费:开枪/死亡/重生)
     this.alive = true;
     this.hp = this.maxHp;
@@ -52,7 +54,7 @@ export class Dummy {
       loadout: { head: EQUIP_PRESETS.helmet_military, torso: EQUIP_PRESETS.vest_light },
     });
     // 随机一把枪:不再和玩家用同一把(内置预设池里抽)
-    const pool = Object.keys(GUN_PRESETS);
+    const pool = Object.keys(GUN_PRESETS).filter((n) => n !== this.excludeGun);
     this.gunName = pool[Math.floor(Math.random() * pool.length)];
     this.p.gunDef = { ...GUN_PRESETS[this.gunName] };
     this.p.ammo = this.p.gunDef.stats.mag;
@@ -87,6 +89,7 @@ export class Dummy {
   // 击中部位:有甲先扣耐久(承伤=伤害),归零报碎;无甲扣血。dir = 子弹方向(死亡布娃娃受力)
   hit(zone, dmg, dir) {
     if (!this.alive) return null;
+    this.flashT = 0.09; // 受击闪白
     let broke = null;
     const armor = this.armor[zone];
     if (armor && armor.dur > 0) {
@@ -100,6 +103,7 @@ export class Dummy {
 
   hurt(dmg, dir) {
     if (!this.alive) return;
+    this.flashT = 0.09; // 受击闪白(近战/枪击通用)
     this.hp = Math.max(0, this.hp - dmg);
     if (this.hp <= 0) this.die(dir || { x: this.face, y: 0.2 });
   }
@@ -168,6 +172,7 @@ export class Dummy {
     const ai = this.ai;
     ai.left = ai.right = ai.down = ai.fire = false;
     ai.jumpPressed = false;
+    this.flashT = Math.max(0, (this.flashT || 0) - dt);
 
     const tp = this.p.torso.getPosition();
     const pp = player ? player.torso.getPosition() : tp;
@@ -218,8 +223,16 @@ export class Dummy {
     for (const ev of this.p.events) this.events.push(ev);
   }
 
-  // ---- 绘制:委托内部 Player(同款关节小人) ----
+  // ---- 绘制:委托内部 Player(同款关节小人);受击时闪白+抖动 ----
   draw(c, w2s, ppm, time) {
-    this.p.draw(c, w2s, ppm, time);
+    if (this.flashT > 0.01) {
+      c.save();
+      c.translate((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 3);
+      this.p.draw(c, w2s, ppm, time);
+      this.p.drawFlash(c, w2s, Math.min(0.7, this.flashT / 0.09));
+      c.restore();
+    } else {
+      this.p.draw(c, w2s, ppm, time);
+    }
   }
 }

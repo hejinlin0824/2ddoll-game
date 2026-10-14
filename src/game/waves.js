@@ -72,14 +72,14 @@ export class WaveDirector {
       y: 0.72,
     }, {
       behavior: 'patrol',
-      min: -62,   // 巡逻下限拉到玩家区域:从右缘一路向左推进
+      min: -66,   // 巡逻下限拉到玩家区域:从右缘一路向左推进
       max: 3,
       quality: spec.quality,
       armorMul: spec.armorMul,
       respawn: false, // 波次模式:死了不原地重生,由清理逻辑移除
+      excludeGun: player ? player.gunDef?.name : null, // 不和玩家用同一把枪
     });
     enemies.push(d);
-    void player;
   }
 }
 
