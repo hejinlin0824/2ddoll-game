@@ -17,6 +17,7 @@
 | 13 | 🟡 | 菜单"装备整备"的 `setTimeout(bpToggle, 1050)` 未查菜单状态 | `ui/menu.js:start` | 玩家 1s 内手动关菜单会被意外开背包 |
 | 14 | 🟡 | `isCustomActive()` 定义了但 `applyCustomIfActive()` 内联了同样判断 | `world/level.js` | 两处逻辑可能漂移 |
 | 15 | 🟡 | `w2s`（camera.js）与 `w2sC`（game.js 内联）双份实现 | `systems/camera.js` ↔ `game.js:drawWorld` | 改偏移公式要改两处 |
+| 16 | 🔴 | 敌人受击/击杀的顿帧把全世界 `timeScale` 压到 0.02,应该是只冻挨打的那一个 | `feel.js hitStop` ← `combat.js onEnemyDied`、`game.js 近战` | 打谁谁定格才对;现在开一枪全世界一起卡 |
 
 ---
 
@@ -39,6 +40,19 @@
 | 13 | 「装备整备」定时器句柄化:`menuShow()` 取消 + 触发前再校验 `!open && !helpIsOpen()` | 实测:点装备整备 → 1s 内回菜单 → 1.4s 后背包未弹、菜单保持 ✓ |
 | 14 | `applyCustomIfActive` 改用 `isCustomActive()`,判断逻辑单点化 | 两轮关卡迁移测试均经过该路径 ✓ |
 | 15 | camera.js 新增 `makeW2S(camO,W,H,PPM)` 工厂,主视图与狙击镜共用;`w2s` 变成它的 cam 绑定;game.js 删内联 `w2sC` | 主视图+狙击镜渲染截图正常 ✓ |
+
+### #16 敌人顿帧改个体冻结(2026-10-15 补)
+
+**处理**:新增 `Dummy.freezeHit(dur)`/`pinFrozen()` —— 冻结瞬间抓全身刚体位姿+速度快照,
+game.js 在每次 `world.step` 后把冻结者的位姿回填(`pinFrozen`),期间 `Dummy.update` 短路
+(AI/计时器/电机伺服全停)。物理照常步进,但它的姿态纹丝不动,到点释放、击退/死亡飞掷接着演。
+接入点:击杀 `onEnemyDied(C, ev, e)` → `enemy.freezeHit(0.085 爆头 / 0.055)`;近战命中 → `0.025`。
+全局 `hitStopT` 机制保留,只服务玩家侧事件(重着陆)。重生时清 `freezeT/frozen`(防旧快照变传送门)。
+
+**验证**(逐帧 trace):死亡当帧 `freezeT=0.055` → 逐帧递减 0.038 → 0.022;**冻结期间其他敌人
+照常巡逻**(x 65.9→65.8→65.7)、`timeScale` 恒 1、全局 `hitStopT` 恒 0;尸体位姿在冻结期间
+精确到 1e-9 不动,越过 0.055s 后解冻、死亡飞掷继续。测试期间发现菜单暂停(0.3×)会让
+`__frameN(1)` 不够步进、事件积压 —— 属既定子弹时间行为,非 bug。
 
 验证环境备注:页面 0 报错(`__pageErrors`/`__lastFrameError` 全空);后台标签 rAF 冻结按坑 7 用 `__frameN` 推帧;
 另给 game.js 加了调试句柄 `window.__combat`(命中管线直调,见 AGENT.md 调试入口)。

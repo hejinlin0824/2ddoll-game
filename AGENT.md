@@ -157,13 +157,17 @@
 
 ### 手感层(P0 juice,main.js "手感层状态"块)
 - **全部走真实时间**,在 frame() 里衰减,不进 step()(世界时停时它们照常走):
-  hitStopT(顿帧)/ killSlowT(击杀慢放)/ slowCd(慢放冷却 1.4s,防连杀锁慢动作)/
+  hitStopT(全局顿帧,玩家侧事件专用)/ killSlowT(击杀慢放)/ slowCd(慢放冷却 1.4s,防连杀锁慢动作)/
   trauma(震动)/ lowHpA(低血量)/ heartT(心跳相位)/ streak(连杀)/ fullMsgT。
 - **子弹时间合成优先级**:轮盘/背包 0.08 > 顿帧 0.02(硬切入、平滑出)> 击杀慢放 0.32 > 1。
   顿帧必须 `timeScale = Math.min(timeScale, 0.02)` 硬切,慢放走指数平滑。
-- **击杀手感**:顿帧+震动+爆浆每杀都给;**慢放是里程碑奖励**(仅 streak%5==0;清场最后一杀/爆头不触发 —— 用户指定) —— 连杀满 5(streak%5==0,
+- **敌人受击/击杀 = 个体冻结,不是全局顿帧**(用户明确:全世界卡顿是 bug):
+  `Dummy.freezeHit(dur)` 抓全身刚体位姿快照,game.js 在每次 world.step 后 `pinFrozen()` 回填,
+  期间 Dummy.update 短路(AI/计时器全停),到点释放、击退/飞掷接着演。
+  击杀 0.055s(爆头 0.085)、近战命中 0.025s。重生时必须清 freezeT/frozen(spawnEnemy 已做)。
+- **击杀手感**:个体冻结+震动+爆浆每杀都给;**慢放是里程碑奖励**(仅 streak%5==0;清场最后一杀/爆头不触发 —— 用户指定) —— 连杀满 5(streak%5==0,
   0.8s 大慢放)或清场最后一杀(0.5s)才触发,普通击杀不慢放(用户反馈:每杀都慢放适得其反)。
-  died 事件的 zone/dir 由 Dummy.hit→hurt→die 一路带出来(爆头顿帧更狠、爆浆沿弹道方向)。
+  died 事件的 zone/dir 由 Dummy.hit→hurt→die 一路带出来(爆头冻得更久、爆浆沿弹道方向)。
 - **低血量表现死亡即灭**:lowHpA 的目标计算带 `pstate.hp > 0 && !player.ragdoll` 条件,
   否则死亡后红晕心跳还挂着(用户毙过)。
 - **trauma 震动**:抖动 = trauma²,偏移/微旋转用分层正弦伪噪声 nz()(不是随机数,

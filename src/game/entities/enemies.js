@@ -45,6 +45,8 @@ export class Dummy {
     this.deadT = 0;      // 波次模式尸体存留计时
     this.poise = 0;      // 韧性条:连续受击积累,满了踉跄(确定性规则,不是随机踉跄)
     this.staggerT = 0;   // 踉跄剩余时间:站不稳、开不了枪
+    this.freezeT = 0;    // 个体顿帧剩余时间:只冻这一个,世界照常跑(见 freezeHit/pinFrozen)
+    this.frozen = null;  // 冻结瞬间的全身刚体位姿快照
     this.ai = { left: false, right: false, down: false, fire: false, jumpPressed: false, aim: null };
     this.spawnEnemy();
   }
@@ -67,6 +69,8 @@ export class Dummy {
     this.stuckT = 0;
     this.alive = true;   // ★ 之前漏了这行:重生后 alive 一直是 false,敌人永久脑死亡冻在原地
     this.respawnT = 0;
+    this.freezeT = 0;    // 重生不许继承旧尸的冻结(位姿快照对新刚体是传送门)
+    this.frozen = null;
     this.resetArmor();
   }
 
@@ -198,8 +202,42 @@ export class Dummy {
     this.flashT = Math.max(this.flashT, 0.12); // 惊觉一颤
   }
 
+  // ---- 个体顿帧:受击/被击杀时只定格这一个敌人,世界照常跑 ----
+  // 原理:抓下全身刚体的位姿+速度快照,期间 game.js 在每次 world.step 后用
+  // pinFrozen() 回填 —— 物理照算,但它的姿态纹丝不动;到点释放,击退/坠亡接着演。
+  freezeHit(dur) {
+    this.freezeT = Math.max(this.freezeT, dur);
+    const bodies = this.p.allBodies;
+    if (!this.frozen || this.frozen.length !== bodies.length) {
+      this.frozen = bodies.map(() => ({ x: 0, y: 0, a: 0, vx: 0, vy: 0, w: 0 }));
+    }
+    bodies.forEach((b, i) => {
+      const f = this.frozen[i];
+      const p = b.getPosition(), v = b.getLinearVelocity();
+      f.x = p.x; f.y = p.y; f.a = b.getAngle();
+      f.vx = v.x; f.vy = v.y; f.w = b.getAngularVelocity();
+    });
+  }
+
+  // world.step 之后由 game.js 调:把刚被物理推进的位姿摁回快照(等效这一具暂停模拟)
+  pinFrozen() {
+    if (!this.frozen) return;
+    const bodies = this.p.allBodies;
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i], f = this.frozen[i];
+      b.setTransform(Vec2(f.x, f.y), f.a);
+      b.setLinearVelocity(Vec2(f.vx, f.vy));
+      b.setAngularVelocity(f.w);
+    }
+  }
+
   // AI:合成虚拟手柄驱动内部 Player
   update(dt, player, playerAlive) {
+    // 个体顿帧:定格期间 AI/计时器/电机伺服全停(位姿由 pinFrozen 每步回填,物理在 world.step 照算)
+    if (this.freezeT > 0) {
+      this.freezeT -= dt;
+      return;
+    }
     // 地图边界:活人/尸体都不许走出地图(击退/巡逻越界一律拦回)
     {
       const tp0 = this.p.torso.getPosition();

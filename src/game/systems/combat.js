@@ -3,7 +3,7 @@
 import { LEVEL, ensureRectHp, destroyRect } from '../world/level.js';
 import { invEquipped, invSave, invIsFull, invInsertItem, invAddDrop } from '../domain/inventory.js';
 import { burst, debris, floaters, spawnHelmetDebris, spawnVestDebris, gibBurst, setGhost } from './fx.js';
-import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak } from './feel.js';
+import { feel, addTrauma, killSlow, addStreak, resetStreak } from './feel.js';
 import { beep } from './audio.js';
 import { lootToast } from './hud.js';
 
@@ -302,11 +302,12 @@ export function stepBullets(dt, C) {
   }
 }
 
-// 击杀结算(died 事件):手感四件套 + 掉落 + 连杀 —— 由 game.js 的 events 循环调用
-export function onEnemyDied(C, ev) {
+// 击杀结算(died 事件):爆浆/掉落/连杀 —— 由 game.js 的 events 循环调用(传 e = 死者)
+export function onEnemyDied(C, ev, enemy) {
   const player = C.player; const enemies = C.enemies; const pickups = C.pickups;
   const head = ev.zone === 'head';
-  hitStop(head ? 0.085 : 0.055);
+  // 个体顿帧:只冻死者(爆头更久),世界照常跑 —— 全局 timeScale 顿帧只留给玩家侧事件
+  enemy?.freezeHit?.(head ? 0.085 : 0.055);
   addTrauma(head ? 0.24 : 0.15);
   gibBurst(ev.x, ev.y, ev.dir || { x: 1, y: 0.3 });
   beep(220, 60, 0.3, 'sawtooth', 0.08);

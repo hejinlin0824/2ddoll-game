@@ -4,7 +4,7 @@ import { beep } from './audio.js';
 import { streakShow, streakHide } from './hud.js';
 
 export const feel = {
-  hitStopT: 0,   // 顿帧:世界近冻结(重击/击杀)
+  hitStopT: 0,   // 全局顿帧:世界近冻结 —— 玩家侧事件专用(重着陆);敌人受击/击杀走 Dummy.freezeHit 个体冻结
   killSlowT: 0,  // 击杀慢动作:0.32× 速
   slowCd: 0,     // 慢放冷却(防止连续击杀把游戏锁在慢动作里)
   trauma: 0,     // 屏幕震动 trauma(0~1,实际抖动 = trauma²)

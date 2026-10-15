@@ -224,7 +224,8 @@ function step(dt) {
         if ((dx * ev.dx + dy * ev.dy) / (dist || 1) < 0.35) continue; // 约 ±70° 扇形
         e.hurt?.(dmg);
         e.knockback?.(dx / dist * (ev.shield ? 9 : 3.5), ev.shield ? 4 : 2);
-        addTrauma(0.1); hitStop(0.025); // 近战命中:短促顿挫
+        addTrauma(0.1);
+        e.freezeHit?.(0.025); // 近战命中:短促顿挫(只顿挨打的人)
         // 汲血词条:近战命中回血
         if (player.meleeLsPct) pstate.hp = Math.min(pstate.maxHp, pstate.hp + player.meleeLsPct);
       }
@@ -264,7 +265,7 @@ function step(dt) {
         flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
         gunSynth(ev.stats?.sfx, 0.55);
       } else if (ev.type === 'died') {
-        onEnemyDied(C, ev); // 击杀结算:手感/爆浆/传唤/连杀/掉落/回血(systems/combat.js)
+        onEnemyDied(C, ev, e); // 击杀结算:个体顿帧/爆浆/传唤/连杀/掉落/回血(systems/combat.js)
       } else if (ev.type === 'respawn') {
         beep(300, 600, 0.15, 'sine', 0.04);
       }
@@ -279,6 +280,10 @@ function step(dt) {
   decayTimers(dt); // 火舌/红闪/白闪计时器(systems/fx.js)
 
   world.step(dt, 8, 3);
+  // 个体顿帧回填:物理步进后把冻结敌人的位姿摁回快照 —— 只冻它一个,世界照常
+  for (const e of enemies) {
+    if (e.freezeT > 0) e.pinFrozen();
+  }
 }
 
 // 角色面板已抽至 systems/hud.js(updateStatusPanel)
