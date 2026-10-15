@@ -16,9 +16,12 @@ let leaveT = null;
 let sfx = () => {};            // main 注入 beep
 let boom = () => {};           // main 注入 noiseBurst(开门"哗"的气流声)
 let onSlam = () => {};         // main 注入:全开瞬间的震屏+闪光(真空门效果的一部分)
+let bootAudio = () => {};      // main 注入 initAudio:菜单按钮点击就是用户手势,在这里启动音频链
 let started = false;           // false = 从未进过战场(开始);true = 战斗中回菜单(继续)
 
 export function menuIsOpen() { return open; }
+export function helpIsOpen() { const h = document.getElementById('help'); return !!h && h.classList.contains('show'); }
+export function helpClose() { closeHelp(); }
 
 // 暂停键唯一入口:菜单开着 → 开门继续战斗;关着 → 合门暂停
 export function menuToggle() { if (open) start(false); else menuShow(); }
@@ -27,11 +30,13 @@ export function menuInit(opts = {}) {
   sfx = opts.beep || sfx;
   boom = opts.noiseBurst || boom;
   onSlam = opts.onSlam || onSlam;
+  bootAudio = opts.initAudio || bootAudio;
   build();
 }
 
 // 回主菜单(M/Esc):两扇门从两侧合拢 —— 暂停时长得一模一样,只是"进入战场"变成"继续战斗"
 export function menuShow() {
+  bootAudio();
   const m = document.getElementById('menu');
   if (!m || open) return;
   open = true;
@@ -55,6 +60,7 @@ export function menuShow() {
 }
 
 function start(alsoGear) {
+  bootAudio();
   const m = document.getElementById('menu');
   if (!m || !open) return;
   open = false;
@@ -121,6 +127,7 @@ function build() {
     el.innerHTML = `<span class="sc-dot"></span><span class="sc-name">${s.name}</span><span class="sc-desc">${s.desc}</span>`;
     el.onclick = () => {
       if (!s.ready) return;
+      bootAudio();
       scene = s;
       document.getElementById('menuSceneName').textContent = s.name;
       document.getElementById('menuSceneDesc').textContent = s.desc;
@@ -131,6 +138,21 @@ function build() {
     wrap.appendChild(el);
   }
   document.getElementById('menuStart').onclick = () => start(false);
+  document.getElementById('menuHelp').onclick = () => {
+    bootAudio();
+    const h = document.getElementById('help');
+    h.style.display = 'flex';
+    h.classList.add('show');
+  };
+  document.getElementById('helpClose').onclick = () => closeHelp();
   document.getElementById('menuGear').onclick = () => start(true);
   document.body.classList.add('in-menu');
 }
+
+function closeHelp() {
+  const h = document.getElementById('help');
+  if (!h) return;
+  h.classList.remove('show');
+  setTimeout(() => { h.style.display = 'none'; }, 220);
+}
+

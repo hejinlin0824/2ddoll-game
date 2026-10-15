@@ -9,7 +9,7 @@ import { Dummy } from './entities/enemies.js';
 import { WaveDirector } from './domain/waves.js';
 import { invLoad, invGet, invEquipped, invSetEquipped, invSave, invAddCoins, invAddDrop, invIsFull, invInsertItem } from './domain/inventory.js';
 import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire, bpSetWorldDrop, bpSetGunInfo } from './ui/backpack.js';
-import { menuInit, menuIsOpen, menuShow, menuToggle } from './ui/menu.js';
+import { menuInit, menuIsOpen, menuShow, menuToggle, helpIsOpen, helpClose } from './ui/menu.js';
 import { initAudio, beep, gunSynth, noiseBurst, setMuffle, getActx } from './systems/audio.js';
 import { updateStatusPanel, streakShow, streakHide, lootToast } from './systems/hud.js';
 import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak, tickFeel } from './systems/feel.js';
@@ -122,9 +122,9 @@ bpSetWorldDrop((item) => { // 背包拖出丢弃 = 完整物品(词缀/耐久保
   });
 });
 bpWire(); // ★ 绑定背包按钮事件(漏掉这行按钮就是死的)
-attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, toggleDebug: () => { debugDraw = !debugDraw; }, initAudio });
+attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, toggleDebug: () => { debugDraw = !debugDraw; }, initAudio });
 bindCamera(cam);
-menuInit({ beep, noiseBurst, onSlam: () => { addTrauma(0.45); feel.menuFlashT = 0.22; } }); // 主菜单:背景=实时场景,真空门三段式
+menuInit({ beep, noiseBurst, initAudio, onSlam: () => { addTrauma(0.45); feel.menuFlashT = 0.22; } }); // 主菜单:背景=实时场景,真空门三段式
 bpSetGunInfo(() => ({ main: player.gunDef?.name || '主武器', side: '手枪', weapon: player.weapon }));
 
 // 枪械设计器保存后,游戏页实时换枪/换装(storage 事件跨标签页触发)
@@ -183,7 +183,7 @@ function step(dt) {
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       flash.r = st.damage >= 25 ? 38 : 30;
       addTrauma(0.035 + 0.02 * st.recoil); // 开枪:与武器后坐词条挂钩的轻震
-      alertEnemiesNear({ x: ev.x, y: ev.y }, 26); // 枪声传唤 26m 内的敌人
+      alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 26); // 枪声传唤 26m 内的敌人
       gunSynth(st.sfx); // 每把枪自己的音色词条
     } else if (ev.type === 'hitscanShot') {
       const st = ev.stats;
@@ -195,7 +195,7 @@ function step(dt) {
       flash.t = 0.09; flash.x = ev.x; flash.y = ev.y; flash.r = 48;
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       addTrauma(0.22); // 狙击:大震
-      alertEnemiesNear({ x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传唤更远
+      alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传唤更远
       gunSynth(st.sfx);
       beep(2400, 200, 0.16, 'square', 0.045); // 高频"滋"的激光层
       applyHitscanDamage(enemies, ev, tEnd);

@@ -33,6 +33,10 @@ export function attachInput(hooks) {
   const { canvas, wheel } = hooks;
   window.addEventListener('keydown', (e) => {
     const pauseKey = e.code === 'Escape' || e.code === 'KeyP' || e.code === 'KeyM';
+    if (hooks.helpIsOpen && hooks.helpIsOpen()) { // 说明面板开着:Esc 只关面板
+      if (pauseKey && !e.repeat) { e.preventDefault(); hooks.helpClose(); }
+      return;
+    }
     if (hooks.bpIsOpen() && pauseKey) return; // 背包开着:Esc 归背包关背包,其余暂停键忽略
     if (hooks.menuIsOpen()) {
       // 主菜单/暂停期间:再按暂停键 = 开门继续战斗;其余按键全部吞掉(防背后开枪/切武器)
