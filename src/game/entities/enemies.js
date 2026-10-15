@@ -5,6 +5,7 @@
 import { Player } from './player.js';
 import { Vec2 } from 'planck';
 import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from '../domain/gunPresets.js';
+import { computeGunMods } from '../domain/affixes.js';
 import { LEVEL } from '../world/level.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -60,10 +61,13 @@ export class Dummy {
       // 固定穿预设原画装备(不读 localStorage,和玩家自定义装备解耦)
       loadout: { head: EQUIP_PRESETS.helmet_military, torso: EQUIP_PRESETS.vest_light },
     });
-    // 随机一把枪:不再和玩家用同一把(内置预设池里抽)
-    const pool = Object.keys(GUN_PRESETS).filter((n) => n !== this.excludeGun);
+    // 随机一把枪:不再和玩家用同一把(内置预设池里抽)。
+    // hitscan(AWP)必须排除:敌人事件循环不处理 hitscanShot(无伤害无音效的哑火),
+    // 且狙击站桩会让敌人永久定在原地 —— 两种都是"假人"
+    const pool = Object.keys(GUN_PRESETS).filter((n) => n !== this.excludeGun && GUN_PRESETS[n].stats?.mode !== 'hitscan');
     this.gunName = pool[Math.floor(Math.random() * pool.length)];
     this.p.gunDef = { ...GUN_PRESETS[this.gunName] };
+    this.p.gunMods = computeGunMods([]); // 敌人不吃玩家主武器槽位词缀(build 默认会带上)
     this.p.ammo = this.p.gunDef.stats.mag;
     this.hp = this.maxHp;
     this.stuckT = 0;

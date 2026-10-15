@@ -151,7 +151,11 @@ export class WeaponWheel {
       if (item.kind === 'gun') {
         if (item.current) { p.setWeapon('pistol'); this.sfx.off?.(); return; } // 卸下主武器 = 收起,改用常备手枪
         localStorage.setItem('contra-gun-primary', JSON.stringify(deep(item.src)));
+        // 主武器槽位词缀跟着人走:带到新枪上重新聚合(否则旧枪 mods 静默跨枪继承)
+        const affixes = p.gunDef?.affixes || loadGunAffixes() || [];
         p.gunDef = deep(item.src);
+        p.gunDef.affixes = affixes;
+        p.gunMods = computeGunMods(affixes);
         p.setWeapon('rifle');
         this.sfx.on?.();
       } else if (item.kind === 'pistol') {

@@ -358,20 +358,20 @@ export function stepPickups(dt, C) {
     if (playerAlivePk && distP < 0.45) { // 拾取
       if (pk.type === 'coin') {
         C.invAddCoins(1);
-        floaters.push({ x: pk.x, y: gy, vy: 1.5, text: '+1', color: '#ffd24a', size: 14, bold: true, life: 0.75, max: 0.75, vx: (Math.random() - 0.5) * 1.2, rot: (Math.random() - 0.5) * 0.2 });
+        floaters.push({ x: pk.x, y: gy, vy: 1.5, age: 0, text: '+1', color: '#ffd24a', size: 14, bold: true, life: 0.75, max: 0.75, vx: (Math.random() - 0.5) * 1.2, rot: (Math.random() - 0.5) * 0.2 });
         beep(880, 1320, 0.07, 'square', 0.04);
       } else if (invIsFull()) {
         // 背包满:东西留在地上,提示做节流(不然每帧刷屏)
         if (feel.fullMsgT <= 0) {
           feel.fullMsgT = 1.4;
-          floaters.push({ x: pk.x, y: gy + 0.3, vy: 1.6, text: '背包已满!', color: '#ff9a5c', size: 14, bold: true, life: 0.9, max: 0.9 });
+          floaters.push({ x: pk.x, y: gy + 0.3, vy: 1.6, age: 0, text: '背包已满!', color: '#ff9a5c', size: 14, bold: true, life: 0.9, max: 0.9 });
           beep(240, 160, 0.12, 'square', 0.05);
         }
         continue; // 不拾取
       } else {
         const it = pk.type === 'armorRef' ? invInsertItem(pk.item) : invAddDrop(pk.slot, pk.quality);
         if (it) lootToast(it); // 右下角品质卡
-        floaters.push({ x: pk.x, y: gy, vy: 1.2, text: `拾获 ${pk.slot === 'head' ? '头盔' : '防弹衣'} · ${C.QUALITY[pk.quality]?.label || ''}`, color: C.QUALITY[pk.quality]?.color ?? '#fff', size: 11, bold: false, life: 1, max: 1 });
+        floaters.push({ x: pk.x, y: gy, vy: 1.2, age: 0, text: `拾获 ${pk.slot === 'head' ? '头盔' : '防弹衣'} · ${C.QUALITY[pk.quality]?.label || ''}`, color: C.QUALITY[pk.quality]?.color ?? '#fff', size: 11, bold: false, life: 1, max: 1 });
         beep(400, 800, 0.1, 'square', 0.05);
       }
       pickups.splice(i, 1);

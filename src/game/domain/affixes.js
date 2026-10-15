@@ -62,39 +62,20 @@ export function tierOf(quality) {
   return 3; // epic / legendary
 }
 
-// 掷一条词缀(在适用且已实装的池子里抽;数值在档位区间内均匀分布)
-export function rollAffix(kind, quality, excludeStat = null) {
-  const tier = tierOf(quality);
-  const pool = AFFIXES.filter((a) => !a.future && a.applies.includes(kind) && !(excludeStat && a.stat === excludeStat));
-  if (!pool.length) return null;
-  const def = pool[Math.floor(Math.random() * pool.length)];
-  const [lo, hi] = def.tiers[tier] ?? def.tiers[1];
-  const v = +(lo + Math.random() * (hi - lo)).toFixed(1);
-  return { id: def.id, v };
-}
-
 // 掷一对:1 前缀 + 1 后缀(同属性键去重,避免词条重复叠加同一键)
 export function rollAffixes(kind, quality) {
   const tier = tierOf(quality);
-  const pick = (slot, excludeStat) => {
-    const pool = AFFIXES.filter((a) => !a.future && a.slot === slot && a.applies.includes(kind) && a.stat !== excludeStat);
-    if (!pool.length) return null;
-    const def = pool[Math.floor(Math.random() * pool.length)];
+  const rollV = (def) => {
     const [lo, hi] = def.tiers[tier] ?? def.tiers[1];
-    const v = +(lo + Math.random() * (hi - lo)).toFixed(1);
-    return { id: def.id, v };
+    return { id: def.id, v: +(lo + Math.random() * (hi - lo)).toFixed(1) };
   };
   // 前缀先掷,后缀掷时排除同属性键
   const pPool = AFFIXES.filter((a) => !a.future && a.slot === 'prefix' && a.applies.includes(kind));
   const pre = pPool[Math.floor(Math.random() * pPool.length)];
-  const pv = pre.tiers[tier] ?? pre.tiers[1];
-  const preV = +(pv[0] + Math.random() * (pv[1] - pv[0])).toFixed(1);
+  const preV = rollV(pre);
   const sufPool = AFFIXES.filter((a) => !a.future && a.slot === 'suffix' && a.applies.includes(kind) && a.stat !== pre.stat);
   const suf = sufPool[Math.floor(Math.random() * sufPool.length)];
-  if (!suf) return [{ id: pre.id, v: preV }];
-  const sv = suf.tiers[tier] ?? suf.tiers[1];
-  const sufV = +(sv[0] + Math.random() * (sv[1] - sv[0])).toFixed(1);
-  return [{ id: pre.id, v: preV }, { id: suf.id, v: sufV }];
+  return suf ? [preV, rollV(suf)] : [preV];
 }
 
 // ---- 属性聚合(纯函数):基础值 + 词缀 → 最终值 ----
@@ -107,7 +88,9 @@ const mul = (affixes, stat) => Math.max(0, 1 + sum(affixes, stat) / 100);
 // 不能走 mul(),否则词缀变负面(枪更散/换弹更慢/热量更猛);下限 0.2 防叠加到零。
 const red = (affixes, stat) => Math.max(0.2, 1 - sum(affixes, stat) / 100);
 
-// 枪械聚合:伤害/射速/弹容/散布/换弹/射程/吸血
+// 枪械聚合:伤害/射速/弹容/散布/换弹/射程/吸血/近战/背水/掉率/金币。
+// ⚠️ 每个 stat 键都必须在这里出现,否则掷出来的词条是"白给"(静默无效)——
+//    消费端见 player 的 getter(meleeDmgMul/coinGainPct/dropRatePct/lowHpDmgPct)
 export function computeGunMods(affixes = []) {
   return {
     dmgMul: mul(affixes, 'dmgPct'),
@@ -119,10 +102,14 @@ export function computeGunMods(affixes = []) {
     armorDmgMul: mul(affixes, 'armorDmgPct'),
     heatMul: red(affixes, 'heatRed'),
     lifesteal: sum(affixes, 'lifesteal'),
+    meleeDmgPct: sum(affixes, 'meleeDmgPct'),   // 强击(枪侧):game.js 近战结算
+    lowHpDmgPct: sum(affixes, 'lowHpDmgPct'),   // 复仇:低血量增伤(shot/hitscan/melee)
+    dropRatePct: sum(affixes, 'dropRate'),      // 猎手/幸运(枪侧):onEnemyDied 掉率
+    coinGainPct: sum(affixes, 'coinGain'),      // 贪婪/掠夺(枪侧):onEnemyDied 金币
   };
 }
 
-// 防具聚合:耐久上限%/HP上限/移速/防御/近战/吸血/掉率/金币/击杀回血
+// 防具聚合:耐久上限%/HP上限/移速/防御/近战/吸血/掉率/金币/击杀回血/近战吸血/背水
 export function computeArmorMods(slot, affixes = []) {
   let durPct = sum(affixes, 'allDurPct');
   if (slot === 'head') durPct += sum(affixes, 'helmetDurPct');
@@ -130,6 +117,7 @@ export function computeArmorMods(slot, affixes = []) {
   return {
     durPct,
     hpMaxFlat: sum(affixes, 'hpMaxFlat'),
+    hpMaxPct: sum(affixes, 'hpMaxPct'),               // 壁垒:HP上限百分比
     moveSpeedPct: sum(affixes, 'moveSpeed'),
     defenseFlat: sum(affixes, 'defenseFlat'),
     lifesteal: sum(affixes, 'lifesteal'),
@@ -137,7 +125,23 @@ export function computeArmorMods(slot, affixes = []) {
     coinGainPct: sum(affixes, 'coinGain'),
     meleeDmgPct: sum(affixes, 'meleeDmgPct'),
     healOnKill: sum(affixes, 'healOnKill'),
+    meleeLifesteal: sum(affixes, 'meleeLifesteal'), // 汲血:game.js 近战命中回血
+    lowHpDmgPct: sum(affixes, 'lowHpDmgPct'),       // 复仇(防具侧)
   };
+}
+
+// ---- 主武器槽位词缀:跟"槽位"走而不是跟具体某把枪 ----
+// 独立键持久化:轮盘换枪/设计器重画/死亡重生都不重掷(否则同一把枪死前死后词缀不同);
+// 轮盘切枪时由 wheel.js 把它带到新枪上重新聚合。
+const GUN_AFFIX_KEY = 'contra-gun-affixes';
+export function loadGunAffixes() {
+  try {
+    const a = JSON.parse(localStorage.getItem(GUN_AFFIX_KEY) || 'null');
+    return Array.isArray(a) && a.length ? a : null;
+  } catch { return null; }
+}
+export function saveGunAffixes(affixes) {
+  try { localStorage.setItem(GUN_AFFIX_KEY, JSON.stringify(affixes)); } catch { /* 忽略 */ }
 }
 
 // 物品名:"A且B的xxx"

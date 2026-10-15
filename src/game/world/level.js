@@ -81,6 +81,10 @@ export function loadCustomLevel() {
 }
 export function activateCustomLevel(on) { localStorage.setItem('contra-level-active', on ? '1' : '0'); }
 export function isCustomActive() {
+  // 场景选择键是唯一事实来源:选中"野外"时陈旧的 active flag 不算数。
+  // 守卫必须在这里(消费点之前)做 —— menu.js 的 flag 对齐在 import 顺序上晚于本模块,靠不住
+  const scene = localStorage.getItem('contra-scene');
+  if (scene && scene !== 'custom') return false;
   const c = loadCustomLevel();
   return !!c && Array.isArray(c.rects) && localStorage.getItem('contra-level-active') === '1';
 }

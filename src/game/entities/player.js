@@ -7,7 +7,7 @@
 import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from '../world/level.js';
 import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
-import { computeGunMods, rollAffixes } from '../domain/affixes.js';
+import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
@@ -155,14 +155,11 @@ export class Player {
     this.heat = 0;
     this.weapon = 'rifle'; // rifle=主武器(双手,用设计器里的枪) | pistol=副武器(单手手枪)
     this.gunDef = loadSavedGun(); // 设计器数据
-    // 主武器词条:没有就掷一对(持久化在枪数据里,换枪/重设计会重掷)
-    if (!this.gunDef.affixes?.length) {
-      try {
-        this.gunDef.affixes = rollAffixes('gun', 'rare');
-        localStorage.setItem('contra-gun-primary', JSON.stringify(this.gunDef));
-      } catch { /* 忽略 */ }
-    }
-    this.gunMods = computeGunMods(this.gunDef.affixes || []);
+    // 主武器槽位词缀:独立持久化(contra-gun-affixes),跟槽位走 ——
+    // 轮盘换枪/设计器重画/死亡重生都不重掷(以前写进枪数据里,死亡会给新枪随机重掷一遍)
+    this.gunDef.affixes = loadGunAffixes() || rollAffixes('gun', 'rare');
+    saveGunAffixes(this.gunDef.affixes);
+    this.gunMods = computeGunMods(this.gunDef.affixes);
     this.gunAngle = 0;            // 枪的世界指向角
     this._limbsMirrored = false;  // 面朝左时肘/膝限位要镜像
     this.moveMul = 1;             // 移速加成(装备词缀)
@@ -214,6 +211,26 @@ export class Player {
   get moveSpeedPct() {
     const m = this.armorMods || {};
     return (m.head?.moveSpeedPct || 0) + (m.body?.moveSpeedPct || 0);
+  }
+  // ---- 以下属性 = 防具词缀(armorMods,由 syncArmorFromInventory 绑定)+ 枪词缀(gunMods,仅持主武器时)合并 ----
+  // 做成 getter 是因为切枪不重跑 sync;枪侧/防具侧各自聚合后在这里相加(近战为乘区合并)
+  get meleeDmgMul() {
+    const armor = 1 + ((this.armorMods?.head?.meleeDmgPct || 0) + (this.armorMods?.body?.meleeDmgPct || 0)) / 100;
+    const gun = this.weapon === 'rifle' ? 1 + (this.gunMods?.meleeDmgPct || 0) / 100 : 1;
+    return armor * gun;
+  }
+  get coinGainPct() {
+    return (this.armorMods?.head?.coinGainPct || 0) + (this.armorMods?.body?.coinGainPct || 0)
+      + (this.weapon === 'rifle' ? (this.gunMods?.coinGainPct || 0) : 0);
+  }
+  get dropRatePct() {
+    return (this.armorMods?.head?.dropRatePct || 0) + (this.armorMods?.body?.dropRatePct || 0)
+      + (this.weapon === 'rifle' ? (this.gunMods?.dropRatePct || 0) : 0);
+  }
+  // 复仇(背水):低血量增伤,消费在 game.js(弹丸/hitscan/近战按 pstate.hp<35% 生效)
+  get lowHpDmgPct() {
+    return (this.armorMods?.body?.lowHpDmgPct || 0)
+      + (this.weapon === 'rifle' ? (this.gunMods?.lowHpDmgPct || 0) : 0);
   }
 
   ammoInfo() {

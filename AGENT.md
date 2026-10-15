@@ -49,13 +49,17 @@
   grips.muzzle 出膛、直射光标点——弹道必然穿准星。
 - 布娃娃测试:R 关电机瘫倒,E 复位。B 物理线框。
 
-### 熟练度(竖直后坐已移除;保留热量 + 轻推背)
+### 熟练度(竖直后坐已移除;保留热量 + 轻推背 + 方向性镜头后坐)
 - `player.skill` 0.1~1(localStorage `contra-skill`),每枪 +0.006。
 - `player.heat` 热量只影响散布:散布 = (0.012+0.075·heat)·(1.35-0.75·skill);
   每发 += 0.26·recoil词条·熟练度因子·heatMul(稳固词条降),停火按 (0.35+0.4·skill)/s 冷却。
 - 弹道永远精确指向光标(无上抬/无震颤/无弹道偏移)——别把竖直后坐力加回来。
 - 保留**每发水平轻推背**:扣扳机时 -facing·kick 冲量(kick = 0.7~1.15 × recoil词条 × 熟练度因子,
   player.js 开火分支),纯体感不影响弹道;删它之前先问用户。
+- **方向性镜头后坐(cam kick,模拟枪的重量感)**:开枪瞬间镜头沿**弹道反方向**被顶一下再指数回弹
+  (camera.js `camKick` → cam.kx/ky,叠加进 oX/oY,狙击镜内也生效)。力度 = (7+11×recoil词条)×熟练度因子,
+  **恢复速率随 recoil 变慢**(AWP≈8.7/s 手枪≈15/s)——重枪踢得狠回得慢。与 trauma 噪声震动是两套:camKick
+  有方向、可累积钳制 ±30px;trauma 是 trauma² 平滑噪声。要改成"顺着枪口方向踢"翻 camKick 里两个符号即可。
 
 ### 武器/装备轮盘(子弹时间)
 - 按住 Tab 唤起 wheel.js;世界时间走 main.js 的 timeScale(轮盘开 = 0.08,指数平滑过渡),
@@ -77,9 +81,12 @@
 | 键 | 内容 |
 |---|---|
 | `contra-gun-primary` | 主武器(设计器数据:parts + grips.front/rear + muzzle,200px=1m) |
+| `contra-gun-affixes` | **主武器槽位词缀**(跟槽位走:轮盘换枪/重画/死亡重生都不重掷,wheel 切枪时带到新枪) |
 | `contra-equip-head` / `contra-equip-torso` | 头盔/防弹衣(parts + defense) |
 | `contra-skill` | 熟练度 |
 | `contra-shield` / `contra-shield-hp` | 盾牌是否装备 / 耐久 |
+| `contra-inv` | 背包(金币+装备实例,inventory.js) |
+| `contra-scene` | 选中的场景('wild'/'custom';level.js 的自定义关卡守卫拿它当事实来源) |
 
 - 主武器:双手 IK 持枪,8.5 发/秒,弹 6→34 m/s,镜头微震;副武器手枪:单手 0.22m、4 发/秒。
 - 装备 = 纸娃娃挂点:头盔画在头部局部空间、防弹衣画在躯干局部空间(纯渲染+defense 数值,
@@ -112,9 +119,13 @@
 - 属性键:dmgPct/rpmPct/magFlat/spreadRed/reloadRed/rangePct/armorDmgPct/heatRed/lifesteal/
   dropRate/coinGain/hpMaxFlat/moveSpeed/defenseFlat/meleeDmgPct/healOnKill/allDurPct/
   helmetDurPct/armorDurPct + future(burn/poison/slow/dodge/knockRes/eliteDrop/reflect/revive)。
-- 消费端接线:player.stats() 吃枪词缀(computeGunMods);syncArmorFromInventory 吃防具词缀
-  (computeArmorMods → hpMax/移速/吸血/掉率/金币/近战/回春);枪击吸血在 main 命中结算;
-  汲血在近战命中;回春在击杀;掉率/金币在死亡掉落。
+- 消费端接线:**每个 stat 键都必须被 computeGunMods/computeArmorMods 聚合,漏聚合 = 词条白给**
+  (曾发生:汲血/复仇/强击枪侧/贪婪枪侧全漏)。现行接线:player.stats() 吃枪词缀(伤害/射速/弹容/散布/换弹/
+  射程/破甲);Player 的 getter 合并枪+防具两侧(meleeDmgMul/coinGainPct/dropRatePct/lowHpDmgPct);
+  syncArmorFromInventory 绑防具侧(hpMax/移速/吸血/掉率/金币/近战/回春/汲血/铁壁);复仇在 game.js
+  按 pstate.hp<35% 生效(弹丸/hitscan/近战);枪击吸血在 combat 命中结算;汲血在近战命中;回春在击杀。
+- **主武器词缀跟槽位走**(`contra-gun-affixes`):build 首次掷一对并落档,轮盘切枪由 wheel 带到新枪
+  重新聚合 —— 别把词缀写回枪数据(旧方案死亡重生会随机重掷,同一把枪死前死后词条不同)。
 - **强化概率制**(inventory.js UPGRADE_RATE):普通→优良 99% / 优良→稀有 80% / 稀有→高级 70%
   / 高级→传说 8%;**失败吞金不退**(用户明确要求)。按钮显示成功率。
 - 物品名格式:"A且B的xxx"(如"吸血且扩容的AK-47"),itemTitle() 生成,背包卡片展示词条行。
@@ -237,6 +248,8 @@
   布置:x=10 驻扎、x=21 巡航(±5)、x=35 巡航(±4)。
 - **敌人开枪**:内部 Player 走真实开火管线(stats/parts),事件抛给 main 以 faction 'enemy' 生成
   子弹(伤害归一 1),并按 stats.sfx 播放枪声(音量×0.6)。
+  ⚠️ **敌人枪池排除 hitscan(AWP)**:敌人事件循环不处理 hitscanShot(会哑火),且狙击站桩会让敌人
+  永久定在原地;敌人也不吃玩家主武器槽位词缀(spawnEnemy 里 gunMods 清空)。
 - 受击反馈:闪白/抖动/持续受击 3 连击晕眩 0.8s;死亡 = setRagdoll(true) + 最后一击方向力道
   → 关节布娃娃倒地;**尸体受击继续受力**;活着时子弹不推人。
 - **死亡受力**:最后一击的子弹方向作用在布娃娃上(不同方向=不同倒地动作);

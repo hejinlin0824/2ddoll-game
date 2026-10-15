@@ -14,6 +14,8 @@ export default defineConfig({
         game: 'game.html',
         editor: 'weapon-editor.html',
         studio: 'asset-studio.html',
+        levelEditor: 'level-editor.html',
+        fonts: 'fonts.html',
       },
     },
   },

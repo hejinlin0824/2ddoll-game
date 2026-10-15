@@ -103,6 +103,7 @@ document.getElementById('bSave').onclick = () => save();
 document.getElementById('bPlay').onclick = () => {
   save(true);
   localStorage.setItem('contra-level-active', '1');
+  localStorage.setItem('contra-scene', 'custom'); // 场景键是消费端守卫的事实来源,直接试玩也要选中"我的关卡"
   location.href = './game.html';
 };
 

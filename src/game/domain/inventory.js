@@ -156,7 +156,8 @@ export function invCombine(ids) {
   const base = a.slot === 'head' ? 12 : 24;
   const maxDur = Math.round(base * nxtMul * 10) / 10;
   inv.items = inv.items.filter((x) => !ids.includes(x.id));
-  const it = { id: 'i' + (seq++).toString(36) + Math.floor(Math.random() * 999).toString(36), slot: a.slot, quality: nxtQ, dur: maxDur, maxDur, equipped: false };
+  // 合成产物按新品质重掷一对词缀(与开箱/掉落一致,不出白板)
+  const it = { id: 'i' + (seq++).toString(36) + Math.floor(Math.random() * 999).toString(36), slot: a.slot, quality: nxtQ, dur: maxDur, maxDur, equipped: false, affixes: rollAffixes(a.slot, nxtQ) };
   inv.items.push(it);
   invSave();
   return { ok: true, msg: `合成 ${nxtQ} ${it.slot === 'head' ? '头盔' : '防弹衣'}`, item: it };

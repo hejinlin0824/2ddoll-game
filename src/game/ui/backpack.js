@@ -313,7 +313,11 @@ export function bpWire() {
   document.getElementById('tabEquip').onclick = () => { tab = 'equip'; render(); };
   document.getElementById('tabShop').onclick = () => { tab = 'shop'; render(); };
   document.getElementById('bpCloseBtn').onclick = () => bpClose();
-  window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && open) bpClose(); });
+  // Esc 归背包自己处理:本监听器先于 input.js 的暂停键注册,必须拦断,
+  // 否则"关背包"之后 input.js 又看到背包已关、把同一次 Esc 当暂停键弹主菜单(双触发)
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && open) { e.stopImmediatePropagation(); bpClose(); }
+  });
 }
 
 function toast(msg) {

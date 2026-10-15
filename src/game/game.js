@@ -3,7 +3,7 @@ import { World, Vec2 } from 'planck';
 import { LEVEL, buildLevel, groundYAt, drawSky, drawParallax, drawTerrain, drawForeground } from './world/level.js';
 import { Player } from './entities/player.js';
 import { loadSavedGun, EQUIP_PRESETS, QUALITY } from './domain/gunPresets.js';
-import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID } from './domain/affixes.js';
+import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID, loadGunAffixes } from './domain/affixes.js';
 import { WeaponWheel } from './ui/wheel.js';
 import { Dummy } from './entities/enemies.js';
 import { WaveDirector } from './domain/waves.js';
@@ -13,8 +13,8 @@ import { menuInit, menuIsOpen, menuShow, menuToggle, helpIsOpen, helpClose } fro
 import { initAudio, beep, gunSynth, noiseBurst, setMuffle, getActx } from './systems/audio.js';
 import { updateStatusPanel, streakShow, streakHide, lootToast } from './systems/hud.js';
 import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak, tickFeel } from './systems/feel.js';
-import { input, attachInput, bindCamera } from './systems/input.js';
-import { cam, w2s, makeW2S, aimWorld, updateCamera, clamp, lerp } from './systems/camera.js';
+import { input, mouse, attachInput, bindCamera } from './systems/input.js';
+import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
 import { bullets, spawnBullet, castRay, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups } from './systems/combat.js';
 import { particles, beams, debris, decals, floaters, flash, burst, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
@@ -23,7 +23,6 @@ if (document.fonts?.load) {
   ['900 24px "ZCOOL QingKe HuangYou"', '900 24px "ZCOOL KuaiLe"', '400 14px "Noto Sans SC"']
     .forEach((f) => document.fonts.load(f).catch(() => {}));
 }
-import { QUALITY as Q } from './domain/gunPresets.js';
 
 const W = 1280, H = 720;
 const PPM = 52;          // 像素/米
@@ -73,10 +72,10 @@ const waves = new WaveDirector(world, {
   onEvent: (ev) => {
     const p = player.torso.getPosition();
     if (ev.type === 'wave') {
-      floaters.push({ x: p.x, y: p.y + 2.1, vy: 1.1, text: `—— 第 ${ev.wave} 波 · ${ev.count} 人 ——`, color: '#ffb14a', size: 24, bold: true, font: 'hy', life: 1.6, max: 1.6 });
+      floaters.push({ x: p.x, y: p.y + 2.1, vy: 1.1, age: 0, text: `—— 第 ${ev.wave} 波 · ${ev.count} 人 ——`, color: '#ffb14a', size: 24, bold: true, font: 'hy', life: 1.6, max: 1.6 });
       beep(330, 660, 0.18, 'square', 0.07);
     } else if (ev.type === 'allclear') {
-      floaters.push({ x: p.x, y: p.y + 2.1, vy: 0.9, text: '全部清场!你赢了 🎉', color: '#ffd24a', size: 28, bold: true, font: 'hy', life: 3, max: 3 });
+      floaters.push({ x: p.x, y: p.y + 2.1, vy: 0.9, age: 0, text: '全部清场!你赢了 🎉', color: '#ffd24a', size: 28, bold: true, font: 'hy', life: 3, max: 3 });
       beep(523, 1046, 0.4, 'square', 0.09);
     }
   },
@@ -86,6 +85,7 @@ function resetPlayer() {
   player.destroy();
   player = new Player(world, Vec2(LEVEL.spawn.x, LEVEL.spawn.y));
   Object.assign(pstate, freshPstate()); // 复位血量与护甲耐久
+  syncArmorFromInventory(); // 重生必须重绑装备:否则词缀(HP上限/防御/吸血…)全部静默失效
   resetStreak(); // 死亡清空连杀
 }
 
@@ -103,12 +103,12 @@ function syncArmorFromInventory() {
   player.armorMods = { head: mh, body: mb };
   player.armorDefensePct = (mh?.defenseFlat || 0) + (mb?.defenseFlat || 0); // 铁壁:百分比减伤(player.defense)
   player.armorLifestealPct = (mh?.lifesteal || 0) + (mb?.lifesteal || 0);
-  player.dropRatePct = (mh?.dropRatePct || 0) + (mb?.dropRatePct || 0);
-  player.coinGainPct = (mh?.coinGainPct || 0) + (mb?.coinGainPct || 0);
-  player.meleeDmgMul = 1 + ((mh?.meleeDmgPct || 0) + (mb?.meleeDmgPct || 0)) / 100;
-  player.meleeLsPct = (mb?.meleeLifesteal || 0);
+  player.meleeLsPct = (mb?.meleeLifesteal || 0); // 汲血:近战命中回血(仅 body)
   player.healOnKill = (mh?.healOnKill || 0) + (mb?.healOnKill || 0);
-  pstate.maxHp = 30 + (mh?.hpMaxFlat || 0) + (mb?.hpMaxFlat || 0);
+  // dropRatePct/coinGainPct/meleeDmgMul/lowHpDmgPct 是 Player 的 getter(枪+防具合并),不在这里赋值
+  // HP 上限 = (基础 + 生命的词条固定值) × (壁垒百分比);最大 120 防极端堆叠
+  const hpPct = (mh?.hpMaxPct || 0) + (mb?.hpMaxPct || 0);
+  pstate.maxHp = Math.round(Math.min(120, (30 + (mh?.hpMaxFlat || 0) + (mb?.hpMaxFlat || 0)) * (1 + hpPct / 100)));
   pstate.hp = Math.min(pstate.hp, pstate.maxHp);
 }
 invLoad();                  // 背包存档(首次自动发新手装)
@@ -130,9 +130,12 @@ bpSetGunInfo(() => ({ main: player.gunDef?.name || '主武器', side: '手枪', 
 
 // 枪械设计器保存后,游戏页实时换枪/换装(storage 事件跨标签页触发)
 window.addEventListener('storage', (e) => {
-  if (e.key === 'contra-gun-primary' && player.weapon === 'rifle') {
+  if (e.key === 'contra-gun-primary') {
+    // 词缀跟着"主武器槽位"走(contra-gun-affixes),设计器换枪不重掷
+    const affixes = loadGunAffixes() || [];
     player.gunDef = loadSavedGun();
-    player.gunMods = computeGunMods(player.gunDef.affixes || []);
+    player.gunDef.affixes = affixes;
+    player.gunMods = computeGunMods(affixes);
   }
   if (e.key === 'contra-equip-head' || e.key === 'contra-equip-torso') {
     player.reloadLoadout();
@@ -154,7 +157,7 @@ let debugDraw = false;
 const C = {
   get player() { return player; },
   enemies, pstate, pickups, particles,
-  groundYAt, bounds: LEVEL.bounds, QUALITY: Q,
+  groundYAt, bounds: LEVEL.bounds, QUALITY,
   invAddCoins, syncArmorFromInventory, setHitFlash, addDecal,
 };
 window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }); // 调试句柄
@@ -175,7 +178,9 @@ function step(dt) {
   for (const ev of player.events) {
     if (ev.type === 'shot') {
       const st = ev.stats;
-      for (const pt of ev.parts) spawnBullet(ev.x, ev.y, pt.dx, pt.dy, st, pt.damage);
+      // 复仇词条:低血量(<35%,与红晕阈值一致)时玩家输出提升
+      const lowMul = (pstate.hp < pstate.maxHp * 0.35 && player.lowHpDmgPct) ? 1 + player.lowHpDmgPct / 100 : 1;
+      for (const pt of ev.parts) spawnBullet(ev.x, ev.y, pt.dx, pt.dy, st, pt.damage * lowMul);
       // 弹壳(每次扣扳机一枚,霰弹枪也只掉一枚)
       const m = player.muzzle();
       particles.push({
@@ -186,6 +191,7 @@ function step(dt) {
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       flash.r = st.damage >= 25 ? 38 : 30;
       addTrauma(0.035 + 0.02 * st.recoil); // 开枪:与武器后坐词条挂钩的轻震
+      camKick(ev.parts[0].dx, ev.parts[0].dy, (7 + 11 * st.recoil) * (1.25 - 0.5 * player.skill), st.recoil); // 方向性后坐:重枪踢得狠回得慢
       alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 26); // 枪声传唤 26m 内的敌人
       gunSynth(st.sfx); // 每把枪自己的音色词条
     } else if (ev.type === 'hitscanShot') {
@@ -198,9 +204,11 @@ function step(dt) {
       flash.t = 0.09; flash.x = ev.x; flash.y = ev.y; flash.r = 48;
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       addTrauma(0.22); // 狙击:大震
+      camKick(d.dx, d.dy, (7 + 11 * st.recoil) * 1.25 * (1.25 - 0.5 * player.skill), st.recoil); // 狙:单发重锤
       alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传唤更远
       gunSynth(st.sfx);
       beep(2400, 200, 0.16, 'square', 0.045); // 高频"滋"的激光层
+      if (pstate.hp < pstate.maxHp * 0.35 && player.lowHpDmgPct) ev.parts[0].damage *= 1 + player.lowHpDmgPct / 100;
       applyHitscanDamage(C, ev, tEnd);
     } else if (ev.type === 'melee') {
       beep(ev.shield ? 170 : 240, ev.shield ? 80 : 110, 0.12, 'square', 0.07);
@@ -215,7 +223,8 @@ function step(dt) {
         });
       }
       // 敌人:扇形伤害(真实伤害:枪托 20 / 盾撞 35);盾牌冲撞额外大击退
-      const dmg = (ev.shield ? 35 : 20) * (player.meleeDmgMul || 1);
+      const lowMul = (pstate.hp < pstate.maxHp * 0.35 && player.lowHpDmgPct) ? 1 + player.lowHpDmgPct / 100 : 1;
+      const dmg = (ev.shield ? 35 : 20) * (player.meleeDmgMul || 1) * lowMul;
       const reach = 1.5;
       for (const e of enemies) {
         const dx = e.x - ev.x, dy = e.y - ev.y;
@@ -276,8 +285,6 @@ function step(dt) {
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].destroyed) enemies.splice(i, 1);
   }
-
-  decayTimers(dt); // 火舌/红闪/白闪计时器(systems/fx.js)
 
   world.step(dt, 8, 3);
   // 个体顿帧回填:物理步进后把冻结敌人的位姿摁回快照 —— 只冻它一个,世界照常
@@ -346,49 +353,49 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
     if (pk.type !== 'coin') {
       // 品质光柱:对应颜色的垂直光束,让玩家远远看出品质
       const bh = 78;
-      const grad = ctx.createLinearGradient(px, py - bh, px, py + 8);
+      const grad = c.createLinearGradient(px, py - bh, px, py + 8);
       grad.addColorStop(0, 'rgba(255,255,255,0)');
       grad.addColorStop(0.55, qc + '59');
       grad.addColorStop(1, qc + 'cc');
-      ctx.fillStyle = grad;
-      ctx.fillRect(px - 9, py - bh, 18, bh + 8);
+      c.fillStyle = grad;
+      c.fillRect(px - 9, py - bh, 18, bh + 8);
     }
 
     if (pk.type === 'coin') {
       const spin = Math.abs(Math.sin(pk.t * 4 + pk.x * 7));
       const bob = Math.sin(pk.t * 3 + pk.x * 5) * 2.5;
-      ctx.fillStyle = 'rgba(255, 210, 74, 0.16)';
-      ctx.beginPath(); ctx.arc(px, py + bob, 11, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffd24a';
-      ctx.beginPath(); ctx.ellipse(px, py + bob, 6.5 * spin + 1.2, 6.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#a87808'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.ellipse(px, py + bob, 6.5 * spin + 1.2, 6.5, 0, 0, Math.PI * 2); ctx.stroke();
+      c.fillStyle = 'rgba(255, 210, 74, 0.16)';
+      c.beginPath(); c.arc(px, py + bob, 11, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ffd24a';
+      c.beginPath(); c.ellipse(px, py + bob, 6.5 * spin + 1.2, 6.5, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#a87808'; c.lineWidth = 1.5;
+      c.beginPath(); c.ellipse(px, py + bob, 6.5 * spin + 1.2, 6.5, 0, 0, Math.PI * 2); c.stroke();
     } else {
       const bob = Math.sin(pk.t * 2.6 + pk.x * 3) * 2;
-      ctx.save();
-      ctx.translate(px, py + bob);
-      ctx.strokeStyle = 'rgba(15,12,8,0.5)'; ctx.lineWidth = 1.5;
+      c.save();
+      c.translate(px, py + bob);
+      c.strokeStyle = 'rgba(15,12,8,0.5)'; c.lineWidth = 1.5;
       if (pk.slot === 'head') {
         // 迷你钢盔:圆顶 + 盔沿
-        ctx.fillStyle = '#4a5a3a';
-        ctx.beginPath(); ctx.arc(0, 2, 11, Math.PI, 0); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#2f3a26';
-        ctx.beginPath(); ctx.roundRect(-13, 1, 26, 5, 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(15,12,8,0.5)';
-        ctx.beginPath(); ctx.arc(0, 2, 11, Math.PI, 0); ctx.stroke();
+        c.fillStyle = '#4a5a3a';
+        c.beginPath(); c.arc(0, 2, 11, Math.PI, 0); c.closePath(); c.fill();
+        c.fillStyle = '#2f3a26';
+        c.beginPath(); c.roundRect(-13, 1, 26, 5, 2); c.fill();
+        c.strokeStyle = 'rgba(15,12,8,0.5)';
+        c.beginPath(); c.arc(0, 2, 11, Math.PI, 0); c.stroke();
       } else {
         // 迷你防弹衣:主体 + 领口 + 两格弹匣袋
-        ctx.fillStyle = '#3d4652';
-        ctx.beginPath(); ctx.roundRect(-13, -14, 26, 27, 5); ctx.fill();
-        ctx.fillStyle = qc;
-        ctx.beginPath(); ctx.roundRect(-13, -14, 26, 9, [5, 5, 0, 0]); ctx.fill();
-        ctx.fillStyle = qc + 'cc';
-        ctx.beginPath(); ctx.roundRect(-8, -2, 7, 8, 2); ctx.fill();
-        ctx.beginPath(); ctx.roundRect(1, -2, 7, 8, 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(15,12,8,0.5)';
-        ctx.beginPath(); ctx.roundRect(-13, -14, 26, 27, 5); ctx.stroke();
+        c.fillStyle = '#3d4652';
+        c.beginPath(); c.roundRect(-13, -14, 26, 27, 5); c.fill();
+        c.fillStyle = qc;
+        c.beginPath(); c.roundRect(-13, -14, 26, 9, [5, 5, 0, 0]); c.fill();
+        c.fillStyle = qc + 'cc';
+        c.beginPath(); c.roundRect(-8, -2, 7, 8, 2); c.fill();
+        c.beginPath(); c.roundRect(1, -2, 7, 8, 2); c.fill();
+        c.strokeStyle = 'rgba(15,12,8,0.5)';
+        c.beginPath(); c.roundRect(-13, -14, 26, 27, 5); c.stroke();
       }
-      ctx.restore();
+      c.restore();
     }
   }
 
@@ -578,7 +585,7 @@ function render(time) {
     const pp = player.torso.getPosition();
     const dist = Math.hypot(aimP.x - pp.x, aimP.y - pp.y);
     const blurPx = clamp((dist - 16) * 0.09, 0, 3.2); // 16m 内清晰,越远越糊
-    const scopeCam = { x: aimP.x, y: aimP.y, zoom: MAG, shake: 0 };
+    const scopeCam = { x: aimP.x, y: aimP.y, zoom: MAG, shake: 0, oX: cam.kx, oY: cam.ky }; // 镜内也吃方向性后坐
     sctx.setTransform(1, 0, 0, 1, 0, 0);
     sctx.clearRect(0, 0, SCV, SCV);
     sctx.filter = blurPx > 0.25 ? `blur(${blurPx.toFixed(2)}px)` : 'none';
@@ -724,6 +731,7 @@ function frame(now) {
 
     // ---- 手感层(真实时间:衰减/低血量/心跳)----
     const F = tickFeel(dt, pstate, player.ragdoll);
+    decayTimers(dt); // 火舌/红闪/白闪计时器也走真实时间(慢动作里火舌不会虚胖 12 倍)
     setMuffle(F.lowHpA); // 低血量闷化(音频系统)
 
     // ---- 子弹时间合成:菜单待机 > 轮盘/背包 > 顿帧 > 击杀慢放 > 正常 ----
@@ -756,7 +764,7 @@ function frame(now) {
   fpsN++; fpsT += dt;
   if (fpsT >= 0.5) { fps = Math.round(fpsN / fpsT); fpsN = 0; fpsT = 0; }
   // 左上角角色面板(头像/HP/护甲/装备栏)
-  if ((fpsN & 5) === 0) updateStatusPanel(pstate, player);
+  if (fpsN % 5 === 0) updateStatusPanel(pstate, player);
 
   const heatBar = '▮'.repeat(Math.round(player.heat * 6)) + '▯'.repeat(6 - Math.round(player.heat * 6));
   const stateTxt = player.ragdoll ? '布娃娃' : player.prone ? '趴下' : player.grounded ? (Math.abs(player.torso.getLinearVelocity().x) > 0.5 ? '奔跑' : '站立') : player.torso.getLinearVelocity().y > 1 ? '上升' : '下落';

@@ -4,7 +4,18 @@ import { LEVEL } from '../world/level.js';
 import { mouse } from './input.js';
 import { feel } from './feel.js';
 
-export const cam = { x: 0, y: 3.4, zoom: 1, scoped: 0, oX: 0, oY: 0, oR: 0 };
+export const cam = { x: 0, y: 3.4, zoom: 1, scoped: 0, oX: 0, oY: 0, oR: 0, kx: 0, ky: 0, kRec: 14 };
+
+// ---- 方向性镜头后坐(cam kick):模拟枪的重量感 ----
+// 业界通行做法(DOOM/EFT 式):开枪瞬间镜头沿**弹道反方向**被顶一下(枪把持枪者往后推),
+// 再按指数回弹。力度/回弹速度由武器 recoil 词条决定:重枪(AWP/霰弹)踢得狠、回得慢,
+// 轻枪(MP5/手枪)小碎抖、即刻回位 —— 每把枪手感不同。与 trauma 噪声震动叠加生效。
+export function camKick(dirX, dirY, power, heaviness = 1) {
+  // dir = 弹道方向(世界坐标,y 向上);屏幕偏移 = 反方向(y 翻转)。要改成"顺着枪口方向"只需翻转这两个符号
+  cam.kx = clamp(cam.kx - dirX * power, -30, 30);
+  cam.ky = clamp(cam.ky + dirY * power, -30, 30);
+  cam.kRec = 17 - Math.min(9.5, heaviness * 3.2); // 恢复速率:越重回得越慢(AWP≈8.7/s,手枪≈15.4/s)
+}
 
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -72,7 +83,11 @@ export function updateCamera(dt, player, input, W, H, PPM) {
   feel.trauma = Math.max(0, feel.trauma - dt * 1.5);
   const sh = feel.trauma * feel.trauma;
   const tn = performance.now() / 1000;
-  cam.oX = sh * 16 * nz(tn * 11.3);
-  cam.oY = sh * 11 * nz(tn * 13.7 + 41);
+  // 方向性后坐回弹(指数回位;重枪 kRec 小 = 慢回 = 重量感)
+  const kk = 1 - Math.exp(-(cam.kRec || 14) * dt);
+  cam.kx += (0 - cam.kx) * kk;
+  cam.ky += (0 - cam.ky) * kk;
+  cam.oX = sh * 16 * nz(tn * 11.3) + cam.kx;
+  cam.oY = sh * 11 * nz(tn * 13.7 + 41) + cam.ky;
   cam.oR = sh * 0.02 * nz(tn * 9.1 + 83);
 }

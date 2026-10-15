@@ -1,5 +1,5 @@
 {
-  "name": "travel-gallery",
+  "name": "2ddoll-game",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,13 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "planck": "^1.5.1",
-    "three": "^0.170.0"
+    "planck": "^1.5.1"
   },
   "devDependencies": {
     "vite": "^6.3.5"
   },
   "allowScripts": {
     "esbuild@0.25.12": true
-  }
+  },
+  "description": "魂斗罗·布娃娃:2D 主动式布娃娃射击游戏(planck.js 物理关节小人 + 武器/装备设计器)"
 }

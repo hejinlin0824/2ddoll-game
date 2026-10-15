@@ -57,3 +57,32 @@ game.js 在每次 `world.step` 后把冻结者的位姿回填(`pinFrozen`),期�
 验证环境备注:页面 0 报错(`__pageErrors`/`__lastFrameError` 全空);后台标签 rAF 冻结按坑 7 用 `__frameN` 推帧;
 另给 game.js 加了调试句柄 `window.__combat`(命中管线直调,见 AGENT.md 调试入口)。
 ⚠️ 测试期间 `contra-level-custom`/`contra-level-active` 被测试数据覆盖后已清空 —— 之前画的关卡需要到设计器重画一版(存档格式已升级 v2,新画的会精确落点)。
+
+---
+
+## 第二轮审查问题清单与修复记录（2026-10-15,13 条 + 1 新功能,全部处理）
+
+| # | 严重度 | 问题 | 位置 | 处理 |
+|---|--------|------|------|------|
+| N1 | 🔴 | 狙击开镜必抛 `ReferenceError`:`mouse` 在 game.js 用了但从未导入(input.js 模块级导出不是全局)——持 AWP 时每帧渲染中断,前景/遮罩/红晕全丢 | `game.js` render() | 补 `import { mouse }`;浏览器实测持 AWP 推帧 `__lastFrameError` 全空 ✓ |
+| N2 | 🔴 | 敌人抽到 AWP = 哑火(敌人事件循环不处理 `hitscanShot`,无伤害无音效)+ 狙击站桩让它永久定在原地 | `enemies.js`/`game.js` | 敌人枪池排除 hitscan(mode 过滤),顺带清掉敌人继承玩家槽位词缀 ✓ |
+| N3 | 🟠 | 死亡重生不调 `syncArmorFromInventory` → 装备词缀(HP上限/防御/吸血/掉率/金币/近战/回春)全部静默失效,直到下次背包穿戴操作 | `game.js resetPlayer` | 复位后立即重绑 ✓ |
+| N4 | 🟠 | 开背包按 Esc 双触发:bpWire 的 Esc 监听先关背包,input.js 随后看到"背包已关"把同一次 Esc 当暂停键弹主菜单 | `backpack.js bpWire` | Esc 分支 `stopImmediatePropagation()` ✓ |
+| N5 | 🟠 | drawWorld 掉落物整块误用主画布 `ctx`(应为参数 `c`)——狙击镜里看不到掉落物,主画布被画上错位鬼影 | `game.js drawWorld` | `ctx`→`c`(13 处) ✓ |
+| N6 | 🟠 | 词缀聚合漏接 4 类:汲血(meleeLifesteal)、复仇(lowHpDmgPct)、强击枪侧(meleeDmgPct)、猎手/贪婪枪侧(dropRate/coinGain)——掷出来全白给 | `affixes.js` 聚合 + player getter + game.js 消费 | computeGunMods/computeArmorMods 补键;Player 新增 meleeDmgMul/coinGainPct/dropRatePct/lowHpDmgPct getter(枪+防具合并);复仇按 hp<35% 生效于弹丸/hitscan/近战 ✓ |
+| N7 | 🟠 | 枪械词缀生命周期混乱:轮盘切枪 gunMods 不重算(旧枪词缀跨枪继承)+ 死亡重生随机重掷并覆盖枪存档 | `player.js build`/`wheel.js`/`game.js storage` | 词缀改存独立键 `contra-gun-affixes`(跟槽位走),切枪/换枪/重生都不重掷;wheel 切枪带到新枪重新聚合 ✓ |
+| N8 | 🟡 | 三合一产物无词缀(手工构造漏了 affixes,合成永远出白板) | `inventory.js invCombine` | 按新品质 `rollAffixes` 重掷 ✓ |
+| N9 | 🟡 | 波次横幅/金币+1/拾获/背包已满 飘字缺 `age` 字段 → NaN,果冻弹出动画失效 | `combat.js`×3/`game.js`×2 | 统一补 `age: 0` ✓ |
+| N10 | 🟡 | fx 计时器(火舌/红闪/白闪)衰减走世界时间,与注释/文档声明的真实时间不符(慢动作里拉长 ~12×) | `game.js` | decayTimers 从 step() 挪到 frame()(真实 dt) ✓ |
+| N11 | 🟡 | 生产构建漏配 level-editor/fonts 两页(菜单"关卡设计器"部署后 404);菜单/帮助链接的 `index.html`(陈列馆)项目里不存在 | `vite.config.js`/`game.html` | input 补两页;删除陈列馆死链 ✓ |
+| N12 | 🟡 | 漂移小项:包名仍为 travel-gallery;`three` 依赖零引用;README 结构章节路径全部过期、轮盘"6份"实为 7 项;game.js QUALITY 重复导入;rollAffix 死代码 + rollAffixes 内死函数 pick();game.html 双份错误收集脚本;HUD 刷新 `fpsN & 5` 位与误用 | 各处 | 全部清理 ✓ |
+| N13 | 🟡 | 自定义关卡"防陈旧 flag"守卫因 import 顺序失效(level.js 先消费、menu.js 后纠正);关卡设计器「试玩」绕过场景选择也被守卫拦 | `level.js isCustomActive`/`levelEditor.js` | 守卫挪进 isCustomActive(以 `contra-scene` 为事实来源);「试玩」同时写 scene 键 ✓ |
+
+### 新功能:方向性镜头后坐(模拟枪的重量感)
+
+业界通行做法(DOOM/EFT 式 camera kick):开枪瞬间镜头沿**弹道反方向**被顶一下(枪把持枪者往后推),
+再指数回弹。`camera.js camKick(dirX, dirY, power, heaviness)` → `cam.kx/ky`,叠加进 oX/oY
+(trauma 噪声震动照旧),狙击镜内视图也生效。**力度/回弹速度由武器 recoil 词条差异化**:
+力度 = (7+11×recoil)×熟练度因子(熟练度越高越稳),钳制 ±30px;恢复速率 = 17−min(9.5, recoil×3.2)
+——AWP(2.6)踢到钳制值且 ≈8.7/s 慢回,霰弹(2.4)接近,AK(1.0)中拳,MP5(0.55)/手枪(0.5)小碎抖即回。
+挂在 game.js 的 shot/hitscanShot 事件(hitscan ×1.25 单发重锤感)。要改成"顺着枪口方向"只需翻 camKick 里的符号。

@@ -39,7 +39,7 @@ npm run dev
   保存后游戏内实时穿戴生效。
 - **武器轮盘(GTA 式)**:按住 Tab 唤起,世界进入子弹时间(全员约 8% 速度慢动作);
   无光标扇区选择,鼠标方向即高亮;T 切换武器/装备两层;当前装备标「当前」,
-  悬停即「卸下/选中」,松开 Tab 实时生效。
+  悬停即「卸下/选中」,松开 Tab 实时生效。武器层 = 整圆 7 份(5 预设枪 + 常备手枪 + 盾牌)。
 - **武器词条**:每把枪有射速/威力/弹匣/散布/弹丸数/初速/射程/后坐力/枪声等属性
   (AK 600发/分 vs M4 820发/分,枪声也各自不同);打空自动换弹;未来刷宝词缀在此扩展。
 - **霰弹枪**:一次 8 颗弹丸扇形散射(散布词条决定角度);**狙击枪**:站桩狙击,
@@ -55,11 +55,14 @@ npm run dev
 ```
 game.html             游戏
 weapon-editor.html    武器与装备设计器
-src/game/main.js      主循环(输入/相机/子弹/粒子/音效/子弹时间)
-src/game/player.js    主动式布娃娃主角(物理 + 双臂 IK + 姿态 + 开火)
-src/game/wheel.js     武器/装备轮盘(按住 Tab + 扇区选择 + 卸下/选中)
-src/game/level.js     地形与碰撞分类
-src/game/gunPresets.js 枪械/装备数据格式与预设
-src/game/editor.js    设计器逻辑
-AGENT.md              AI 接手须知(架构细节与踩坑记录)
+level-editor.html     关卡设计器(主菜单「我的关卡」)
+src/game/game.js      装配根:主循环(物理步进/渲染/手感/调试句柄)
+src/game/core/        分辨率与物理常量
+src/game/domain/      纯数据层:gunPresets(词条/预设)/ affixes(词缀)/ inventory(经济)/ waves(波次)
+src/game/entities/    player(布娃娃主角)/ enemies(Dummy=AI 驱动的 Player)
+src/game/systems/     audio / input / camera(含方向性后坐)/ feel / fx / combat / hud
+src/game/ui/          wheel(轮盘)/ backpack(背包)/ menu(主菜单)
+src/game/world/       level(地形/碰撞/自定义关卡)
+src/designer/         设计器页面专用(editor / studio / levelEditor)
+AGENT.md / ARCHITECTURE.md  架构细节与踩坑记录(改代码前必读)
 ```
