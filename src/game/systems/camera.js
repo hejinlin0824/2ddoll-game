@@ -7,14 +7,19 @@ import { feel } from './feel.js';
 export const cam = { x: 0, y: 3.4, zoom: 1, scoped: 0, oX: 0, oY: 0, oR: 0, kx: 0, ky: 0, kRec: 14 };
 
 // ---- 方向性镜头后坐(cam kick):模拟枪的重量感 ----
-// 业界通行做法(DOOM/EFT 式):开枪瞬间镜头沿**弹道反方向**被顶一下(枪把持枪者往后推),
-// 再按指数回弹。力度/回弹速度由武器 recoil 词条决定:重枪(AWP/霰弹)踢得狠、回得慢,
-// 轻枪(MP5/手枪)小碎抖、即刻回位 —— 每把枪手感不同。与 trauma 噪声震动叠加生效。
+// 业界通行做法(DOOM/EFT 式 camera kick):开枪瞬间镜头沿**弹道反方向**被顶一下(枪把持枪者往后推),
+// 再快速回弹。与 trauma 噪声震动叠加生效;与准星/弹道完全解耦(aimWorld 不吃这些偏移)。
+//
+// ⚠️ 调参红线(Vlambeer《The Art of Screenshake》+ Source viewpunch 的教训):
+//   幅值要小、回弹要快 —— 镜头平移会让"世界在固定准星下晃动",幅值大了/回得慢了,
+//   玩家感知上就是在跟准星抢控制权(曾用 30px/8.7/s 被毙:"手感 debuff")。
+//   现行:自动武器 2~5px 小拳(连发间隔内回弹 >90%,不积累漂移),重枪 9~12px 读重量,
+//   恢复 19~36/s(最慢也在 ~120ms 内归位)。要更猛先动词条,别动这里的钳制。
 export function camKick(dirX, dirY, power, heaviness = 1) {
   // dir = 弹道方向(世界坐标,y 向上);屏幕偏移 = 反方向(y 翻转)。要改成"顺着枪口方向"只需翻转这两个符号
-  cam.kx = clamp(cam.kx - dirX * power, -30, 30);
-  cam.ky = clamp(cam.ky + dirY * power, -30, 30);
-  cam.kRec = 17 - Math.min(9.5, heaviness * 3.2); // 恢复速率:越重回得越慢(AWP≈8.7/s,手枪≈15.4/s)
+  cam.kx = clamp(cam.kx - dirX * power, -10, 10);
+  cam.ky = clamp(cam.ky + dirY * power, -10, 10);
+  cam.kRec = 40 - Math.min(21, heaviness * 8); // 恢复速率:重枪稍慢读重量(AWP≈19/s,手枪≈36/s),但都快到不拖瞄准
 }
 
 export const lerp = (a, b, t) => a + (b - a) * t;

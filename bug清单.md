@@ -81,8 +81,12 @@ game.js 在每次 `world.step` 后把冻结者的位姿回填(`pinFrozen`),期�
 ### 新功能:方向性镜头后坐(模拟枪的重量感)
 
 业界通行做法(DOOM/EFT 式 camera kick):开枪瞬间镜头沿**弹道反方向**被顶一下(枪把持枪者往后推),
-再指数回弹。`camera.js camKick(dirX, dirY, power, heaviness)` → `cam.kx/ky`,叠加进 oX/oY
-(trauma 噪声震动照旧),狙击镜内视图也生效。**力度/回弹速度由武器 recoil 词条差异化**:
-力度 = (7+11×recoil)×熟练度因子(熟练度越高越稳),钳制 ±30px;恢复速率 = 17−min(9.5, recoil×3.2)
-——AWP(2.6)踢到钳制值且 ≈8.7/s 慢回,霰弹(2.4)接近,AK(1.0)中拳,MP5(0.55)/手枪(0.5)小碎抖即回。
-挂在 game.js 的 shot/hitscanShot 事件(hitscan ×1.25 单发重锤感)。要改成"顺着枪口方向"只需翻 camKick 里的符号。
+再快速回弹。`camera.js camKick(dirX, dirY, power, heaviness)` → `cam.kx/ky`,叠加进 oX/oY
+(trauma 噪声震动照旧),狙击镜内视图吃一半。**与准星/弹道完全解耦**(aimWorld 不含这些偏移)。
+
+**调参迭代记录**:初版 (7+11×recoil)/钳制 ±30px/恢复 8.7~15/s —— 用户实测判"手感 debuff"后重调。
+调研结论(Vlambeer《The Art of Screenshake》"宁少勿多";Source 引擎 viewpunch 影响瞄准是最有争议的模式;
+a327ex 弹簧式方向冲量小幅快回):镜头平移 = 世界在固定准星下晃动,幅值大了或回弹慢了都会变成跟玩家抢准星。
+现行参数:力度 = (1.6+3.2×recoil)×熟练度因子(狙 ×1.25),钳制 ±10px;恢复速率 = 40−min(21, recoil×8)。
+自动武器(MP5/AK/M4/手枪)2~5px 小拳、连发间隔内(73~214ms)回弹 >90%,连发不积累漂移;
+重枪(霰弹 9.3px / AWP ~10px 钳制)约 19/s 回弹,重量读得出来但 ~120ms 内归位。

@@ -191,7 +191,7 @@ function step(dt) {
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       flash.r = st.damage >= 25 ? 38 : 30;
       addTrauma(0.035 + 0.02 * st.recoil); // 开枪:与武器后坐词条挂钩的轻震
-      camKick(ev.parts[0].dx, ev.parts[0].dy, (7 + 11 * st.recoil) * (1.25 - 0.5 * player.skill), st.recoil); // 方向性后坐:重枪踢得狠回得慢
+      camKick(ev.parts[0].dx, ev.parts[0].dy, (1.6 + 3.2 * st.recoil) * (1.25 - 0.5 * player.skill), st.recoil); // 方向性后坐:小拳快回(重量感,不抢准星)
       alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 26); // 枪声传唤 26m 内的敌人
       gunSynth(st.sfx); // 每把枪自己的音色词条
     } else if (ev.type === 'hitscanShot') {
@@ -204,7 +204,7 @@ function step(dt) {
       flash.t = 0.09; flash.x = ev.x; flash.y = ev.y; flash.r = 48;
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       addTrauma(0.22); // 狙击:大震
-      camKick(d.dx, d.dy, (7 + 11 * st.recoil) * 1.25 * (1.25 - 0.5 * player.skill), st.recoil); // 狙:单发重锤
+      camKick(d.dx, d.dy, (1.6 + 3.2 * st.recoil) * 1.25 * (1.25 - 0.5 * player.skill), st.recoil); // 狙:单发重拳(钳制内读重量)
       alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传唤更远
       gunSynth(st.sfx);
       beep(2400, 200, 0.16, 'square', 0.045); // 高频"滋"的激光层
@@ -585,7 +585,7 @@ function render(time) {
     const pp = player.torso.getPosition();
     const dist = Math.hypot(aimP.x - pp.x, aimP.y - pp.y);
     const blurPx = clamp((dist - 16) * 0.09, 0, 3.2); // 16m 内清晰,越远越糊
-    const scopeCam = { x: aimP.x, y: aimP.y, zoom: MAG, shake: 0, oX: cam.kx, oY: cam.ky }; // 镜内也吃方向性后坐
+    const scopeCam = { x: aimP.x, y: aimP.y, zoom: MAG, shake: 0, oX: cam.kx * 0.5, oY: cam.ky * 0.5 }; // 镜内吃一半后坐:2.6x 放大下同样像素感知更猛
     sctx.setTransform(1, 0, 0, 1, 0, 0);
     sctx.clearRect(0, 0, SCV, SCV);
     sctx.filter = blurPx > 0.25 ? `blur(${blurPx.toFixed(2)}px)` : 'none';
