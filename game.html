@@ -11,7 +11,7 @@
       html, body { margin: 0; height: 100%; background: #0b0e16; overflow: hidden; }
       body { font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; }
       #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-      canvas { width: 100%; height: 100%; object-fit: contain; cursor: crosshair; }
+      canvas { width: 100%; height: 100%; object-fit: cover; cursor: crosshair; }
       .hud {
         position: fixed; z-index: 5; color: #f0e6d2;
         font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -170,8 +170,41 @@
       }
       .box-card button:hover { background: rgba(244,233,216,0.16); }
 
+
+      /* ---- 背包 v3 质感 ---- */
+      .bp-panel {
+        background:
+          radial-gradient(120% 70% at 50% -10%, rgba(88, 60, 140, 0.35), transparent 60%),
+          linear-gradient(180deg, rgba(24, 20, 40, 0.98), rgba(13, 17, 28, 0.98));
+        border: 1px solid rgba(232, 180, 100, 0.28);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 230, 180, 0.12);
+      }
+      .bp-head .bp-tabs button {
+        font-family: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif;
+        font-size: 15px; letter-spacing: 4px; padding: 7px 26px;
+      }
+      .bp-res { font-size: 13px; background: rgba(244,233,216,0.07); border: 1px solid rgba(244,233,216,0.16);
+        border-radius: 999px; padding: 5px 16px; }
+      .eq-slot { background: linear-gradient(180deg, rgba(22, 28, 44, 0.75), rgba(10, 14, 24, 0.65));
+        border-color: rgba(244,233,216,0.16); }
+      .eq-slot.filled { box-shadow: inset 0 0 24px rgba(232, 180, 100, 0.08); }
+      .ic-card {
+        background: linear-gradient(165deg, rgba(24, 30, 48, 0.92), rgba(12, 16, 28, 0.9));
+        transition: transform 0.13s, box-shadow 0.13s, border-color 0.13s;
+      }
+      .ic-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), 0 0 14px var(--qc, rgba(232,160,76,0.35));
+      }
+      .ic-icon { background: linear-gradient(160deg, rgba(60, 70, 110, 0.55), rgba(14, 18, 32, 0.9));
+        border-style: solid; border-width: 1.5px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.5); }
+      .ic-helm-shape { background: linear-gradient(180deg, rgba(255,255,255,0.35), transparent 55%), var(--qc, #888); border-radius: 13px 13px 3px 3px; }
+      .ic-vest-shape { background: linear-gradient(180deg, rgba(255,255,255,0.3), transparent 55%), var(--qc, #888); }
+      .ic-name { text-shadow: 0 0 12px currentColor; }
+      .bag-title-underline { height: 1px; background: linear-gradient(90deg, rgba(232,160,76,0.7), transparent); margin-bottom: 8px; }
+
       /* 左上角角色面板 */
-      #pnl { position: fixed; top: 60px; left: 14px; z-index: 6; display: flex; gap: 10px; align-items: center;
+      #pnl { position: fixed; top: 14px; left: 14px; z-index: 6; display: flex; gap: 10px; align-items: center;
         background: rgba(10, 14, 24, 0.72); border: 1px solid rgba(244,233,216,0.18); border-radius: 14px;
         padding: 10px 12px; backdrop-filter: blur(6px); }
       #pnl .ava { width: 52px; height: 52px; border-radius: 12px; position: relative; overflow: hidden;
@@ -282,6 +315,59 @@
       .help-links { display: flex; gap: 18px; margin-top: 16px; font-size: 12px; }
       .help-links a { color: #f0e6d2; opacity: 0.6; text-decoration: none; }
       .help-links a:hover { opacity: 1; }
+
+      /* ---- 开箱动画:开缝露光 → 抖动 → 炸开 ---- */
+      .box-anim { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+        background: rgba(4, 6, 12, 0.82); backdrop-filter: blur(8px); }
+      .beam { position: absolute; left: 50%; bottom: 20%; width: 0; height: 0; transform: translateX(-50%);
+        background: linear-gradient(180deg, var(--qc, #ffc21c), transparent);
+        clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%); opacity: 0; transition: opacity 0.25s, width 0.3s;
+        filter: blur(2px); --qc: #ffc21c; }
+      .beam.on { opacity: 0.75; width: 320px; height: 46vh; }
+      .box3d { position: relative; width: 190px; height: 150px; transform-style: preserve-3d; perspective: 600px; }
+      .box-body { position: absolute; inset: auto 0 0 0; height: 105px; border-radius: 10px;
+        background: linear-gradient(180deg, #6b4a2e, #472f1c);
+        border: 2px solid #2b1d10; box-shadow: 0 18px 50px rgba(0,0,0,0.6), inset 0 3px 0 rgba(255,220,160,0.18); }
+      .box-band { position: absolute; left: 50%; top: 0; bottom: 0; width: 30px; transform: translateX(-50%);
+        background: linear-gradient(180deg, #c9a24a, #8a6a24); opacity: 0.85; }
+      .box-lid { position: absolute; left: -8px; right: -8px; top: 30px; height: 34px; border-radius: 8px;
+        background: linear-gradient(180deg, #7d5836, #553a22);
+        border: 2px solid #2b1d10; box-shadow: inset 0 3px 0 rgba(255,220,160,0.2);
+        transform-origin: 50% 0%; transition: transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1); z-index: 2; }
+      .box-lid.crack { transform: rotateX(38deg); }
+      .box-lid.fly { transform: rotateX(-118deg) translateY(-40px); transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.4); }
+      .seam-glow { position: absolute; left: 0; right: 0; top: 52px; height: 10px; border-radius: 50%;
+        background: var(--qc, #ffc21c); filter: blur(10px); opacity: 0; transition: opacity 0.3s, box-shadow 0.3s; }
+      .seam-glow.on { opacity: 0.85; box-shadow: 0 0 30px 8px var(--qc, #ffc21c); }
+      .seam-glow.strong { opacity: 1; box-shadow: 0 0 60px 22px var(--qc, #ffc21c); filter: blur(16px); }
+      .box3d.shaking { animation: boxShake 0.1s linear infinite; }
+      @keyframes boxShake {
+        0% { transform: translate(0, 0) rotate(0); }
+        25% { transform: translate(-4px, 1px) rotate(-1.4deg); }
+        50% { transform: translate(3px, -2px) rotate(1.1deg); }
+        75% { transform: translate(-3px, 2px) rotate(-0.8deg); }
+        100% { transform: translate(0, 0) rotate(0); }
+      }
+      .box3d.burst { animation: none; }
+      .prize { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%) scale(0);
+        min-width: 250px; max-width: 320px; text-align: center;
+        background: linear-gradient(180deg, rgba(24, 30, 48, 0.97), rgba(12, 16, 28, 0.97));
+        border: 2px solid var(--qc, #ffc21c); border-radius: 16px; padding: 20px 24px;
+        box-shadow: 0 0 50px var(--qc, #ffc21c), 0 24px 70px rgba(0, 0, 0, 0.7); }
+      .prize.pop { animation: prizePop 0.5s cubic-bezier(0.2, 1.7, 0.4, 1) forwards; }
+      @keyframes prizePop {
+        0% { transform: translate(-50%, -50%) scale(0.1) rotate(-6deg); opacity: 0; }
+        60% { transform: translate(-50%, -50%) scale(1.18) rotate(2deg); opacity: 1; }
+        100% { transform: translate(-50%, -50%) scale(1) rotate(0); opacity: 1; }
+      }
+      .prize-name { font-family: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif; font-size: 21px; letter-spacing: 2px;
+        text-shadow: 0 0 18px currentColor; }
+      .prize-q { font-size: 12px; opacity: 0.75; margin: 5px 0 8px; }
+      .prize-affix { font-size: 12px; color: #9fd48a; line-height: 1.8; }
+      .prize-ok { margin-top: 14px; width: 100%; background: rgba(244,233,216,0.08); border: 1.5px solid;
+        color: #f0e6d2; border-radius: 10px; padding: 9px; font-size: 14px; cursor: pointer; letter-spacing: 4px; }
+      .prize-ok:hover { background: rgba(244,233,216,0.16); }
+
     </style>
   </head>
   <body>
@@ -320,7 +406,7 @@
         <button id="menuGear" class="menu-secondary">装 备 整 备</button>
         <button id="menuHelp" class="menu-secondary">操 作 说 明</button>
         <div class="menu-links">
-          <a href="./weapon-editor.html">🎨 枪械设计器</a>
+          <a href="./weapon-editor.html">🎨 枪械设计器</a><a href="./level-editor.html">🗺 关卡设计器</a>
           <a href="./index.html">← 陈列馆</a>
           <span class="menu-tip">M 键随时回到这里</span>
         </div>

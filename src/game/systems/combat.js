@@ -1,8 +1,8 @@
 // 战斗系统:弹丸生命周期(曲线变速/碰撞/部位倍率/护甲吸收/击杀结算)+ 狙击 hitscan + 视线传唤。
 // stepBullets(dt, C) 由 game.js 的 step 每个物理步驱动;C = 依赖包(装配根组装一次)。
-import { LEVEL } from '../world/level.js';
+import { LEVEL, ensureRectHp, destroyRect } from '../world/level.js';
 import { invEquipped, invSave, invIsFull, invInsertItem, invAddDrop } from '../domain/inventory.js';
-import { burst, floaters, spawnHelmetDebris, spawnVestDebris, gibBurst, setGhost } from './fx.js';
+import { burst, debris, floaters, spawnHelmetDebris, spawnVestDebris, gibBurst, setGhost } from './fx.js';
 import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak } from './feel.js';
 import { beep } from './audio.js';
 import { lootToast } from './hud.js';
@@ -22,11 +22,37 @@ export function spawnBullet(x, y, dx, dy, st, damage, faction = 'player') {
   });
 }
 
-function hitTerrain(x, y) {
+function hitTerrainRect(x, y) {
   for (const r of LEVEL.rects) {
-    if (Math.abs(x - r.x) < r.w / 2 && Math.abs(y - r.y) < r.h / 2) return true;
+    if (Math.abs(x - r.x) < r.w / 2 && Math.abs(y - r.y) < r.h / 2) return r;
   }
-  return false;
+  return null;
+}
+window.__hitTest = (x, y) => { const r = hitTerrainRect(x, y); return r ? { x: r.x, y: r.y, hp: r.hp ?? null, destructible: !!r.destructible } : null; };
+// 子弹破坏地形:可破坏块扣耐久,归零碎裂(从世界移除+碎片飞溅);不可破坏块只冒尘
+function damageTerrain(r, damage, x, y) {
+  if (!r.destructible) { burst(x, y, 2, '#8a7c66', 2); return; }
+  ensureRectHp(r);
+  r.hp -= damage;
+  if (r.hp <= 0) {
+    // 碎裂:该块颜色的碎块飞溅 + 大尘土 + 震屏
+    const n = Math.min(10, Math.round(r.w * r.h * 3) + 4);
+    for (let i = 0; i < n; i++) {
+      debris.push({
+        type: 'shard', color: i % 3 ? '#5b4a33' : '#7a6446',
+        w: 3 + Math.random() * 6, h: 3 + Math.random() * 6,
+        x: x + (Math.random() - 0.5) * r.w * 0.5, y: y + (Math.random() - 0.5) * r.h * 0.5,
+        vx: (Math.random() - 0.5) * 7, vy: 2 + Math.random() * 5,
+        va: (Math.random() - 0.5) * 16, angle: Math.random() * 3, life: 1.6, max: 1.6,
+      });
+    }
+    burst(x, y, 8, '#8a7c66', 4);
+    addTrauma(0.3);
+    beep(120, 45, 0.25, 'sawtooth', 0.09);
+    destroyRect(r);
+  } else {
+    burst(x, y, 3, '#6b5a40', 2.5); // 打在块上的碎屑
+  }
 }
 
 // 射线 vs 轴对齐盒(slab 法),返回最近入射距离,不相交返回 Infinity
@@ -233,8 +259,9 @@ export function stepBullets(dt, C) {
       }
     }
     if (consumed) continue;
-    const hitNow = hitTerrain(b.x, b.y) || (sp > 14 && hitTerrain((b.px + b.x) / 2, (b.py + b.y) / 2));
-    if (hitNow) {
+    let rect = hitTerrainRect(b.x, b.y);
+    if (!rect && sp > 14) rect = hitTerrainRect((b.px + b.x) / 2, (b.py + b.y) / 2);
+    if (rect) {
       const hx = (b.px + b.x) / 2, hy = (b.py + b.y) / 2;
       burst(hx, hy, 5, '#ffd77a', 3.5);
       // 弹孔 + 扬尘:打进地形留下痕迹(FIFO 上限)
@@ -242,6 +269,7 @@ export function stepBullets(dt, C) {
       for (let di = 0; di < 3; di++) {
         C.particles.push({ x: hx, y: hy, vx: (Math.random() - 0.5) * 3 - b.vx * 0.05, vy: 1 + Math.random() * 2.5, life: 0.4 + Math.random() * 0.25, size: 2 + Math.random() * 2, color: '#8a7c66', grav: 0.9 });
       }
+      damageTerrain(rect, b.damage, hx, hy); // 可破坏块扣耐久/碎裂(systems/combat.js 内)
       bullets.splice(i, 1);
       continue;
     }

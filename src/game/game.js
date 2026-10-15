@@ -159,6 +159,7 @@ const C = {
 window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals }); // 调试句柄
 window.__actx = getActx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
 window.__feel = () => ({ ...feel, timeScale, menu: menuIsOpen() }); // 调试:手感层状态
+window.__level = () => LEVEL.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, hp: r.hp ?? null, max: r.maxHp ?? null })); // 调试:地形块耐久
 function step(dt) {
   input.aim = aimWorld(W, H, PPM);
   if (wheel.open || bpIsOpen() || menuIsOpen()) {

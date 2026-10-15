@@ -13,7 +13,7 @@ const KEYMAP = {
 // canvas 是 object-fit:contain,要算黑边偏移
 export function toCanvas(e, W, H) {
   const r = e.target.getBoundingClientRect();
-  const scale = Math.min(r.width / W, r.height / H);
+  const scale = Math.max(r.width / W, r.height / H); // canvas 是 object-fit:cover,取大边并做裁切偏移
   return {
     cx: (e.clientX - r.left - (r.width - W * scale) / 2) / scale,
     cy: (e.clientY - r.top - (r.height - H * scale) / 2) / scale,

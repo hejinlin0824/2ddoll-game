@@ -8,7 +8,7 @@ export const LEVEL = {
   bounds: { left: -12, right: 78 },
   spawn: { x: 0, y: 0 },
   rects: [
-    { x: 33, y: -1.5, w: 90, h: 3, type: 'ground' },
+    { x: 33, y: -1.5, w: 90, h: 3, type: 'ground', destructible: false },
     { x: 26.5, y: 0.5, w: 3, h: 1, type: 'ground' },
     { x: 30.2, y: 1.0, w: 3.4, h: 2, type: 'ground' },
     { x: 7, y: 2.4, w: 3.6, h: 0.5, type: 'plat' },
@@ -20,19 +20,59 @@ export const LEVEL = {
   ],
 };
 
+// 块耐久:按面积算(平台 3.6x0.5 ≈ 72HP,步枪 3~4 发打穿);主地表不可破坏
+export function ensureRectHp(r) {
+  if (r.maxHp == null) {
+    r.maxHp = Math.round(r.w * r.h * 40);
+    r.hp = r.maxHp;
+    r.destructible = r.destructible !== false; // 归一:默认可破坏,仅显式 false 例外
+  }
+  return r;
+}
+
 export function buildLevel(world) {
   const bodies = [];
   for (const r of LEVEL.rects) {
+    ensureRectHp(r);
     const b = world.createBody({ type: 'static', position: Vec2(r.x, r.y) });
     b.createFixture(new Box(r.w / 2, r.h / 2), {
       friction: 0.4,
       filterCategoryBits: CAT.GROUND,
       filterMaskBits: 0xffff,
     });
+    r.body = b; // 破坏时 destroyBody 用(rect 与 body 同生命周期)
     bodies.push(b);
   }
   return bodies;
 }
+
+// 破坏一块地形:从 rects 移除 + 销毁刚体(调用方负责特效/音效)
+export function destroyRect(r) {
+  const i = LEVEL.rects.indexOf(r);
+  if (i >= 0) LEVEL.rects.splice(i, 1);
+  if (r.body) { try { r.body.getWorld().destroyBody(r.body); } catch { /* 已销毁 */ } }
+  r.body = null;
+}
+
+// ---- 自定义关卡(设计器产物):激活时替换地形 ----
+export function loadCustomLevel() {
+  try { return JSON.parse(localStorage.getItem('contra-level-custom') || 'null'); } catch { return null; }
+}
+export function activateCustomLevel(on) { localStorage.setItem('contra-level-active', on ? '1' : '0'); }
+export function isCustomActive() {
+  const c = loadCustomLevel();
+  return !!c && Array.isArray(c.rects) && localStorage.getItem('contra-level-active') === '1';
+}
+function applyCustomIfActive() {
+  const c = loadCustomLevel();
+  if (!c || !Array.isArray(c.rects) || localStorage.getItem('contra-level-active') !== '1') return;
+  // 固定主地表(防掉深渊)+ 用户画的块(全部可破坏)
+  LEVEL.rects = [
+    { x: 33, y: -1.5, w: 90, h: 3, type: 'ground', destructible: false },
+    ...c.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, type: r.type || 'plat', destructible: true })),
+  ];
+}
+applyCustomIfActive();
 
 // 找 x 处最高的可行走表面(y 越小越高…… 世界 y 向上,返回该点的地面高度)
 export function groundYAt(x, belowY = Infinity) {
@@ -132,6 +172,22 @@ export function drawTerrain(ctx, rects, w2s, ppm) {
   for (const r of rects) {
     const [sx, sy] = w2s(r.x - r.w / 2, r.y + r.h / 2);
     const w = r.w * ppm, h = r.h * ppm;
+    // 受损裂纹:耐久低于一半出现,越低越密
+    if (r.maxHp && r.hp < r.maxHp * 0.6) {
+      const dmg = 1 - r.hp / r.maxHp;
+      ctx.strokeStyle = `rgba(20,14,8,${0.25 + dmg * 0.5})`;
+      ctx.lineWidth = 1.5;
+      const n = 2 + Math.round(dmg * 4);
+      ctx.beginPath();
+      for (let k = 0; k < n; k++) {
+        const rx = sx + ((k * 37 + 13) % 100) / 100 * w;
+        const ry = sy + ((k * 53 + 29) % 100) / 100 * h;
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(rx + (k % 2 ? 8 : -6), ry + (k % 3 ? 5 : -4));
+        ctx.lineTo(rx + (k % 2 ? 14 : -10), ry + (k % 3 ? 2 : 8));
+      }
+      ctx.stroke();
+    }
     if (r.type === 'ground') {
       ctx.fillStyle = '#4a3524';
       ctx.fillRect(sx, sy, w, h);

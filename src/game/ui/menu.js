@@ -3,15 +3,20 @@
 // 点「进入战场」:以屏幕中线为界,左半向左、右半向右滑出 —— 像两扇门打开,露出战场。
 // 未来加场景 = 在 SCENES 加一条数据(等 level.js 支持多关卡生成后接 activated 钩子)。
 import { bpToggle } from './backpack.js';
+import { loadCustomLevel, isCustomActive, activateCustomLevel } from '../world/level.js';
 
+const hasCustom = !!loadCustomLevel();
 const SCENES = [
   { id: 'wild', name: '野外 · 月夜', desc: '山谷哨卡 · 敌军从东线推进', ready: true },
+  { id: 'custom', name: '我的关卡', desc: hasCustom ? '自己画的战场' : '先去关卡设计器画一个', ready: hasCustom },
   { id: 'roof', name: '屋顶 · 黎明', desc: '敬请期待', ready: false },
   { id: 'room', name: '室内 · 仓库', desc: '敬请期待', ready: false },
 ];
 
 let open = true;
-let scene = SCENES[0];
+const savedScene = localStorage.getItem('contra-scene');
+let scene = SCENES.find((x) => x.id === savedScene && x.ready) || SCENES[0];
+activateCustomLevel(scene.id === 'custom'); // 选中态与激活 flag 对齐(防存档清了 flag 还开着)
 let leaveT = null;
 let sfx = () => {};            // main 注入 beep
 let boom = () => {};           // main 注入 noiseBurst(开门"哗"的气流声)
@@ -128,7 +133,17 @@ function build() {
     el.onclick = () => {
       if (!s.ready) return;
       bootAudio();
+      if (s.id === 'custom') activateCustomLevel(true);
+      else if (s.id === 'wild') activateCustomLevel(false);
+      const needRebuild = s.id === 'custom' ? true : (scene.id === 'custom');
       scene = s;
+      if (needRebuild) {
+        // 关卡刚体在世界创建时生成 —— 切换关卡重启页面(激活 flag 已存,重启后生效)
+        localStorage.setItem('contra-scene', s.id);
+        sfx(520, 760, 0.07, 'square', 0.04);
+        setTimeout(() => location.reload(), 300);
+        return;
+      }
       document.getElementById('menuSceneName').textContent = s.name;
       document.getElementById('menuSceneDesc').textContent = s.desc;
       wrap.querySelectorAll('.scene-card').forEach((c) => c.classList.remove('sel'));

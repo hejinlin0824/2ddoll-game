@@ -10,6 +10,7 @@ import {
 } from '../domain/inventory.js';
 import { QUALITY } from '../domain/gunPresets.js';
 import { itemTitle, AFFIX_BY_ID } from '../domain/affixes.js';
+import { beep, noiseBurst } from '../systems/audio.js';
 
 const QLABEL = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
 const SLABEL = { head: '头盔', body: '防弹衣' };
@@ -88,6 +89,7 @@ function renderEquip(inv) {
     const el = document.getElementById('eq' + slot);
     const it = invEquipped(slot);
     el.dataset.slot = slot;
+    el.style.setProperty('--qc', it ? q(it).color : 'transparent');
     el.classList.toggle('filled', !!it);
     el.innerHTML = it
       ? cardHtml(it)
@@ -102,6 +104,7 @@ function renderEquip(inv) {
   for (const it of bag) {
     const card = document.createElement('div');
     card.className = 'ic-card';
+    card.style.setProperty('--qc', q(it).color);
     card.style.borderColor = q(it).color + '77';
     card.innerHTML = cardHtml(it) + '<button class="ic-drop" title="丢弃">✕</button>';
     card.querySelector('.ic-drop').onclick = (e) => {
@@ -282,12 +285,8 @@ function renderShop(inv) {
       <button style="border-color:${box.color}">开启 · ${box.cost} 金</button>`;
     el.querySelector('button').onclick = () => {
       const r = invOpenBox(box.id);
-      toast(r.msg);
-      if (r.ok) {
-        shopSelId = r.item.id; tab = 'shop';
-        onChanged && onChanged();
-      }
-      render();
+      if (!r.ok) { toast(r.msg); return; }
+      playBoxAnim(r.item, r.box);
     };
     boxes.appendChild(el);
   }
@@ -324,4 +323,66 @@ function toast(msg) {
   t.style.opacity = 1;
   clearTimeout(toast._t);
   toast._t = setTimeout(() => (t.style.opacity = 0), 2000);
+}
+
+
+// ---- 开箱动画:箱子开一条缝露出品质光 → 抖动蓄力 → 盖子炸开物品爆出 → 展示 ----
+function playBoxAnim(item, box) {
+  const qc = QUALITY[item.quality] || { color: '#aab0b8', label: item.quality };
+  const root = document.createElement('div');
+  root.className = 'box-anim';
+  const aff = (item.affixes || []).map((a) => {
+    const d = AFFIX_BY_ID[a.id];
+    return d ? `<div class="prize-affix">${d.label} · ${d.fmt(a.v)}</div>` : '';
+  }).join('');
+  root.innerHTML = `
+    <div class="beam"></div>
+    <div class="box3d">
+      <div class="box-lid"></div>
+      <div class="box-body"><div class="box-band"></div></div>
+      <div class="seam-glow"></div>
+    </div>
+    <div class="prize" style="--qc: ${qc.color}">
+      <div class="prize-name" style="color:${qc.color}">${itemTitle(item.affixes || [], SLABEL[item.slot])}</div>
+      <div class="prize-q">${QLABEL[item.quality]} · 耐久 ${Math.ceil(item.dur)}/${Math.ceil(item.maxDur)}</div>
+      ${aff}
+      <button class="prize-ok" style="border-color:${qc.color}">收入背包</button>
+    </div>`;
+  document.body.appendChild(root);
+  const lid = root.querySelector('.box-lid');
+  const glow = root.querySelector('.seam-glow');
+  const boxEl = root.querySelector('.box3d');
+  const prize = root.querySelector('.prize');
+  const beam = root.querySelector('.beam');
+  beam.style.setProperty('--qc', qc.color);
+  root.style.setProperty('--qc', qc.color);
+  beep(box.id === 'gold' ? 140 : box.id === 'silver' ? 170 : 200, 90, 0.2, 'sine', 0.06);
+  setTimeout(() => { // 开一条缝,露出品质光
+    lid.classList.add('crack');
+    glow.classList.add('on');
+    beep(300, 480, 0.12, 'sine', 0.04);
+  }, 350);
+  setTimeout(() => { // 抖动蓄力,光越来越烈
+    boxEl.classList.add('shaking');
+    glow.classList.add('strong');
+    let rattles = 0;
+    const rv = setInterval(() => { noiseBurst(0.04, 0.05, 900); if (++rattles >= 6) clearInterval(rv); }, 150);
+  }, 1050);
+  setTimeout(() => { // 哄!盖子炸开,物品爆出
+    boxEl.classList.add('burst');
+    lid.classList.add('fly');
+    glow.classList.remove('strong');
+    beam.classList.add('on');
+    prize.classList.add('pop');
+    noiseBurst(0.4, 0.16, 1400);
+    beep(180, 720, 0.35, 'square', 0.08);
+    beep(90, 40, 0.5, 'sine', 0.12);
+    if (['epic', 'legendary'].includes(item.quality)) beep(880, 1760, 0.5, 'triangle', 0.07);
+  }, 2100);
+  root.querySelector('.prize-ok').onclick = () => {
+    shopSelId = item.id;
+    onChanged && onChanged();
+    render();
+    root.remove();
+  };
 }
