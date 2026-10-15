@@ -34,12 +34,18 @@ export class WaveDirector {
     const aliveN = enemies.filter((e) => e.alive).length;
 
     if (this.queue > 0) {
-      // 出怪队列:间隔刷新,场上上限 10 人
+      // 出怪队列:间隔刷新,场上上限 10 人;出生点被活人占着就顺延(不消耗队列)
       this.spawnT -= dt;
       if (this.spawnT <= 0 && aliveN < 10) {
+        const sx = SPAWN_X - Math.random() * 2.2;
+        let crowded = false;
+        for (const o of enemies) {
+          if (o.alive && Math.abs(o.x - sx) < 1.2) { crowded = true; break; }
+        }
+        if (crowded) { this.spawnT = 0.4; return; }
         this.spawnT = SPAWN_GAP;
         this.queue--;
-        this.spawnOne(enemies, player);
+        this.spawnOne(enemies, player, sx);
       }
       return;
     }
@@ -65,10 +71,10 @@ export class WaveDirector {
     this.onEvent({ type: 'wave', wave: this.wave, count: this.queue });
   }
 
-  spawnOne(enemies, player) {
+  spawnOne(enemies, player, sx) {
     const spec = waveSpec(this.wave);
     const d = new Dummy(this.world, {
-      x: SPAWN_X - Math.random() * 2.2,
+      x: sx ?? SPAWN_X - Math.random() * 2.2,
       y: 0.72,
     }, {
       behavior: 'patrol',

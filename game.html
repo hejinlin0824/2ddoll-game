@@ -4,8 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>魂斗罗·布娃娃 — 旅行陈列馆小游戏</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=ZCOOL+QingKe+HuangYou&family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet" />
     <style>
       html, body { margin: 0; height: 100%; background: #0b0e16; overflow: hidden; }
+      body { font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; }
       #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
       canvas { width: 100%; height: 100%; object-fit: contain; cursor: crosshair; }
       .hud {
@@ -23,29 +27,149 @@
       #hud-top a { text-decoration: none; color: #f0e6d2; }
       #hud-top a:hover { border-color: rgba(232, 160, 76, 0.7); }
       #hud-state { bottom: 14px; left: 20px; font-size: 12px; opacity: 0.75; }
-      /* 背包 UI */
-      #bp { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(4, 6, 12, 0.55); }
+
+      /* ---- 连杀计数(滚轮数字)---- */
+      #streak {
+        position: fixed; top: 64px; left: 50%; z-index: 8; pointer-events: none;
+        display: flex; align-items: center; gap: 12px;
+        opacity: 0; transform: translateX(-50%) scale(0.7);
+        transition: opacity 0.18s, transform 0.24s cubic-bezier(0.2, 1.7, 0.4, 1);
+      }
+      #streak.show { opacity: 1; transform: translateX(-50%) scale(1); }
+      #streak.show.big { animation: streakBig 0.42s cubic-bezier(0.2, 1.8, 0.4, 1); }
+      @keyframes streakBig {
+        0% { transform: translateX(-50%) scale(1); }
+        40% { transform: translateX(-50%) scale(1.45); filter: brightness(1.5); }
+        100% { transform: translateX(-50%) scale(1); }
+      }
+      #streakLabel { font-family: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif; font-size: 21px; font-weight: 900; color: #ffd24a; text-shadow: 0 2px 10px rgba(0,0,0,0.8); letter-spacing: 2px; }
+      .odo { display: flex; }
+      .odo-col { height: 1em; overflow: hidden; font-family: "ZCOOL KuaiLe", "Comic Sans MS", sans-serif; font-size: 46px; font-weight: 900; line-height: 1; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+      .odo-col.dim { opacity: 0.28; }
+      .odo-strip { display: block; transition: transform 0.38s cubic-bezier(0.25, 1.5, 0.45, 1); }
+      .odo-strip div { height: 1em; line-height: 1; text-align: center; }
+
+      /* ---- 拾取 toast(右下角品质卡)---- */
+      #lootToasts { position: fixed; right: 18px; bottom: 64px; z-index: 9; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+      .loot-card {
+        min-width: 210px; max-width: 280px; background: rgba(12, 16, 26, 0.92);
+        border: 1.5px solid #aab0b8; border-left-width: 4px; border-radius: 10px;
+        padding: 8px 12px; color: #f0e6d2; backdrop-filter: blur(6px);
+        animation: lootIn 0.28s cubic-bezier(0.2, 1.4, 0.4, 1);
+        transition: opacity 0.3s, transform 0.3s;
+      }
+      .loot-card.out { opacity: 0; transform: translateX(30px); }
+      @keyframes lootIn { from { opacity: 0; transform: translateX(46px); } to { opacity: 1; transform: none; } }
+      .loot-title { font-size: 13px; font-weight: 700; }
+      .loot-q { font-size: 10px; opacity: 0.75; margin-top: 1px; }
+      .loot-affix { font-size: 10.5px; color: #9fd48a; margin-top: 2px; }
+
+      /* ---- 背包 v2:居中卡片,左装备 / 右背包 ---- */
+      #bp { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(4, 6, 12, 0.6); }
       .bp-panel {
-        width: 560px; max-height: 82vh; overflow: auto; background: rgba(16, 20, 32, 0.96);
-        border: 1px solid rgba(244, 233, 216, 0.25); border-radius: 14px; padding: 16px 18px;
-        color: #f0e6d2;
+        width: min(1000px, 95vw); max-height: 88vh; overflow: auto;
+        background: linear-gradient(180deg, rgba(18, 23, 36, 0.98), rgba(13, 17, 28, 0.98));
+        border: 1px solid rgba(244, 233, 216, 0.28); border-radius: 16px;
+        padding: 14px 18px 18px; color: #f0e6d2;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+        font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
       }
-      .bp-head { display: flex; justify-content: space-between; align-items: center; font-size: 15px; margin-bottom: 8px; }
-      .bp-head .bp-close { font-size: 11px; opacity: 0.55; }
-      .bp-hint { font-size: 11px; opacity: 0.55; margin: 6px 0 10px; line-height: 1.6; }
-      #bpGrid { display: flex; flex-wrap: wrap; gap: 10px; min-height: 90px; }
-      .bp-card {
-        width: 150px; background: rgba(10, 14, 24, 0.8); border: 2px solid #aab0b8; border-radius: 10px;
-        padding: 8px; display: flex; gap: 8px; cursor: pointer;
+      .bp-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+      .bp-tabs { display: flex; gap: 6px; }
+      .bp-tabs button {
+        background: rgba(244,233,216,0.08); color: #f0e6d2; border: 1px solid rgba(244,233,216,0.2);
+        border-radius: 9px; padding: 6px 22px; font-size: 14px; cursor: pointer;
       }
-      .bp-icon { width: 34px; height: 40px; display: flex; align-items: center; justify-content: center;
-        border: 1px dashed rgba(244,233,216,0.3); border-radius: 8px; }
-      .bp-info { font-size: 11px; line-height: 1.45; flex: 1; }
-      .bp-dur { height: 4px; width: 100%; background: rgba(244,233,216,0.15); border-radius: 2px; overflow: hidden; }
-      .bp-dur > div { height: 100%; }
-      .bp-btns { display: flex; flex-direction: column; gap: 4px; }
-      .bp-btns button { padding: 2px 6px; font-size: 10px; border-radius: 5px; }
-      .bp-actions { display: flex; gap: 8px; margin-top: 12px; }
+      .bp-tabs button.on { background: rgba(232,160,76,0.9); color: #241a08; border-color: rgba(232,160,76,1); font-weight: 700; }
+      .bp-res { margin-left: auto; font-size: 13px; opacity: 0.9; }
+      #bpCloseBtn { background: none; border: 1px solid rgba(244,233,216,0.25); color: #f0e6d2; border-radius: 8px; padding: 4px 10px; cursor: pointer; opacity: 0.7; }
+      #bpCloseBtn:hover { opacity: 1; }
+      .bp-hint { font-size: 11px; opacity: 0.55; margin: 8px 2px 10px; line-height: 1.6; }
+
+      .bp-main { display: flex; gap: 16px; align-items: stretch; }
+      .bp-eq { width: 268px; flex: none; display: flex; flex-direction: column; gap: 10px; }
+      .bp-eq-title, .bp-bag-title { font-size: 12px; opacity: 0.6; letter-spacing: 2px; }
+      .eq-slot {
+        border: 2px dashed rgba(244,233,216,0.22); border-radius: 12px; padding: 8px;
+        min-height: 74px; background: rgba(10, 14, 24, 0.55); transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .eq-slot.filled { border-style: solid; }
+      .eq-slot.drop-hot { border-color: #7ec97e; box-shadow: 0 0 14px rgba(126, 201, 126, 0.45); border-style: solid; }
+      .eq-slot .eq-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 58px; opacity: 0.4; font-size: 12px; gap: 3px; }
+      .eq-slot .eq-empty span { font-size: 10px; opacity: 0.7; }
+      .eq-slot .eq-k { font-size: 13px; font-weight: 700; opacity: 0.6; }
+      .eq-slot .eq-k.on { opacity: 1; color: #ffb84d; }
+      .eq-slot .eq-t { font-size: 10px; opacity: 0.5; margin-left: 8px; }
+      .eq-slot.gunslot { display: flex; align-items: center; padding-left: 14px; }
+
+      .bp-bag { flex: 1; min-width: 0; border-radius: 12px; padding: 2px 4px; transition: box-shadow 0.15s, background 0.15s; }
+      .bp-bag.drop-hot { background: rgba(126, 201, 126, 0.08); box-shadow: inset 0 0 0 2px rgba(126, 201, 126, 0.5); }
+      .bp-cat { font-size: 11px; opacity: 0.55; margin: 8px 0 6px; }
+      .bp-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 8px; min-height: 40px; }
+      .bag-empty { grid-column: 1 / -1; font-size: 12px; opacity: 0.45; padding: 14px 4px; }
+
+      /* 物品卡 */
+      .ic-card {
+        display: flex; gap: 9px; background: rgba(10, 14, 24, 0.82);
+        border: 1.5px solid #aab0b8; border-radius: 11px; padding: 8px;
+        cursor: grab; position: relative; user-select: none;
+      }
+      .ic-card.dragging { opacity: 0.35; }
+      .ic-card.static { cursor: default; }
+      .ic-icon { width: 40px; height: 46px; flex: none; display: flex; align-items: center; justify-content: center; border: 1px dashed rgba(244,233,216,0.25); border-radius: 9px; background: rgba(0,0,0,0.25); }
+      .ic-helm-shape { width: 26px; height: 15px; border-radius: 13px 13px 3px 3px; }
+      .ic-vest-shape { width: 22px; height: 28px; border-radius: 4px; }
+      .ic-info { flex: 1; min-width: 0; font-size: 11px; line-height: 1.4; }
+      .ic-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ic-dur { height: 4px; background: rgba(244,233,216,0.14); border-radius: 2px; overflow: hidden; margin: 4px 0 2px; }
+      .ic-dur > div { height: 100%; }
+      .ic-sub { opacity: 0.65; font-size: 10px; }
+      .iaff { color: #9fd48a; font-size: 10.5px; }
+      .ic-drop {
+        position: absolute; top: 5px; right: 6px; width: 18px; height: 18px; line-height: 1;
+        border-radius: 50%; border: 1px solid rgba(244,233,216,0.3); background: rgba(0,0,0,0.35);
+        color: #f0e6d2; font-size: 10px; cursor: pointer; opacity: 0; transition: opacity 0.12s;
+      }
+      .ic-card:hover .ic-drop { opacity: 0.8; }
+      .ic-drop.armed { opacity: 1 !important; background: #c0392b; border-color: #e74c3c; color: #fff; }
+
+      .drag-ghost {
+        position: fixed; left: 0; top: 0; width: 236px; z-index: 99; pointer-events: none;
+        background: rgba(16, 21, 34, 0.96); border: 1.5px solid #fff; border-radius: 11px;
+        padding: 8px; box-shadow: 0 14px 40px rgba(0,0,0,0.55);
+      }
+
+      /* 工坊页 */
+      .shop-cols { display: flex; gap: 16px; align-items: flex-start; }
+      .shop-left { flex: 1.35; min-width: 0; }
+      .shop-right { flex: 1; min-width: 0; }
+      #shopList { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow: auto; margin-bottom: 10px; }
+      .shop-chip {
+        background: rgba(10,14,24,0.8); border: 1px solid rgba(244,233,216,0.25); color: #f0e6d2;
+        border-radius: 999px; padding: 4px 12px; font-size: 11px; cursor: pointer; max-width: 100%;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .shop-chip.picked { background: rgba(232,160,76,0.85); color: #241a08; }
+      .shop-hint { font-size: 11px; color: #ffb84d; width: 100%; }
+      #shopDetail { border: 1px solid rgba(244,233,216,0.15); border-radius: 12px; padding: 10px; background: rgba(10,14,24,0.5); }
+      .shop-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+      .shop-btns button {
+        background: rgba(244,233,216,0.08); border: 1px solid rgba(244,233,216,0.28); color: #f0e6d2;
+        border-radius: 9px; padding: 8px 10px; font-size: 12px; cursor: pointer;
+      }
+      .shop-btns button:hover:not(:disabled) { border-color: rgba(232,160,76,0.8); }
+      .shop-btns button:disabled { opacity: 0.35; cursor: default; }
+      .sec-title { font-size: 12px; opacity: 0.6; letter-spacing: 2px; margin-bottom: 8px; }
+      #boxRow { display: flex; flex-direction: column; gap: 10px; }
+      .box-card { border: 1.5px solid #b0783c; border-radius: 12px; padding: 10px 12px; background: rgba(10,14,24,0.7); }
+      .box-name { font-size: 14px; font-weight: 700; }
+      .box-odds { display: flex; flex-wrap: wrap; gap: 6px; font-size: 10.5px; margin: 6px 0 8px; opacity: 0.95; }
+      .box-card button {
+        width: 100%; background: rgba(244,233,216,0.08); border: 1px solid; color: #f0e6d2;
+        border-radius: 9px; padding: 7px; font-size: 12px; cursor: pointer;
+      }
+      .box-card button:hover { background: rgba(244,233,216,0.16); }
+
       /* 左上角角色面板 */
       #pnl { position: fixed; top: 60px; left: 14px; z-index: 6; display: flex; gap: 10px; align-items: center;
         background: rgba(10, 14, 24, 0.72); border: 1px solid rgba(244,233,216,0.18); border-radius: 14px;
@@ -71,6 +195,70 @@
         background: rgba(60, 10, 10, 0.5); border: 1px solid rgba(255, 120, 120, 0.4);
         border-radius: 999px; padding: 4px 14px;
       }
+
+      /* ---- 主菜单:左右两扇毛玻璃门,背后是实时渲染的战场 ---- */
+      body.in-menu #hud-top, body.in-menu #pnl, body.in-menu #hud-state, body.in-menu #streak { visibility: hidden; }
+      #menu { position: fixed; inset: 0; z-index: 40; display: flex; pointer-events: none; }
+      .menu-seam {
+        position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px;
+        background: linear-gradient(180deg, rgba(190,215,255,0), rgba(210,230,255,0.9) 30%, rgba(210,230,255,0.9) 70%, rgba(190,215,255,0));
+        box-shadow: 0 0 22px 4px rgba(170, 200, 255, 0.55);
+        opacity: 0; pointer-events: none; transition: opacity 0.12s linear;
+      }
+      .menu-half {
+        position: absolute; top: 0; bottom: 0; width: 50.6%;
+        box-sizing: border-box;
+        backdrop-filter: blur(14px) saturate(1.15);
+        -webkit-backdrop-filter: blur(14px) saturate(1.15);
+        pointer-events: auto;
+        will-change: transform;
+      }
+      .menu-left { left: 0; background: linear-gradient(105deg, rgba(8, 10, 20, 0.82), rgba(8, 10, 20, 0.6)); border-right: 1px solid rgba(244, 233, 216, 0.14); }
+      .menu-right { right: 0; background: linear-gradient(255deg, rgba(8, 10, 20, 0.55), rgba(8, 10, 20, 0.28)); border-left: 1px solid rgba(244, 233, 216, 0.1); }
+      .menu-left { display: flex; flex-direction: column; justify-content: center; padding: 0 7% ; color: #f0e6d2; }
+      .menu-brand { font-family: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif; font-size: 46px; letter-spacing: 4px; line-height: 1.15;
+        text-shadow: 0 3px 0 rgba(0,0,0,0.55); }
+      .menu-brand span { color: #ffb14a; }
+      .menu-sub { font-size: 12px; opacity: 0.5; letter-spacing: 6px; margin: 4px 0 34px; }
+      .menu-scene-title { font-size: 12px; opacity: 0.55; letter-spacing: 4px; margin-bottom: 10px; }
+      #menuScenes { display: flex; flex-direction: column; gap: 8px; margin-bottom: 26px; }
+      .scene-card {
+        display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+        background: rgba(244, 233, 216, 0.06); border: 1.5px solid rgba(244, 233, 216, 0.18);
+        border-radius: 12px; padding: 10px 14px; color: #f0e6d2;
+        transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+      }
+      .scene-card:hover { border-color: rgba(232, 160, 76, 0.6); }
+      .scene-card.sel { border-color: #e8a04c; background: rgba(232, 160, 76, 0.14); box-shadow: 0 0 16px rgba(232, 160, 76, 0.22); }
+      .scene-card.locked { opacity: 0.38; cursor: default; }
+      .sc-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(244,233,216,0.35); flex: none; }
+      .scene-card.sel .sc-dot { background: #e8a04c; box-shadow: 0 0 8px #e8a04c; }
+      .sc-name { font-family: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif; font-size: 16px; letter-spacing: 2px; }
+      .sc-desc { margin-left: auto; font-size: 11px; opacity: 0.55; }
+      .menu-primary {
+        font-family: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif;
+        font-size: 22px; letter-spacing: 10px; color: #241a08; cursor: pointer;
+        background: linear-gradient(180deg, #ffc069, #e8973c); border: none; border-radius: 14px;
+        padding: 14px 0; width: 100%;
+        box-shadow: 0 6px 24px rgba(232, 150, 60, 0.35);
+        transition: transform 0.12s, box-shadow 0.12s;
+      }
+      .menu-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(232, 150, 60, 0.5); }
+      .menu-primary:active { transform: translateY(1px); }
+      .menu-secondary {
+        font-size: 14px; letter-spacing: 4px; color: #f0e6d2; cursor: pointer;
+        background: rgba(244, 233, 216, 0.08); border: 1px solid rgba(244, 233, 216, 0.28);
+        border-radius: 12px; padding: 10px 0; width: 100%; margin-top: 10px;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .menu-secondary:hover { border-color: rgba(232, 160, 76, 0.7); background: rgba(244, 233, 216, 0.13); }
+      .menu-links { display: flex; align-items: center; gap: 16px; margin-top: 26px; font-size: 11.5px; }
+      .menu-links a { color: #f0e6d2; opacity: 0.55; text-decoration: none; }
+      .menu-links a:hover { opacity: 0.9; }
+      .menu-tip { margin-left: auto; opacity: 0.35; font-size: 11px; }
+      .menu-right { display: flex; flex-direction: column; justify-content: flex-end; padding: 0 8% 9%; color: #f0e6d2; }
+      .menu-scene-name { font-family: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif; font-size: 34px; letter-spacing: 6px; text-shadow: 0 3px 0 rgba(0,0,0,0.5); }
+      .menu-scene-desc { font-size: 13px; opacity: 0.6; margin-top: 6px; letter-spacing: 2px; }
     </style>
   </head>
   <body>
@@ -82,7 +270,7 @@
     </script>
     <div id="hud-top" class="hud">
       <span class="pill">A / D 前后走</span><span class="pill">W 跳</span><span class="pill">S 趴下</span><span class="pill">鼠标瞄准 · 空格/左键 射击</span>
-      <span class="pill">Q/1/2 切换主副武器</span><span class="pill">Tab 武器轮盘(子弹时间) · T 切换装备</span><span class="pill">R 布娃娃测试</span><span class="pill">E 复位</span><span class="pill">G 背包</span>
+      <span class="pill">Q/1/2 切换主副武器</span><span class="pill">Tab 武器轮盘(子弹时间) · T 切换装备</span><span class="pill">R 布娃娃测试</span><span class="pill">E 复位</span><span class="pill">G 背包</span><span class="pill">Esc/P 暂停</span>
       <a class="pill" href="./weapon-editor.html" style="text-decoration:none">🎨 枪械设计器</a>
       <a class="pill" href="./index.html">← 返回陈列馆</a>
     </div>
@@ -100,14 +288,78 @@
     </div>
     <div id="hud-state" class="hud"></div>
     <div id="hud-ragdoll" class="hud"></div>
-    <div id="bp">
-      <div class="bp-panel">
-        <div class="bp-head"><span>🎒 背包 · 💰 <span id="bpCoins">0</span></span><span class="bp-close">按 G 关闭</span></div>
-        <div class="bp-hint">点卡片按钮:装备/卸下 · 修复(1金/点) · 升级品质 · 锻造(上限+50%)。合成:点「合成」进入选择模式 → 选 3 件同槽位同品质 → 再点合成确认。敌人掉的装备都是 0 耐久,修好才能穿。</div>
-        <div id="bpGrid"></div>
-        <div class="bp-actions"><button id="bpCombine">合成(3 件同品质)</button></div>
-      </div>
-    </div>
+
+    <div id="streak"><div id="streakLabel">双杀</div><div class="odo" id="streakOdo"></div></div>
+    <div id="lootToasts"></div>
+
+    <div id="menu">
+      <div class="menu-seam" id="menuSeam"></div>
+      <div class="menu-half menu-left">
+        <div class="menu-brand">魂斗罗<span>·布娃娃</span></div>
+        <div class="menu-sub">RAGDOLL CONTRA</div>
+        <div class="menu-scene-title">选 择 战 场</div>
+        <div id="menuScenes"></div>
+        <button id="menuStart" class="menu-primary">进 入 战 场</button>
+        <button id="menuGear" class="menu-secondary">装 备 整 备</button>
+        <div class="menu-links">
+          <a href="./weapon-editor.html">🎨 枪械设计器</a>
+          <a href="./index.html">← 陈列馆</a>
+          <span class="menu-tip">M 键随时回到这里</span>
+        </div>
+      </div>
+      <div class="menu-half menu-right">
+        <div class="menu-scene-name" id="menuSceneName">野外 · 月夜</div>
+        <div class="menu-scene-desc" id="menuSceneDesc">山谷哨卡 · 敌军从东线推进</div>
+      </div>
+    </div>
+
+    <div id="bp">
+      <div class="bp-panel">
+        <div class="bp-head">
+          <div class="bp-tabs">
+            <button id="tabEquip" class="on">装备</button>
+            <button id="tabShop">工坊</button>
+          </div>
+          <div class="bp-res">💰 <span id="bpCoins">0</span> · 背包 <span id="bpCount">0/24</span></div>
+          <button id="bpCloseBtn">✕</button>
+        </div>
+
+        <div id="pageEquip">
+          <div class="bp-main">
+            <div class="bp-eq">
+              <div class="bp-eq-title">已 装备</div>
+              <div class="eq-slot gunslot" id="eqGun1"></div>
+              <div class="eq-slot gunslot" id="eqGun2"></div>
+              <div class="eq-slot armor" data-slot="head" id="eqhead"></div>
+              <div class="eq-slot armor" data-slot="body" id="eqbody"></div>
+            </div>
+            <div class="bp-bag">
+              <div class="bp-bag-title">背 包</div>
+              <div class="bp-cat">头盔</div>
+              <div class="bp-cat-grid" id="bagHead"></div>
+              <div class="bp-cat">防弹衣</div>
+              <div class="bp-cat-grid" id="bagBody"></div>
+            </div>
+          </div>
+          <div class="bp-hint">拖动背包物品到左侧装备位穿戴(原装备自动回背包)· 已装备物品拖回背包卸下 · 拖出面板外丢到地面 · ✕ 两步确认丢弃 · Esc 关闭</div>
+        </div>
+
+        <div id="pageShop" style="display:none">
+          <div class="shop-cols">
+            <div class="shop-left">
+              <div class="sec-title">选 择 装备</div>
+              <div id="shopList"></div>
+              <div id="shopDetail"></div>
+            </div>
+            <div class="shop-right">
+              <div class="sec-title">开 箱</div>
+              <div id="boxRow"></div>
+            </div>
+          </div>
+          <div class="bp-hint">修复 1 金/点耐久 · 强化有成功率(失败吞金)· 锻造耐久上限 ×1.5(可叠加)· 三合一:3 件同槽位同品质 → 1 件上一档</div>
+        </div>
+      </div>
+    </div>
     <div id="bpToast"></div>
     <script>
       window.__errs = [];

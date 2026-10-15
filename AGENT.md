@@ -122,6 +122,78 @@ src/game/
 - ⚠️ **调试推帧必须传真实递增时间戳**:__frame(0) 的 dt 恒为 0 不会推进世界,
   用 __frameN(n)(内部递增 16.7ms),否则"世界冻结"是测试假象。
 
+### 主菜单(menu.js + game.html #menu)
+- **背景就是游戏本身**:菜单期间世界 0.3× 慢速待机演示(timeScale 合成最高优先级),
+  敌人巡逻但 playerAlive 传 false(不警戒不射击),玩家输入锁死。`menuIsOpen()` 全局抑制。
+- 布局 = 左右两扇毛玻璃门(各 50.6% 宽,⚠️ 必须 `box-sizing: border-box`,否则 padding
+  撑宽两半互相叠盖);左门 = 标题/场景选择/按钮,右门 = 场景名简介。
+- **开门动画必须 JS/rAF 驱动**(menu.js start/menuShow),这个 webview 里 CSS transition
+  对 backdrop-filter 元素不生效(实测不动);CSS transition 属性必须删掉,否则和 JS 每帧
+  赋值打架永远滞后。M 键回菜单 = 合门。
+- **真空门三段式**(start() 内分段插值):A 0→0.34s 开缝 6%(easeOutSine+卡顿抖动,摩擦音)
+  → B 0.34→0.5s 停顿蓄力(门缝光 .menu-seam 0.25→0.99,上扬音)→ C 0.5→0.86s easeInCubic
+  哗然全开(onSlam 回调 = main 的 addTrauma+menuFlashT 白光 + noiseBurst 气流爆音)→ 落锁闷响。
+  ⚠️ 暂停键唯一入口是 **menuToggle()**(menu.js):开着 → start() 开门,关着 → menuShow() 合门。
+  直接调 menuShow() 在菜单开着时是无操作(曾让"再按继续"失灵)。
+- 场景 = SCENES 数组(目前 1 可用 + 2 锁定占位);未来接 level.js 多关卡生成。
+- **AI/警戒(调研后重做)**:交战粘性 —— `alert` 置位后只有玩家倒下才解除
+  (距离条件会立刻覆盖远距离点名,曾是敌人永远跑不起来的 bug)。警觉来源:
+  12m 视野 / 玩家枪声传唤 26m(狙击 40m)/ 死亡惨叫 11m 惊动队友(main 的 alertEnemiesNear)/
+  挨打疼痛警觉。警戒后**冲锋**(vx=face×2.4,**不用 strafeFlip** —— 摇摆会让远程冲锋折返,
+  卡墙靠跳跃脱困)直奔 12m 交战线,到线才点射。
+- **受击反馈(确定性,不随机)**:poise 韧性条(POISE_MAX 8,肉击 ×1/爆头 ×2/甲击半,
+  停火 3/s 恢复)满 → stumble 踉跄 0.45s(倒退+禁射+打断点射)。每发都有:闪白
+  (爆头 0.22s 更久)+ 沿弹道击退(甲击减半)+ 打断瞄准。命中端材质分化:
+  甲上火花+金属叮,肉上血雾顺弹道喷(main 命中循环)。
+- HUD 隐藏走 `body.in-menu` CSS(visibility);进入后 420ms 淡入。
+- 装备整备 = 先开门进入战场,1s 后自动 bpToggle 开背包。
+
+### 字体(Google Fonts,免费可商用;用户审批的 1+2+3 组合)
+- 站酷庆科黄油体 = HUD/标题/波次横幅(canvas floater 加 `font:'hy'` 字段);
+  站酷快乐体 = 伤害数字/连杀(canvas 默认字体串 + .odo-col);思源黑体 Noto Sans SC = 全部 DOM 正文。
+- main.js 顶部 document.fonts.load 预载三种字号;离线自动回退系统字体,不会白屏。
+- fonts.html 是审批预览页(改字体方案时更新它给用户看)。
+
+### 手感层(P0 juice,main.js "手感层状态"块)
+- **全部走真实时间**,在 frame() 里衰减,不进 step()(世界时停时它们照常走):
+  hitStopT(顿帧)/ killSlowT(击杀慢放)/ slowCd(慢放冷却 1.4s,防连杀锁慢动作)/
+  trauma(震动)/ lowHpA(低血量)/ heartT(心跳相位)/ streak(连杀)/ fullMsgT。
+- **子弹时间合成优先级**:轮盘/背包 0.08 > 顿帧 0.02(硬切入、平滑出)> 击杀慢放 0.32 > 1。
+  顿帧必须 `timeScale = Math.min(timeScale, 0.02)` 硬切,慢放走指数平滑。
+- **击杀手感**:顿帧+震动+爆浆每杀都给;**慢放是里程碑奖励** —— 连杀满 5(streak%5==0,
+  0.8s 大慢放)或清场最后一杀(0.5s)才触发,普通击杀不慢放(用户反馈:每杀都慢放适得其反)。
+  died 事件的 zone/dir 由 Dummy.hit→hurt→die 一路带出来(爆头顿帧更狠、爆浆沿弹道方向)。
+- **低血量表现死亡即灭**:lowHpA 的目标计算带 `pstate.hp > 0 && !player.ragdoll` 条件,
+  否则死亡后红晕心跳还挂着(用户毙过)。
+- **trauma 震动**:抖动 = trauma²,偏移/微旋转用分层正弦伪噪声 nz()(不是随机数,
+  随机会闪烁);cam.oX/oY/oR 每帧在 updateCamera 算好,drawWorld 内 w2sC 也吃偏移
+  (狙击镜自建相机没有震动字段 → 用 `camO.oX || 0` 兜底);render() 里世界绕中心旋转
+  cam.oR,全屏遮罩层(红闪/白闪/vignette)不参与旋转。
+- **低血量**:hp<35% 起,红晕(REDVIG 径向渐变,心跳正弦脉动)+ 双响心跳音(62/55Hz)+ 
+  主链低通闷化(master→muffle 700~16000Hz)。所有 beep/noiseBurst 接 outNode()。
+- **decals**:弹孔(打墙)/血渍(击杀),上限 90 FIFO;drawWorld 在 terrain 后绘制。
+- **连杀**:3s 窗口,≥2 显示;**顶部居中公告位**(调研:里程碑公告挂中央,持续量表才挂角落);
+  滚轮数字 = 固定 2 位补零,每位竖排 0-9 胶片 translateY 滚动(cubic-bezier 过冲);阶梯配色
+  (双杀淡金 → 五连杀金 → 杀神橙 → 天下无双红);n%5==0 触发 .big 整块弹跳;死亡清零。
+  里程碑标签 双杀/三连杀/…/杀神(7+)/天下无双(10+)。
+- **拾取 toast**:捡到装备右下角品质卡(词缀行+品质),2s 消失,最多 4 张;背包满时
+  物品留在地上 + "背包已满!"floater(1.4s 节流)。
+- 调试:`window.__feel()` = { hitStopT, killSlowT, trauma, streak, lowHpA, timeScale, menu }。
+
+### 背包 v2(backpack.js 重写 + game.html 新结构)
+- 居中卡片双页签:**装备**(左已装备区/右背包按类别分组,指针拖拽)+ **工坊**(选中装备
+  修复/强化/锻造/三合一 + 三档开箱)。
+- **拖拽用 Pointer Events**(鼠标触屏通吃):背包卡→对应装备位=穿戴(同槽旧件自动回包);
+  已装备→背包区=卸下(背包满禁止);拖出面板外=丢到地面。window 级 pointermove/up 兜底,
+  元素上只挂 pointerdown;7px 位移阈值区分点击/拖拽;ghost 跟随 + elementFromPoint 高亮落点。
+- **容量 BP_CAP=24**(已穿戴不占格):invIsFull/invUsedCount。
+- **丢弃拾回必须完整保留词缀/耐久**:世界掉落两种类型 —— 'armor'(敌人掉落,invAddDrop
+  现掷词缀)与 **'armorRef'(带完整 item 对象,invTakeItem 取出/invInsertItem 放回)**。
+  别把丢弃的东西再 invAddDrop 重掷一遍,词缀会丢。
+- **开箱**(inventory.js BOXES/invOpenBox):青铜50/白银140/黄金320,品质权重表,金币在
+  invSpend 后、若背包满会退币。
+- 背包的枪槽是展示位(main 注入 bpSetGunInfo);丢弃回调 main 注入 bpSetWorldDrop。
+
 ### 狙击枪(hitscan + 放大镜 + 站桩)
 - AWP mode='hitscan':开枪不生成子弹,发 hitscanShot 事件 → main.js castRay(slab 法射线 vs 地形 AABB)
   → beams[] 光束(0.16s 衰减三层描边)。沿途伤害:applyHitscanDamage 按沿线投影排序,
@@ -252,6 +324,10 @@ src/game/
    createBufferSource 是否被调用定位是"没出声"还是"没合成"。
 10. **动画计时器设了就要衰减**:护甲碎裂白闪 `ghostT` 曾只赋值 0.45 从不递减,
     整屏常白。所有 `-T` 后缀计时器统一在 step() 尾部 `Math.max(0, x - dt)`。
+11. **自动化测 DOM 拖拽用合成 PointerEvent**:浏览器自动化工具的 drag/click 在部分环境
+    不把事件派发进页面(且每次 open 都会重新导航,页面状态会重置)。游戏监听器是普通
+    DOM 监听,不依赖 isTrusted —— `el.dispatchEvent(new PointerEvent(...))` 三连
+    (down 在元素上 / move+up 在 window 上)即可完整驱动拖拽逻辑,结果可信。
 
 ## 设计器数据格式
 

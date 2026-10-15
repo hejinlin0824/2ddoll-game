@@ -10,6 +10,7 @@ import { LEVEL } from './level.js';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const ALERT_R = 12, DEALERT_R = 16;
+const POISE_MAX = 8; // 韧性条上限(普通兵):约 3 发肉击或 5 发甲击必踉跄
 // 绿头巾敌兵配色(和主角区分)
 const ENEMY_PALETTE = {
   pants: '#4a4030', pantsDark: '#38311f',
@@ -40,6 +41,10 @@ export class Dummy {
     this.respawnT = 0;
     this.fireT = 1.2 + Math.random();
     this.burstLeft = 0; this.burstCd = 0;
+    this.strafeFlip = 1; // 走位方向翻转(虽然用处所有 || 1 兜底,但显式初始化不欠账)
+    this.deadT = 0;      // 波次模式尸体存留计时
+    this.poise = 0;      // 韧性条:连续受击积累,满了踉跄(确定性规则,不是随机踉跄)
+    this.staggerT = 0;   // 踉跄剩余时间:站不稳、开不了枪
     this.ai = { left: false, right: false, down: false, fire: false, jumpPressed: false, aim: null };
     this.spawnEnemy();
   }
@@ -79,33 +84,84 @@ export class Dummy {
 
   zoneAt(px, py) {
     const t = this.p.torso.getPosition();
-    const dx = px - t.x, dy = py - t.y;
+    // 世界 → 躯干局部坐标(随躯干旋转):布娃娃倾斜/倒地时部位判定跟着转,不再硬套固定盒
+    const a = this.p.torso.getAngle();
+    const c = Math.cos(a), s = Math.sin(a);
+    const wx = px - t.x, wy = py - t.y;
+    const dx = c * wx + s * wy;
+    const dy = -s * wx + c * wy;
     if (Math.abs(dx) <= 0.16 && Math.abs(dy - 0.53) <= 0.17) return 'head';
     if (Math.abs(dx) <= 0.17 && Math.abs(dy) <= 0.29) return 'body';
     if (Math.abs(dx) <= 0.15 && dy <= -0.29 && dy >= -0.83) return 'legs';
     return null;
   }
 
+  // 视线检测(slab 法射线 vs 地形盒):无视线不开枪 —— 以前会朝着山体傻射
+  hasLOS(x0, y0, x1, y1) {
+    const dx = x1 - x0, dy = y1 - y0;
+    for (const r of LEVEL.rects) {
+      let tmin = 0, tmax = Infinity, blocked = true;
+      const axes = [[x0, dx, r.x, r.w / 2], [y0, dy, r.y, r.h / 2]];
+      for (const [o, d, cc, h] of axes) {
+        if (Math.abs(d) < 1e-9) {
+          if (Math.abs(o - cc) > h) { blocked = false; break; }
+        } else {
+          let t1 = (cc - h - o) / d, t2 = (cc + h - o) / d;
+          if (t1 > t2) { const tt = t1; t1 = t2; t2 = tt; }
+          tmin = Math.max(tmin, t1);
+          tmax = Math.min(tmax, t2);
+          if (tmin > tmax) { blocked = false; break; }
+        }
+      }
+      if (blocked && tmin > 0.02 && tmin < 1) return false; // 交点落在线段内 = 被挡
+    }
+    return true;
+  }
+
   // 击中部位:有甲先扣耐久(承伤=伤害),归零报碎;无甲扣血。dir = 子弹方向(死亡布娃娃受力)
+  // 受击反馈(确定性,调研结论:踉跄规则要可预期,玩家潜意识讨厌纯随机):
+  //  每发都有的:闪白 + 沿弹道击退 + 打断瞄准;韧性条满 → 踉跄(站不稳开不了枪 0.45s)
+  //  爆头夸张化:双倍韧性 + 更久闪白(奖励精确射击)
   hit(zone, dmg, dir) {
     if (!this.alive) return null;
-    this.flashT = 0.14; // 受击闪白
+    const head = zone === 'head';
+    this.flashT = head ? 0.22 : 0.14; // 受击闪白(爆头更久)
+    this.alert = true; // 疼痛警觉:挨打立知有敌
     let broke = null;
+    // 沿弹道击退:每发都推一下布娃娃(肉击全额,甲击减半 —— 打甲上闷响,打肉上踉跄)
+    const kb = (head ? 1.6 : 1) * Math.min(2.2, 0.5 + dmg * 0.12);
+    const v = this.p.torso.getLinearVelocity();
+    this.p.torso.setLinearVelocity(Vec2(v.x + dir.x * kb, v.y + dir.y * kb * 0.5 + (head ? 0.8 : 0.3)));
     const armor = this.armor[zone];
     if (armor && armor.dur > 0) {
       armor.dur = Math.max(0, armor.dur - dmg);
       if (armor.dur === 0) broke = zone;
+      this.poise += dmg * 0.5 * (head ? 1.5 : 1);
+      this.fireT = Math.max(this.fireT, 0.22); // 打断瞄准(被压制)
+      if (this.poise >= POISE_MAX) this.stumble(dir);
       return { broke, absorbed: true };
     }
-    this.hurt(dmg, dir);
+    this.poise += dmg * (head ? 2 : 1);
+    if (this.poise >= POISE_MAX) this.stumble(dir);
+    this.hurt(dmg, dir, zone);
     return { broke: null, absorbed: false };
   }
 
-  hurt(dmg, dir) {
+  // 踉跄:韧性条满触发,确定性 —— 连续命中 3~4 发必踉跄,期间开不了枪站不稳
+  stumble(dir) {
+    this.poise = 0;
+    this.staggerT = 0.45;
+    this.burstLeft = 0;
+    this.fireT = Math.max(this.fireT, 0.7);
+    const v = this.p.torso.getLinearVelocity();
+    this.p.torso.setLinearVelocity(Vec2(v.x + dir.x * 3.2, v.y + 1.6));
+  }
+
+  hurt(dmg, dir, zone) {
     if (!this.alive) return;
     this.flashT = 0.09; // 受击闪白(近战/枪击通用)
     this.hp = Math.max(0, this.hp - dmg);
-    if (this.hp <= 0) this.die(dir || { x: this.face, y: 0.2 });
+    if (this.hp <= 0) this.die(dir || { x: this.face, y: 0.2 }, zone);
   }
 
   knockback(vx, vy) {
@@ -114,7 +170,7 @@ export class Dummy {
   }
 
   // 死亡:布娃娃倒地(Player.setRagdoll 自带关节瘫软),掉落由事件抛给 main
-  die(dir) {
+  die(dir, zone) {
     this.alive = false;
     this.respawnT = this.respawn ? 3.5 : 0;
     this.p.setRagdoll(true);
@@ -124,7 +180,8 @@ export class Dummy {
     for (const slot of ['head', 'body']) {
       if (Math.random() < 0.5) drops.push({ slot, quality: this.quality });
     }
-    this.events.push({ type: 'died', x: this.x, y: this.y, coins: 3 + Math.floor(Math.random() * 6), drops });
+    // zone/dir 给 main 的手感层:爆头击杀顿帧更狠、爆浆沿弹道方向喷
+    this.events.push({ type: 'died', x: this.x, y: this.y, zone, dir, coins: 3 + Math.floor(Math.random() * 6), drops });
   }
 
   // 尸体受击:子弹继续推动布娃娃
@@ -132,6 +189,13 @@ export class Dummy {
     if (this.alive) return;
     const v = this.p.torso.getLinearVelocity();
     this.p.torso.setLinearVelocity(Vec2(v.x + dir.x * power, v.y + dir.y * power + 0.5));
+  }
+
+  // 被枪声/队友传唤点名:进入战斗状态(主动跑向交战距离,不再站桩等你走近)
+  alertTo() {
+    if (!this.alive) return;
+    this.alert = true;
+    this.flashT = Math.max(this.flashT, 0.12); // 惊觉一颤
   }
 
   // AI:合成虚拟手柄驱动内部 Player
@@ -177,24 +241,43 @@ export class Dummy {
     const tp = this.p.torso.getPosition();
     const pp = player ? player.torso.getPosition() : tp;
     const dist = Math.hypot(pp.x - tp.x, pp.y - tp.y);
-    if (playerAlive && dist < ALERT_R) this.alert = true;
-    else if (!playerAlive || dist > DEALERT_R) this.alert = false;
+    // 交战粘性:进入战斗后保持警戒直到玩家倒下 —— 否则"远处点名"会被距离条件立刻覆盖
+    // (敌人要跑步穿过大半张地图来交战,途中距离始终 > DEALERT_R,不能拿它当解除条件)
+    if (!playerAlive) this.alert = false;
+    else if (!this.alert && dist < ALERT_R) this.alert = true;
+    this.staggerT = Math.max(0, this.staggerT - dt);
+    this.poise = Math.max(0, this.poise - dt * 3); // 韧性缓慢恢复(停火 2.7s 清空)
 
     let vx = 0;
     if (this.alert && playerAlive) {
       this.face = pp.x >= tp.x ? 1 : -1;
       ai.aim = { x: pp.x + (Math.random() - 0.5) * 0.7, y: pp.y + (Math.random() - 0.5) * 0.5 };
-      // 走位:保持 6~10m(卡墙换边时方向翻转)
       const sf = this.strafeFlip || 1;
-      if (dist > 10) vx = this.face * 1.7 * sf;
-      else if (dist < 5) vx = -this.face * 1.2 * sf;
-      // 点射:1.5s 一轮,一轮 2~4 发
-      this.fireT -= dt;
-      if (this.fireT <= 0) { this.burstLeft = 2 + Math.floor(Math.random() * 3); this.fireT = 1.5 + Math.random(); }
-      if (this.burstLeft > 0) {
-        this.burstCd -= dt;
-        if (this.burstCd <= 0) { ai.fire = true; this.burstLeft--; this.burstCd = 0.13; }
+      const los = this.hasLOS(tp.x, tp.y + 0.45, pp.x, pp.y + 0.45); // 胸口高度对射视线
+      if (this.staggerT > 0) {
+        vx = -this.face * 0.5; // 踉跄:控制不住往后倒
+      } else if (dist > 12 || !los) {
+        vx = this.face * 2.4; // 冲锋:直奔 12m 交战线;失去视线也逼近(贴近了往往绕出障碍)
+      } else if (dist > 10) {
+        vx = this.face * 1.7 * sf; // 走位:保持 6~10m(卡墙换边时方向翻转)
+      } else if (dist < 5) {
+        vx = -this.face * 1.2 * sf;
       }
+      // 点射:1.5s 一轮,一轮 2~4 发;交战距离(≤12m)+ 有视线才开火,踉跄中打不了
+      this.fireT -= dt;
+      if (this.fireT <= 0 && this.staggerT <= 0 && dist <= 12 && los) {
+        this.burstLeft = 2 + Math.floor(Math.random() * 3);
+        this.fireT = 1.5 + Math.random();
+      }
+      if (this.burstLeft > 0) {
+        if (!los) this.burstLeft = 0; // 射击中途视线断了:立即停手,不往墙上糊子弹
+        else {
+          this.burstCd -= dt;
+          if (this.burstCd <= 0) { ai.fire = true; this.burstLeft--; this.burstCd = 0.13; }
+        }
+      }
+      // 玩家在近处的高台上:起跳去够(以前只有卡墙才跳,永远趴在高台下面挨不着)
+      if (this.staggerT <= 0 && this.p.grounded && pp.y > tp.y + 0.9 && dist < 3.4) ai.jumpPressed = true;
     } else if (this.behavior === 'patrol') {
       const target = this.spawn.x + (this.patrolDir > 0 ? this.max : this.min);
       // 提前 0.3m 掉头(滞后):防止在边界处来回抖动

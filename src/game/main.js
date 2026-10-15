@@ -3,12 +3,19 @@ import { World, Vec2 } from 'planck';
 import { LEVEL, buildLevel, groundYAt, drawSky, drawParallax, drawTerrain, drawForeground } from './level.js';
 import { Player } from './player.js';
 import { loadSavedGun, EQUIP_PRESETS, QUALITY } from './gunPresets.js';
-import { computeArmorMods } from './affixes.js';
+import { computeArmorMods, itemTitle, AFFIX_BY_ID } from './affixes.js';
 import { WeaponWheel } from './wheel.js';
 import { Dummy } from './enemies.js';
 import { WaveDirector } from './waves.js';
-import { invLoad, invGet, invEquipped, invSetEquipped, invSave, invAddCoins, invAddDrop } from './inventory.js';
-import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire } from './backpack.js';
+import { invLoad, invGet, invEquipped, invSetEquipped, invSave, invAddCoins, invAddDrop, invIsFull, invInsertItem } from './inventory.js';
+import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire, bpSetWorldDrop, bpSetGunInfo } from './backpack.js';
+import { menuInit, menuIsOpen, menuShow, menuToggle } from './menu.js';
+
+// webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
+if (document.fonts?.load) {
+  ['900 24px "ZCOOL QingKe HuangYou"', '900 24px "ZCOOL KuaiLe"', '400 14px "Noto Sans SC"']
+    .forEach((f) => document.fonts.load(f).catch(() => {}));
+}
 import { QUALITY as Q } from './gunPresets.js';
 
 const W = 1280, H = 720;
@@ -52,13 +59,47 @@ const pstate = { hp: 30, maxHp: 30, deadT: 0 };
 function freshPstate() { return { hp: 30, maxHp: 30, deadT: 0 }; }
 const floaters = [];   // 受击数字
 const pickups = [];    // 掉落物:金币 / 0 耐久装备
+const decals = [];     // 地面痕迹:弹孔/血渍(容量上限 FIFO)
 let ghostT = 0;        // 护甲碎裂白闪+重影
+
+// ---- 手感层状态(全部走真实时间,在 frame() 里衰减)----
+let hitStopT = 0;      // 顿帧:世界近冻结(重击/击杀)
+let killSlowT = 0;     // 击杀慢动作:0.32× 速
+let slowCd = 0;        // 慢动作冷却(防止连续击杀把游戏锁在慢动作里)
+let trauma = 0;        // 屏幕震动 trauma(0~1,实际抖动 = trauma²)
+let lowHpA = 0;        // 低血量表现强度(平滑)
+let heartT = 0;        // 心跳相位
+let streak = 0;        // 连杀计数(3s 窗口)
+let streakT = 0;
+let fullMsgT = 0;      // "背包已满"提示节流
+const addTrauma = (x) => { trauma = Math.min(1, trauma + x); };
+function hitStop(d) { hitStopT = Math.max(hitStopT, d); }
+// 慢放不再是每杀都送:连杀满 5 或清场最后一杀才触发(普通击杀只有顿帧+震动+爆浆)
+function killSlow(dur = 0.45) {
+  if (slowCd > 0) return;
+  slowCd = 1.6;
+  killSlowT = Math.max(killSlowT, dur);
+}
 // 玩家装备视觉/耐久绑定到背包里的"已装备"实例
 const VISUAL = () => ({ head: EQUIP_PRESETS.helmet_military, body: EQUIP_PRESETS.vest_light });
 invLoad();                  // 背包存档(首次自动发新手装)
 syncArmorFromInventory();   // 玩家外观/耐久绑定到已装备实例
 bpInit(() => syncArmorFromInventory()); // 背包里装备/修复/升级后同步到玩家
+bpSetWorldDrop((item) => { // 背包拖出丢弃 = 完整物品(词缀/耐久保留)落回世界
+  const p = player.torso.getPosition();
+  pickups.push({
+    type: 'armorRef', item, slot: item.slot, quality: item.quality,
+    x: p.x + (Math.random() - 0.5) * 0.5, y: p.y + 0.5,
+    vx: (Math.random() - 0.5) * 3.2, vy: 4.5, t: 0,
+  });
+});
 bpWire(); // ★ 绑定合成/背包按钮事件(漏掉这行合成按钮就是死的)
+bpSetGunInfo(() => ({ main: player.gunDef?.name || '主武器', side: '手枪', weapon: player.weapon }));
+menuInit({
+  beep,
+  noiseBurst,
+  onSlam: () => { addTrauma(0.45); menuFlashT = 0.22; }, // 真空门全开瞬间:震屏 + 白光掠过
+}); // 主菜单:背景=实时场景,进入时先开缝、停顿、再哗然划开
 
 function syncArmorFromInventory() {
   const h = invEquipped('head'), b = invEquipped('body');
@@ -80,8 +121,9 @@ function syncArmorFromInventory() {
   pstate.maxHp = 30 + (mh?.hpMaxFlat || 0) + (mb?.hpMaxFlat || 0);
   pstate.hp = Math.min(pstate.hp, pstate.maxHp);
 }
-window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves }); // 调试句柄
+window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals }); // 调试句柄
 window.__actx = () => actx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
+window.__feel = () => ({ hitStopT, killSlowT, trauma, streak, streakT, lowHpA, timeScale, menu: menuIsOpen() }); // 调试:手感层状态
 
 // 枪械设计器保存后,游戏页实时换枪/换装(storage 事件跨标签页触发)
 window.addEventListener('storage', (e) => {
@@ -105,6 +147,20 @@ const KEYMAP = {
   Space: 'fire',
 };
 window.addEventListener('keydown', (e) => {
+  const pauseKey = e.code === 'Escape' || e.code === 'KeyP' || e.code === 'KeyM';
+  if (bpIsOpen() && pauseKey) return; // 背包开着:Esc 归背包关背包,其余暂停键忽略
+  if (menuIsOpen()) {
+    // 主菜单/暂停期间:再按暂停键 = 开门继续战斗;其余按键全部吞掉(防背后开枪/切武器)
+    if (pauseKey && !e.repeat) { e.preventDefault(); menuToggle(); initAudio(); }
+    if (e.code === 'Tab') e.preventDefault();
+    return;
+  }
+  if (pauseKey && !e.repeat) {
+    if (wheel.open) wheel.forceClose();
+    menuToggle(); // 暂停 = 主菜单合门,世界进入慢速待机
+    initAudio();
+    return;
+  }
   // Tab = 武器轮盘:必须 preventDefault,否则浏览器焦点会切走
   if (e.code === 'Tab') {
     e.preventDefault();
@@ -180,26 +236,36 @@ function resetPlayer() {
   player.destroy();
   player = new Player(world, Vec2(LEVEL.spawn.x, LEVEL.spawn.y));
   Object.assign(pstate, freshPstate()); // 复位血量与护甲耐久
+  streak = 0; streakT = 0; streakHide(); // 死亡清空连杀
 }
 
 // ---- 极简音效(WebAudio 合成,无素材)----
 let actx = null;
+let master = null, muffle = null; // 主链:master → 低通闷化 → 扬声器(低血量时压截止频率)
 function initAudio() {
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { /* 无音频 */ } }
+  if (actx && !master) {
+    master = actx.createGain();
+    muffle = actx.createBiquadFilter();
+    muffle.type = 'lowpass'; muffle.frequency.value = 16000;
+    master.connect(muffle); muffle.connect(actx.destination);
+  }
   // 自动播放策略:即使在手势里创建,Context 也可能停在 suspended,必须显式恢复
   if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
 }
-function beep(f0, f1, dur, type = 'square', vol = 0.08) {
+const outNode = () => master || actx.destination;
+function beep(f0, f1, dur, type = 'square', vol = 0.08, at = 0) {
   if (!actx) return;
   try {
+    const t0 = actx.currentTime + at;
     const o = actx.createOscillator(), g = actx.createGain();
     o.type = type;
-    o.frequency.setValueAtTime(f0, actx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), actx.currentTime + dur);
-    g.gain.setValueAtTime(vol, actx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
-    o.connect(g).connect(actx.destination);
-    o.start(); o.stop(actx.currentTime + dur);
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t0 + dur);
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g).connect(outNode());
+    o.start(t0); o.stop(t0 + dur);
   } catch { /* 忽略 */ }
 }
 // ---- 枪声合成器(三层:低频thump + 主体crack + 噪声爆,参数来自武器词条,音色分明)----
@@ -232,7 +298,7 @@ function noiseBurst(dur = 0.05, vol = 0.08, cutoff = 1200) {
     const g = actx.createGain();
     g.gain.setValueAtTime(vol, actx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
-    src.connect(f).connect(g).connect(actx.destination);
+    src.connect(f).connect(g).connect(outNode());
     src.start();
     src.stop(actx.currentTime + dur);
   } catch { /* 忽略 */ }
@@ -252,10 +318,10 @@ const waves = new WaveDirector(world, {
   onEvent: (ev) => {
     const p = player.torso.getPosition();
     if (ev.type === 'wave') {
-      floaters.push({ x: p.x, y: p.y + 2.1, vy: 1.1, text: `—— 第 ${ev.wave} 波 · ${ev.count} 人 ——`, color: '#ffb14a', size: 24, bold: true, life: 1.6, max: 1.6 });
+      floaters.push({ x: p.x, y: p.y + 2.1, vy: 1.1, text: `—— 第 ${ev.wave} 波 · ${ev.count} 人 ——`, color: '#ffb14a', size: 24, bold: true, font: 'hy', life: 1.6, max: 1.6 });
       beep(330, 660, 0.18, 'square', 0.07);
     } else if (ev.type === 'allclear') {
-      floaters.push({ x: p.x, y: p.y + 2.1, vy: 0.9, text: '全部清场!你赢了 🎉', color: '#ffd24a', size: 28, bold: true, life: 3, max: 3 });
+      floaters.push({ x: p.x, y: p.y + 2.1, vy: 0.9, text: '全部清场!你赢了 🎉', color: '#ffd24a', size: 28, bold: true, font: 'hy', life: 3, max: 3 });
       beep(523, 1046, 0.4, 'square', 0.09);
     }
   },
@@ -276,6 +342,7 @@ function spawnBullet(x, y, dx, dy, st, damage, faction = 'player') {
 }
 
 let hitFlashT = 0; // 玩家受击红闪 // 玩家受击红闪
+let menuFlashT = 0; // 主菜单开门"哗"瞬间的白光掠过
 
 // 护甲碎片:头盔击飞 / 背心碎裂(品质色)
 function spawnHelmetDebris(x, y, quality) {
@@ -297,12 +364,112 @@ function spawnVestDebris(x, y, quality) {
   }
 }
 
-// 玩家受击部位判定(轴对齐近似):头圆/躯干盒/腿区
+// ---- 地面痕迹:弹孔 / 血渍(FIFO 上限,防止长局堆积)----
+function addDecal(kind, x, y, ang, size) {
+  decals.push({ kind, x, y, ang, size, life: 9, max: 9 });
+  if (decals.length > 90) decals.shift();
+}
+
+// ---- 击杀爆浆:血雾粒子 + 大块碎肉(复用碎片旋转矩形)+ 地面血渍 ----
+function gibBurst(x, y, dir) {
+  const cols = ['#c9563c', '#a83a28', '#e06a50'];
+  for (let i = 0; i < 18; i++) {
+    particles.push({
+      x, y: y + 0.2,
+      vx: dir.x * (2 + Math.random() * 5) + (Math.random() - 0.5) * 4,
+      vy: dir.y * 3 + 2 + Math.random() * 5,
+      life: 0.5 + Math.random() * 0.4, size: 2.2 + Math.random() * 2.6,
+      color: cols[i % 3], grav: 1,
+    });
+  }
+  for (let i = 0; i < 4; i++) {
+    debris.push({
+      type: 'shard', color: '#7d2a1e', w: 4 + Math.random() * 5, h: 3 + Math.random() * 4,
+      x, y: y + 0.2,
+      vx: dir.x * (1.5 + Math.random() * 3) + (Math.random() - 0.5) * 3,
+      vy: 2 + Math.random() * 3.5,
+      va: (Math.random() - 0.5) * 18, angle: Math.random() * 3, life: 1.4, max: 1.4,
+    });
+  }
+  addDecal('blood', x, groundYAt(x, y) + 0.02, 0, 0.3 + Math.random() * 0.25);
+}
+
+// ---- 连杀计数(里程牌 + 滚轮数字)----
+// 调研结论:里程碑公告放顶部居中(DMC 式持续量表才挂角落);等级越高颜色越热
+const STREAK_LABEL = (n) => n >= 10 ? '天下无双' : n >= 7 ? '杀神' : n === 6 ? '六连杀' : n === 5 ? '五连杀' : n === 4 ? '四连杀' : n === 3 ? '三连杀' : '双杀';
+const STREAK_TIER = (n) => n >= 10 ? { c: '#ff5b4a', glow: '#ff8a5c' } : n >= 7 ? { c: '#ff9a3c', glow: '#ffb14a' } : n >= 5 ? { c: '#ffc21c', glow: '#ffd24a' } : { c: '#ffe9a8', glow: '#fff2cc' };
+const odoEl = () => document.getElementById('streakOdo');
+function streakShow(n) {
+  const box = document.getElementById('streak');
+  if (!box) return;
+  const tier = STREAK_TIER(n);
+  const lbl = document.getElementById('streakLabel');
+  lbl.textContent = STREAK_LABEL(n);
+  lbl.style.color = tier.c;
+  lbl.style.textShadow = `0 0 18px ${tier.glow}88, 0 2px 10px rgba(0,0,0,0.8)`;
+  // 滚轮数字:固定位数(补零),每位一根竖排 0-9 胶片,换数时 translateY 滚动
+  const odo = odoEl();
+  const str = String(Math.min(99, n)).padStart(2, '0');
+  while (odo.children.length < str.length) {
+    const col = document.createElement('span');
+    col.className = 'odo-col' + (odo.children.length === 0 ? ' dim' : '');
+    const strip = document.createElement('span');
+    strip.className = 'odo-strip';
+    strip.innerHTML = '0123456789'.split('').map((d) => `<div>${d}</div>`).join(''); // 竖排胶片
+    col.appendChild(strip);
+    odo.appendChild(col);
+  }
+  [...odo.children].forEach((col, i) => {
+    col.querySelector('.odo-strip').style.transform = `translateY(-${+str[i]}em)`;
+    col.style.color = i === 0 && +str[i] === 0 ? '' : tier.c;
+    col.classList.toggle('dim', +str[i] === 0 && i === 0); // 前导零淡化
+  });
+  box.classList.remove('show', 'big');
+  void box.offsetWidth; // 重置动画
+  box.classList.add('show');
+  if (n % 5 === 0) box.classList.add('big'); // 里程碑:整块弹大
+}
+function streakHide() {
+  const box = document.getElementById('streak');
+  if (box) box.classList.remove('show');
+}
+
+// ---- 拾取 toast:右下角品质卡,2s 消失(刷宝的爽点在捡到那一眼)----
+const SLOT_LABEL = { head: '头盔', body: '防弹衣' };
+function lootToast(item) {
+  const box = document.getElementById('lootToasts');
+  if (!box) return;
+  const q = QUALITY[item.quality] || { color: '#aab0b8', label: item.quality };
+  const el = document.createElement('div');
+  el.className = 'loot-card';
+  el.style.borderColor = q.color;
+  el.style.boxShadow = `0 0 14px ${q.color}55, inset 0 0 22px ${q.color}18`;
+  const lines = (item.affixes || []).map((a) => {
+    const def = AFFIX_BY_ID[a.id];
+    return def ? `<div class="loot-affix">${def.label} · ${def.fmt(a.v)}</div>` : '';
+  }).join('');
+  el.innerHTML = `
+    <div class="loot-title" style="color:${q.color}">${itemTitle(item.affixes || [], SLOT_LABEL[item.slot] || item.slot)}</div>
+    <div class="loot-q">${q.label}${item.dur <= 0 ? ' · 耐久 0(待修复)' : ''}</div>
+    ${lines}`;
+  box.appendChild(el);
+  while (box.children.length > 4) box.removeChild(box.firstChild);
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 320);
+  }, 2000);
+}
+
+// 玩家受击部位判定(随躯干旋转到局部坐标:趴下/倾斜时判定跟着姿态走,和敌人 zoneAt 同款)
 function playerZoneAt(px, py) {
   const h = player.head.getPosition();
-  if (Math.hypot(px - h.x, py - h.y) <= 0.18) return 'head';
+  if (Math.hypot(px - h.x, py - h.y) <= 0.18) return 'head'; // 头是独立刚体,世界坐标圆判定天然随姿态
   const t = player.torso.getPosition();
-  const dx = px - t.x, dy = py - t.y;
+  const a = player.torso.getAngle();
+  const c = Math.cos(a), s = Math.sin(a);
+  const wx = px - t.x, wy = py - t.y;
+  const dx = c * wx + s * wy;
+  const dy = -s * wx + c * wy;
   if (Math.abs(dx) <= 0.17 && Math.abs(dy) <= 0.29) return 'body';
   if (Math.abs(dx) <= 0.15 && dy <= -0.29 && dy >= -0.82) return 'legs';
   return null;
@@ -324,6 +491,14 @@ function hitTerrain(x, y) {
     if (Math.abs(x - r.x) < r.w / 2 && Math.abs(y - r.y) < r.h / 2) return true;
   }
   return false;
+}
+
+// 惊动范围内的敌人(枪声/惨叫传唤):智能感的关键 —— 打远处的兵,他一队的都会动起来
+function alertEnemiesNear(pos, r) {
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (Math.hypot(e.x - pos.x, e.y - pos.y) < r) e.alertTo();
+  }
 }
 
 // 射线 vs 轴对齐盒(slab 法),返回最近入射距离,不相交返回 Infinity
@@ -382,14 +557,13 @@ const hud = {
 
 let debugDraw = false;
 
-// ---- 世界坐标 -> 屏幕(狙击开镜时整体按 cam.zoom 放大) ----
+// ---- 世界坐标 -> 屏幕(狙击开镜时整体按 cam.zoom 放大)----
+// 震动不再随机抖:trauma² × 平滑噪声,每帧算好 cam.oX/oY/oR,全画面共用(带轻微旋转让打击更"沉")
 function w2s(wx, wy) {
   const z = cam.zoom;
-  const jx = cam.shake > 0 ? (Math.random() - 0.5) * cam.shake * 14 : 0;
-  const jy = cam.shake > 0 ? (Math.random() - 0.5) * cam.shake * 14 : 0;
   return [
-    (wx - cam.x) * PPM * z + W / 2 + jx,
-    H * 0.60 - (wy - cam.y) * PPM * z + jy,
+    (wx - cam.x) * PPM * z + W / 2 + cam.oX,
+    H * 0.60 - (wy - cam.y) * PPM * z + cam.oY,
   ];
 }
 
@@ -407,7 +581,11 @@ function aimWorld() {
 // ---- 物理步进 ----
 function step(dt) {
   input.aim = aimWorld();
-  if (wheel.open || bpIsOpen()) input.fire = false; // 轮盘/背包期间禁火
+  if (wheel.open || bpIsOpen() || menuIsOpen()) {
+    // 轮盘/背包/主菜单期间禁火;主菜单还锁走位(待机演示画面)
+    input.fire = false;
+    if (menuIsOpen()) { input.left = input.right = input.down = false; }
+  }
   player.update(dt, input);
   input.jumpPressed = false;
 
@@ -424,7 +602,8 @@ function step(dt) {
       flashT = 0.07; flashPos = { x: ev.x, y: ev.y };
       flashAng = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       flashR = st.damage >= 25 ? 38 : 30;
-      cam.shake = Math.min(0.6, cam.shake + 0.09 * st.recoil);
+      addTrauma(0.035 + 0.02 * st.recoil); // 开枪:与武器后坐词条挂钩的轻震
+      alertEnemiesNear({ x: ev.x, y: ev.y }, 26); // 枪声传唤 26m 内的敌人
       gunSynth(st.sfx); // 每把枪自己的音色词条
     } else if (ev.type === 'hitscanShot') {
       const st = ev.stats;
@@ -435,7 +614,8 @@ function step(dt) {
       burst(ex, ey, 10, '#cfe8ff', 5);
       flashT = 0.09; flashPos = { x: ev.x, y: ev.y }; flashR = 48;
       flashAng = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
-      cam.shake = Math.min(0.8, cam.shake + 0.28);
+      addTrauma(0.22); // 狙击:大震
+      alertEnemiesNear({ x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传唤更远
       gunSynth(st.sfx);
       beep(2400, 200, 0.16, 'square', 0.045); // 高频"滋"的激光层
       applyHitscanDamage(ev, tEnd);
@@ -461,6 +641,7 @@ function step(dt) {
         if ((dx * ev.dx + dy * ev.dy) / (dist || 1) < 0.35) continue; // 约 ±70° 扇形
         e.hurt?.(dmg);
         e.knockback?.(dx / dist * (ev.shield ? 9 : 3.5), ev.shield ? 4 : 2);
+        addTrauma(0.1); hitStop(0.025); // 近战命中:短促顿挫
         // 汲血词条:近战命中回血
         if (player.meleeLsPct) pstate.hp = Math.min(pstate.maxHp, pstate.hp + player.meleeLsPct);
       }
@@ -475,7 +656,7 @@ function step(dt) {
       beep(260, 540, 0.14, 'square', 0.05);
     } else if (ev.type === 'land') {
       burst(ev.x, ev.y, ev.hard ? 14 : 7, '#9a8a70', ev.hard ? 5 : 3);
-      if (ev.hard) cam.shake = 0.5;
+      if (ev.hard) { addTrauma(0.25); hitStop(0.03); }
       beep(150, 60, 0.1, 'sine', 0.07);
     } else if (ev.type === 'step') {
       burst(ev.x, ev.y, 2, '#8a7a60', 1.4);
@@ -537,14 +718,26 @@ function step(dt) {
         const zone = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
         if (!zone) continue;
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;
-        const res = e.hit(zone, b.damage * mult, { x: b.vx / (sp || 1), y: b.vy / (sp || 1) });
+        const bdir = { x: b.vx / (sp || 1), y: b.vy / (sp || 1) };
+        const res = e.hit(zone, b.damage * mult, bdir);
         // 吸血词条:按造成伤害回血(护甲吸收的部分减半)
         const lsPct = (player.lifestealPct || 0);
         if (lsPct > 0) {
           const heal = b.damage * mult * (res.absorbed ? 0.5 : 1) * (lsPct / 100);
           pstate.hp = Math.min(pstate.maxHp, pstate.hp + heal);
         }
-        burst(b.x, b.y, 4, zone === 'head' ? '#ffd77a' : '#c9563c', 3);
+        // 命中分化:甲上火花+金属叮(闷),肉上血雾(脆)—— 调研:反馈通道要按材质分层
+        if (res.absorbed) {
+          burst(b.x, b.y, 5, '#ffe9a8', 3.6);
+          particles.push({ x: b.x, y: b.y, vx: -bdir.x * 2 + (Math.random() - 0.5), vy: 1 + Math.random() * 2, life: 0.3, size: 2, color: '#fff6d8', grav: 0.5 });
+          beep(1500, 950, 0.05, 'square', 0.04);
+        } else {
+          burst(b.x, b.y, 4, zone === 'head' ? '#ffd77a' : '#c9563c', 3);
+          // 血雾顺弹道喷一小口
+          for (let bi = 0; bi < 2; bi++) {
+            particles.push({ x: b.x, y: b.y, vx: bdir.x * (1.5 + Math.random() * 2), vy: bdir.y * 2 + Math.random(), life: 0.32, size: 2.2, color: '#a83a28', grav: 1 });
+          }
+        }
         // 受击数字:护甲灰 / 普通红 / 爆头金粗
         const shown = Math.round(b.damage * mult * 10) / 10;
         if (res.absorbed) floaters.push({ x: b.x + (Math.random() - 0.5) * 0.12, y: b.y, vy: 2 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 1.4, rot: (Math.random() - 0.5) * 0.3, age: 0, text: String(shown), color: '#dfe6f2', size: 17, bold: false, life: 0.66, max: 0.66 });
@@ -576,6 +769,7 @@ function step(dt) {
             invSave();
             syncArmorFromInventory();
             ghostT = 0.18; // 一瞬发蒙:快闪即收,不常驻
+            addTrauma(0.35);
             const pp = player.torso.getPosition();
             if (zone === 'head') spawnHelmetDebris(pp.x, pp.y + 0.35, item.quality);
             else spawnVestDebris(pp.x, pp.y, item.quality);
@@ -587,12 +781,15 @@ function step(dt) {
         const dmg = b.damage * mult * (1 - Math.min(0.8, player.defense));
         pstate.hp = Math.max(0, pstate.hp - dmg);
           hitFlashT = 0.3;
+          addTrauma(0.18);
           floaters.push({ x: b.x + (Math.random() - 0.5) * 0.15, y: b.y, vy: 2.3 + Math.random() * 0.9, vx: (Math.random() - 0.5) * 1.6, rot: (Math.random() - 0.5) * 0.34, age: 0, text: String(Math.round(dmg * 10) / 10), color: '#ff5b4a', size: 17, bold: false, life: 0.72, max: 0.72 });
           burst(b.x, b.y, 5, '#c9563c', 3.5);
           beep(180, 80, 0.12, 'sawtooth', 0.06);
           if (pstate.hp <= 0 && !player.ragdoll) {
             player.setRagdoll(true); // 倒地
             pstate.deadT = 2.5;
+            streak = 0; streakT = 0; streakHide();
+            addTrauma(0.5);
             beep(120, 40, 0.5, 'sawtooth', 0.1);
           }
         }
@@ -602,7 +799,13 @@ function step(dt) {
     if (consumed) continue;
     const hitNow = hitTerrain(b.x, b.y) || (sp > 14 && hitTerrain((b.px + b.x) / 2, (b.py + b.y) / 2));
     if (hitNow) {
-      burst((b.px + b.x) / 2, (b.py + b.y) / 2, 5, '#ffd77a', 3.5);
+      const hx = (b.px + b.x) / 2, hy = (b.py + b.y) / 2;
+      burst(hx, hy, 5, '#ffd77a', 3.5);
+      // 弹孔 + 扬尘:打进地形留下痕迹(FIFO 上限)
+      addDecal('hole', hx, hy, Math.atan2(b.vy, b.vx), 0.05 + Math.random() * 0.03);
+      for (let di = 0; di < 3; di++) {
+        particles.push({ x: hx, y: hy, vx: (Math.random() - 0.5) * 3 - b.vx * 0.05, vy: 1 + Math.random() * 2.5, life: 0.4 + Math.random() * 0.25, size: 2 + Math.random() * 2, color: '#8a7c66', grav: 0.9 });
+      }
       bullets.splice(i, 1);
       continue;
     }
@@ -640,6 +843,12 @@ function step(dt) {
     if (p.y <= gy && p.vy < 0) { p.y = gy; p.vy *= -0.35; p.vx *= 0.7; p.va *= 0.6; }
     p.life -= dt;
     if (p.life <= 0) debris.splice(i, 1);
+  }
+
+  // 地面痕迹:慢慢淡去
+  for (let i = decals.length - 1; i >= 0; i--) {
+    decals[i].life -= dt;
+    if (decals[i].life <= 0) decals.splice(i, 1);
   }
 
   // 掉落物:金币/装备(重力弹地,靠近磁吸,贴身拾取)
@@ -680,8 +889,17 @@ function step(dt) {
         invAddCoins(1);
         floaters.push({ x: pk.x, y: gy, vy: 1.5, text: '+1', color: '#ffd24a', size: 14, bold: true, life: 0.75, max: 0.75, vx: (Math.random() - 0.5) * 1.2, rot: (Math.random() - 0.5) * 0.2 });
         beep(880, 1320, 0.07, 'square', 0.04);
+      } else if (invIsFull()) {
+        // 背包满:东西留在地上,提示做节流(不然每帧刷屏)
+        if (fullMsgT <= 0) {
+          fullMsgT = 1.4;
+          floaters.push({ x: pk.x, y: gy + 0.3, vy: 1.6, text: '背包已满!', color: '#ff9a5c', size: 14, bold: true, life: 0.9, max: 0.9 });
+          beep(240, 160, 0.12, 'square', 0.05);
+        }
+        continue; // 不拾取
       } else {
-        invAddDrop(pk.slot, pk.quality);
+        const it = pk.type === 'armorRef' ? invInsertItem(pk.item) : invAddDrop(pk.slot, pk.quality);
+        if (it) lootToast(it); // 右下角品质卡
         floaters.push({ x: pk.x, y: gy, vy: 1.2, text: `拾获 ${pk.slot === 'head' ? '头盔' : '防弹衣'} · ${(QUALITY[pk.quality]?.label || '').toUpperCase()}`, color: QUALITY[pk.quality]?.color ?? '#fff', size: 11, bold: false, life: 1, max: 1 });
         beep(400, 800, 0.1, 'square', 0.05);
       }
@@ -695,7 +913,8 @@ function step(dt) {
   }
 
   // 波次推进 + 敌人更新 + 开火事件(敌人是 AI 驱动的 Player 实例,开枪走同一套弹道管线)
-  const playerAlive = pstate.hp > 0 && !player.ragdoll;
+  // 主菜单待机时 playerAlive=false:敌人不警戒不射击,纯巡逻当背景演示
+  const playerAlive = !menuIsOpen() && pstate.hp > 0 && !player.ragdoll;
   waves.update(dt, enemies, player, playerAlive);
   for (const e of enemies) {
     e.update(dt, player, playerAlive);
@@ -706,9 +925,20 @@ function step(dt) {
         flashAng = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
         gunSynth(ev.stats?.sfx, 0.55);
       } else if (ev.type === 'died') {
-        burst(ev.x, ev.y, 12, '#c9563c', 4);
-        burst(ev.x, ev.y, 16, '#ffd24a', 6.5); // 金币炸开更大更亮
+        // 击杀手感:顿帧+震动+爆浆每杀都给;慢放只在连杀满 5(里程碑奖励)或清场最后一杀
+        const head = ev.zone === 'head';
+        hitStop(head ? 0.085 : 0.055);
+        addTrauma(head ? 0.24 : 0.15);
+        gibBurst(ev.x, ev.y, ev.dir || { x: 1, y: 0.3 });
         beep(220, 60, 0.3, 'sawtooth', 0.08);
+        alertEnemiesNear(ev, 11); // 死者的惨叫惊动 11m 内的队友
+        // 连杀:3s 窗口内连续击杀累计,滚轮数字 + 里程碑标签
+        streak++; streakT = 3.0;
+        streakShow(streak);
+        beep(520 + Math.min(streak, 12) * 65, 900 + Math.min(streak, 12) * 65, 0.1, 'square', 0.05);
+        const lastAlive = !enemies.some((e) => e.alive);
+        if (streak % 5 === 0) killSlow(0.8);
+        else if (lastAlive) killSlow(0.5);
         // 掉落:金币 3~8(贪婪/掠夺加成)+ 装备(猎手/幸运加成)
         const coinN = Math.round(ev.coins * (1 + (player.coinGainPct || 0) / 100));
         for (let ci = 0; ci < coinN; ci++) {
@@ -737,6 +967,7 @@ function step(dt) {
   flashT = Math.max(0, flashT - dt);
   hitFlashT = Math.max(0, hitFlashT - dt);
   ghostT = Math.max(0, ghostT - dt); // 护甲碎裂白闪必须衰减,否则整屏常白
+  menuFlashT = Math.max(0, menuFlashT - dt);
   cam.shake = Math.max(0, cam.shake - dt * 2.2);
 
   world.step(dt, 8, 3);
@@ -798,7 +1029,17 @@ function updateCamera(dt) {
   cam.y = lerp(cam.y, ty, k);
   const half = W / 2 / PPM / cam.zoom;
   cam.x = clamp(cam.x, LEVEL.bounds.left + half, LEVEL.bounds.right - half);
+
+  // trauma 震动:trauma² 曲线(小震细腻大震夸张)+ 平滑噪声(比随机抖动高级,不会闪烁)
+  trauma = Math.max(0, trauma - dt * 1.5);
+  const sh = trauma * trauma;
+  const tn = performance.now() / 1000;
+  cam.oX = sh * 16 * nz(tn * 11.3);
+  cam.oY = sh * 11 * nz(tn * 13.7 + 41);
+  cam.oR = sh * 0.02 * nz(tn * 9.1 + 83);
 }
+// 分层正弦伪噪声:输出约 ±1 的平滑曲线
+const nz = (t) => Math.sin(t) * 0.55 + Math.sin(t * 2.17 + 1.3) * 0.28 + Math.sin(t * 4.9 + 2.1) * 0.17;
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -822,20 +1063,47 @@ function drawEnemyBars(c, enemies, w2sC, scale) {
 function drawWorld(c, camO, VW, VH, ppmZ, time) {
   const zl = ppmZ / PPM; // 像素尺寸随倍率缩放
   const z = zl;
+  const ox = camO.oX || 0, oy = camO.oY || 0; // trauma 震动偏移(狙击镜自建相机无震动)
   const w2sC = (wx, wy) => [
-    (wx - camO.x) * PPM * camO.zoom + VW / 2,
-    VH * 0.60 - (wy - camO.y) * PPM * camO.zoom,
+    (wx - camO.x) * PPM * camO.zoom + VW / 2 + ox,
+    VH * 0.60 - (wy - camO.y) * PPM * camO.zoom + oy,
   ];
   drawSky(c, VW, VH);
   drawParallax(c, VW, VH, camO.x, PPM);
   drawTerrain(c, LEVEL.rects, w2sC, ppmZ);
+
+  // 地面痕迹:弹孔(带亮边)/ 血渍(暗红椭圆),后半段生命淡出
+  for (const d of decals) {
+    const [dx, dy] = w2sC(d.x, d.y);
+    const fade = clamp(d.life / d.max * 1.8, 0, 1);
+    c.save();
+    c.translate(dx, dy);
+    if (d.kind === 'hole') {
+      const r = Math.max(1.6, d.size * ppmZ);
+      c.globalAlpha = 0.75 * fade;
+      c.fillStyle = '#14161c';
+      c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
+      c.globalAlpha = 0.4 * fade;
+      c.strokeStyle = '#3d4454';
+      c.lineWidth = 1;
+      c.beginPath(); c.arc(0, 0, r * 1.6, 0, Math.PI * 2); c.stroke();
+    } else { // blood:size = 米(0.3~0.55)
+      c.globalAlpha = 0.55 * fade;
+      c.fillStyle = '#5d1812';
+      c.beginPath();
+      c.ellipse(0, 0, d.size * ppmZ, d.size * ppmZ * 0.3, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+  }
+  c.globalAlpha = 1;
 
   // 掉落物:品质光柱 + 金币(旋转金闪)/ 迷你盔甲(具体形状,非文字)
   for (const pk of pickups) {
     const [px, py] = w2sC(pk.x, pk.y);
     const qc = QUALITY[pk.quality]?.color ?? '#9fb0c4';
 
-    if (pk.type === 'armor') {
+    if (pk.type !== 'coin') {
       // 品质光柱:对应颜色的垂直光束,让玩家远远看出品质
       const bh = 78;
       const grad = ctx.createLinearGradient(px, py - bh, px, py + 8);
@@ -953,7 +1221,10 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
     c.rotate(f.rot || 0);
     c.scale(sc, sc);
     c.globalAlpha = clamp((f.life / f.max) * 1.9, 0, 1);
-    c.font = `${f.bold ? '900 ' : '800 '}${Math.round(f.size * zl)}px "Comic Sans MS", "Microsoft YaHei", sans-serif`;
+    const fam = f.font === 'hy'
+      ? '"ZCOOL QingKe HuangYou", "Microsoft YaHei", sans-serif'
+      : '"ZCOOL KuaiLe", "Comic Sans MS", "Microsoft YaHei", sans-serif';
+    c.font = `${f.bold ? '900 ' : '800 '}${Math.round(f.size * zl)}px ${fam}`;
     c.textAlign = 'center';
     c.lineWidth = Math.max(3, f.size * zl * 0.22);
     c.strokeStyle = 'rgba(18,14,8,0.95)';
@@ -1040,6 +1311,9 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 }
 
 function render(time) {
+  // trauma 旋转:整幅画面绕中心微倾(全屏遮罩层不参与旋转)
+  ctx.save();
+  if (cam.oR) { ctx.translate(W / 2, H / 2); ctx.rotate(cam.oR); ctx.translate(-W / 2, -H / 2); }
   drawWorld(ctx, cam, W, H, PPM * cam.zoom, time);
 
   // 鼠标准星(期望瞄准点);开镜时由放大镜接管
@@ -1116,10 +1390,17 @@ function render(time) {
 
   // 前景树剪影(纵深)
   drawForeground(ctx, W, H, cam.x);
+  ctx.restore(); // trauma 旋转结束(以下都是屏幕空间遮罩)
 
   // 玩家受击红闪
   if (hitFlashT > 0) {
     ctx.fillStyle = `rgba(200,40,30,${0.3 * (hitFlashT / 0.3)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // 主菜单大门全开瞬间:白光掠过(真空被撕开的一闪)
+  if (menuFlashT > 0) {
+    ctx.fillStyle = `rgba(225,235,255,${0.38 * (menuFlashT / 0.22)})`;
     ctx.fillRect(0, 0, W, H);
   }
 
@@ -1147,8 +1428,23 @@ function render(time) {
   }
   ctx.fillStyle = VIGNETTE;
   ctx.fillRect(0, 0, W, H);
+
+  // 低血量:边缘红雾随心跳脉动(lowHpA 在 frame() 里平滑,心跳相位驱动呼吸)
+  if (lowHpA > 0.02) {
+    if (!REDVIG) {
+      REDVIG = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.92);
+      REDVIG.addColorStop(0, 'rgba(160,10,10,0)');
+      REDVIG.addColorStop(1, 'rgba(160,10,10,0.9)');
+    }
+    const pulse = 0.72 + 0.28 * Math.sin(heartT * Math.PI * 2);
+    ctx.globalAlpha = clamp(lowHpA * 0.5 * pulse, 0, 0.85);
+    ctx.fillStyle = REDVIG;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
 }
 let VIGNETTE = null;
+let REDVIG = null;
 
 function drawDebug() {
   const bodies = [...levelBodies, ...player.allBodies];
@@ -1189,7 +1485,39 @@ function frame(now) {
     last = now;
     dt = Math.min(dt, 0.1);
     if (!Number.isFinite(dt) || dt < 0) dt = STEP; // 极端时间戳防线
-    timeScale += ((wheel.open || bpIsOpen() ? 0.08 : 1) - timeScale) * (1 - Math.exp(-9 * dt));
+
+    // ---- 手感层(全部真实时间)----
+    hitStopT = Math.max(0, hitStopT - dt);
+    killSlowT = Math.max(0, killSlowT - dt);
+    slowCd = Math.max(0, slowCd - dt);
+    fullMsgT = Math.max(0, fullMsgT - dt);
+    if (streakT > 0) {
+      streakT -= dt;
+      if (streakT <= 0 && streak > 0) { streak = 0; streakHide(); }
+    }
+    // 低血量:平滑强度 + 心跳相位(节拍随强度加快)+ 音频闷化。死亡后立即熄灭
+    const playerLiving = pstate.hp > 0 && !player.ragdoll;
+    const hpR = clamp(pstate.hp / pstate.maxHp, 0, 1);
+    lowHpA += ((playerLiving && hpR < 0.35 ? 1 - hpR / 0.35 : 0) - lowHpA) * (1 - Math.exp(-4 * dt));
+    if (lowHpA > 0.03) {
+      const prev = heartT;
+      heartT += dt * (1.15 + lowHpA * 1.1);
+      if (Math.floor(heartT) > Math.floor(prev)) { // 整拍触发:咚·哒 双响
+        const v = 0.04 + 0.09 * lowHpA;
+        beep(62, 38, 0.1, 'sine', v);
+        beep(55, 34, 0.09, 'sine', v * 0.7, 0.15);
+      }
+    }
+    if (muffle && actx) muffle.frequency.setTargetAtTime(700 + (1 - lowHpA) * 15300, actx.currentTime, 0.09);
+
+    // ---- 子弹时间合成:菜单待机 > 轮盘/背包 > 顿帧 > 击杀慢放 > 正常 ----
+    let tsTarget = menuIsOpen() ? 0.3 : (wheel.open || bpIsOpen()) ? 0.08 : 1;
+    if (killSlowT > 0) tsTarget = Math.min(tsTarget, 0.32);
+    if (hitStopT > 0) {
+      timeScale = Math.min(timeScale, 0.02); // 顿帧:入要快(硬切),出靠下面的平滑爬回
+    } else {
+      timeScale += (tsTarget - timeScale) * (1 - Math.exp(-9 * dt));
+    }
     wheel.timeScale = timeScale; // 回写供 __game() 调试读取
     // 钳制累积器:某帧掉帧太狠时把旧账丢掉,防止"每帧追满 4 步"的持续追赶卡顿
     acc = Math.min(acc + dt * timeScale, 0.1);

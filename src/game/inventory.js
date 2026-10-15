@@ -177,3 +177,57 @@ export function invForge(id) {
 export function invAddDrop(slot, quality) {
   return invAddItem(slot, quality, 0);
 }
+
+// ---- 背包容量(已穿戴的不占格子)----
+export const BP_CAP = 24;
+export function invIsFull() {
+  invLoad();
+  return inv.items.filter((it) => !it.equipped).length >= BP_CAP;
+}
+export function invUsedCount() {
+  invLoad();
+  return inv.items.filter((it) => !it.equipped).length;
+}
+
+// ---- 完整物品取出/放回(丢弃到世界再捡回,词缀/耐久必须原样保留)----
+export function invTakeItem(id) {
+  invLoad();
+  const i = inv.items.findIndex((it) => it.id === id);
+  if (i < 0) return null;
+  const [it] = inv.items.splice(i, 1);
+  invSave();
+  return it;
+}
+export function invInsertItem(it) {
+  invLoad();
+  if (!it || invIsFull()) return null;
+  inv.items.push(it);
+  invSave();
+  return it;
+}
+
+// ---- 开箱:三档宝箱,按品质权重掷一件(词缀随 invAddItem 自动掷) ----
+export const BOXES = [
+  { id: 'bronze', name: '青铜箱', color: '#b0783c', cost: 50, odds: { broken: 25, normal: 45, fine: 25, rare: 5 } },
+  { id: 'silver', name: '白银箱', color: '#b9c4d6', cost: 140, odds: { normal: 20, fine: 45, rare: 25, epic: 10 } },
+  { id: 'gold', name: '黄金箱', color: '#ffc21c', cost: 320, odds: { fine: 25, rare: 40, epic: 25, legendary: 10 } },
+];
+export function invOpenBox(boxId) {
+  invLoad();
+  const box = BOXES.find((b) => b.id === boxId);
+  if (!box) return { ok: false, msg: '无此宝箱' };
+  if (!invSpend(box.cost)) return { ok: false, msg: '金币不足' };
+  if (invIsFull()) { inv.coins += box.cost; invSave(); return { ok: false, msg: '背包已满,先清理一下' }; }
+  const slot = Math.random() < 0.5 ? 'head' : 'body';
+  const entries = Object.entries(box.odds);
+  let r = Math.random() * entries.reduce((t, [, w]) => t + w, 0);
+  let quality = entries[0][0];
+  for (const [q, w] of entries) { r -= w; if (r <= 0) { quality = q; break; } }
+  const item = invAddItem(slot, quality);
+  return { ok: true, msg: `开出 ${itemTitleOf(item)}!`, item, box };
+}
+function itemTitleOf(it) {
+  // 避免循环依赖:这里只拼品质+槽位(词缀名交给 UI 层展示)
+  return `${QLABEL_OF[it.quality] ?? it.quality}${it.slot === 'head' ? '头盔' : '防弹衣'}`;
+}
+const QLABEL_OF = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
