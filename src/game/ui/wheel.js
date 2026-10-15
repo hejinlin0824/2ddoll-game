@@ -72,7 +72,7 @@ export class WeaponWheel {
     if (this.mode === 'weapons') {
       const list = Object.values(GUN_PRESETS).map((g) => ({
         name: g.name,
-        sub: `${g.stats.damage}伤 · ${g.stats.rpm}发/分`, // 词条一览
+        sub: g.stats.mode === 'hitscan' ? (`🎯 狙击镜 · ${g.stats.damage} 伤 · 一击必杀`) : (`${g.stats.damage} 伤 · ${g.stats.rpm} 发/分`), // 词条一览
         src: g, parts: g.parts, kind: 'gun',
         current: p.weapon === 'rifle' && p.gunDef.name === g.name,
       }));

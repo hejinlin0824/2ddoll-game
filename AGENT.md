@@ -158,7 +158,7 @@
   trauma(震动)/ lowHpA(低血量)/ heartT(心跳相位)/ streak(连杀)/ fullMsgT。
 - **子弹时间合成优先级**:轮盘/背包 0.08 > 顿帧 0.02(硬切入、平滑出)> 击杀慢放 0.32 > 1。
   顿帧必须 `timeScale = Math.min(timeScale, 0.02)` 硬切,慢放走指数平滑。
-- **击杀手感**:顿帧+震动+爆浆每杀都给;**慢放是里程碑奖励** —— 连杀满 5(streak%5==0,
+- **击杀手感**:顿帧+震动+爆浆每杀都给;**慢放是里程碑奖励**(仅 streak%5==0;清场最后一杀/爆头不触发 —— 用户指定) —— 连杀满 5(streak%5==0,
   0.8s 大慢放)或清场最后一杀(0.5s)才触发,普通击杀不慢放(用户反馈:每杀都慢放适得其反)。
   died 事件的 zone/dir 由 Dummy.hit→hurt→die 一路带出来(爆头顿帧更狠、爆浆沿弹道方向)。
 - **低血量表现死亡即灭**:lowHpA 的目标计算带 `pstate.hp > 0 && !player.ragdoll` 条件,
@@ -177,6 +177,7 @@
 - **拾取 toast**:捡到装备右下角品质卡(词缀行+品质),2s 消失,最多 4 张;背包满时
   物品留在地上 + "背包已满!"floater(1.4s 节流)。
 - 调试:`window.__feel()` = { hitStopT, killSlowT, trauma, streak, lowHpA, timeScale, menu }。
+- 调试:`window.__level()` = 地形块耐久列表;`window.__hitTest(x,y)` = 命中几何探针。
 
 ### 背包 v2(backpack.js 重写 + game.html 新结构)
 - 居中卡片双页签:**装备**(左已装备区/右背包按类别分组,指针拖拽)+ **工坊**(选中装备

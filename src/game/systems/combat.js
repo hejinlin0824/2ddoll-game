@@ -29,27 +29,36 @@ function hitTerrainRect(x, y) {
   return null;
 }
 window.__hitTest = (x, y) => { const r = hitTerrainRect(x, y); return r ? { x: r.x, y: r.y, hp: r.hp ?? null, destructible: !!r.destructible } : null; };
-// 子弹破坏地形:可破坏块扣耐久,归零碎裂(从世界移除+碎片飞溅);不可破坏块只冒尘
-function damageTerrain(r, damage, x, y) {
+// 子弹破坏地形(tile):命中 tile 扣血,归零碎裂(从世界移除+碎片飞溅);
+// 溢出伤害沿弹道继续啃穿相邻 tile —— 打出真实的弹坑,而不是整块消失。不可破坏块只冒尘。
+function damageTerrain(r, damage, x, y, dir, depth = 0) {
   if (!r.destructible) { burst(x, y, 2, '#8a7c66', 2); return; }
   ensureRectHp(r);
   r.hp -= damage;
   if (r.hp <= 0) {
-    // 碎裂:该块颜色的碎块飞溅 + 大尘土 + 震屏
-    const n = Math.min(10, Math.round(r.w * r.h * 3) + 4);
+    // 碎裂:碎块飞溅 + 尘土 + 小震
+    const n = Math.min(8, Math.round(r.w * r.h * 6) + 3);
     for (let i = 0; i < n; i++) {
       debris.push({
         type: 'shard', color: i % 3 ? '#5b4a33' : '#7a6446',
-        w: 3 + Math.random() * 6, h: 3 + Math.random() * 6,
-        x: x + (Math.random() - 0.5) * r.w * 0.5, y: y + (Math.random() - 0.5) * r.h * 0.5,
-        vx: (Math.random() - 0.5) * 7, vy: 2 + Math.random() * 5,
-        va: (Math.random() - 0.5) * 16, angle: Math.random() * 3, life: 1.6, max: 1.6,
+        w: 2 + Math.random() * 4, h: 2 + Math.random() * 4,
+        x: x + (Math.random() - 0.5) * r.w, y: y + (Math.random() - 0.5) * r.h,
+        vx: (Math.random() - 0.5) * 6 + (dir?.x || 0) * 2, vy: 1.5 + Math.random() * 4,
+        va: (Math.random() - 0.5) * 16, angle: Math.random() * 3, life: 1.4, max: 1.4,
       });
     }
-    burst(x, y, 8, '#8a7c66', 4);
-    addTrauma(0.3);
-    beep(120, 45, 0.25, 'sawtooth', 0.09);
+    burst(x, y, 5, '#8a7c66', 3);
+    addTrauma(0.08);
+    beep(140, 60, 0.12, 'sawtooth', 0.06);
     destroyRect(r);
+    // 溢出伤害沿弹道啃相邻 tile(打穿薄墙的感觉)
+    const overflow = -r.hp;
+    if (overflow >= 6 && depth < 3 && dir) {
+      const nx = x + dir.x * 0.4, ny = y + dir.y * 0.4;
+      const next = LEVEL.rects.find((t) => t !== r && t.destructible &&
+        Math.abs(nx - t.x) <= t.w / 2 + 0.05 && Math.abs(ny - t.y) <= t.h / 2 + 0.05);
+      if (next) damageTerrain(next, overflow, nx, ny, dir, depth + 1);
+    }
   } else {
     burst(x, y, 3, '#6b5a40', 2.5); // 打在块上的碎屑
   }
@@ -269,7 +278,7 @@ export function stepBullets(dt, C) {
       for (let di = 0; di < 3; di++) {
         C.particles.push({ x: hx, y: hy, vx: (Math.random() - 0.5) * 3 - b.vx * 0.05, vy: 1 + Math.random() * 2.5, life: 0.4 + Math.random() * 0.25, size: 2 + Math.random() * 2, color: '#8a7c66', grav: 0.9 });
       }
-      damageTerrain(rect, b.damage, hx, hy); // 可破坏块扣耐久/碎裂(systems/combat.js 内)
+      damageTerrain(rect, b.damage, hx, hy, { x: b.vx / (sp || 1), y: b.vy / (sp || 1) }); // 打哪碎哪 + 溢出啃穿
       bullets.splice(i, 1);
       continue;
     }
@@ -287,9 +296,7 @@ export function onEnemyDied(C, ev) {
   beep(220, 60, 0.3, 'sawtooth', 0.08);
   alertEnemiesNear(enemies, ev, 11); // 死者的惨叫惊动 11m 内的队友
   const streak = addStreak();
-  const lastAlive = !enemies.some((e) => e.alive);
-  if (streak % 5 === 0) killSlow(0.8);
-  else if (lastAlive) killSlow(0.5);
+  if (streak % 5 === 0) killSlow(0.8); // 慢放只跟每 5 连杀走(用户指定,清场/爆头不再触发)
   // 掉落:金币 3~8(贪婪/掠夺加成)+ 装备(猎手/幸运加成)
   const coinN = Math.round(ev.coins * (1 + (player.coinGainPct || 0) / 100));
   for (let ci = 0; ci < coinN; ci++) {

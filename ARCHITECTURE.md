@@ -50,6 +50,15 @@ game.html ──▶ game.js(装配根:组装世界/系统/循环,~780行)
 | systems/hud | 角色面板/连杀滚轮公告/拾取 toast(纯 DOM) |
 | domain/affixes | 词缀=纯数据;属性=基础×聚合纯函数(加词条零改动消费端) |
 
+## 地形破坏(tile 化)
+
+- buildLevel 时可破坏 rect 细分为 0.5m tile(每个 tile = 小 rect + 独立静态刚体,
+  HP = 面积×40 ≈ 10),tile 就存进 LEVEL.rects —— groundYAt/命中/渲染等所有遍历零改动。
+- 子弹命中 tile 扣血,归零碎裂(destroyRect:splice + destroyBody);**溢出伤害沿弹道
+  继续啃相邻 tile**(damageTerrain 递归,深度≤3)—— 步枪一发打穿 2 块 + 第三块裂纹。
+- 主地表 destructible:false,不 tile 化、不可破坏(防掉深渊)。
+- 方案属业界"块删除"流派(Worms 位图挖洞/QuadTree 雕刻不适用 planck 刚体)。
+
 ## 已知约定(改代码前必读)
 
 1. 真实时间 vs 世界时间:feel/fx 计时器走真实 dt(game.js frame);step() 里的

@@ -30,8 +30,29 @@ export function ensureRectHp(r) {
   return r;
 }
 
+const TILE = 0.5; // 可破坏块的细分粒度(米):子弹打哪碎哪,弹坑 ~0.5m
+
 export function buildLevel(world) {
   const bodies = [];
+  // 先把可破坏块替换成 0.5m tile 网格(tile 也是小 rect,所有遍历点零改动),
+  // 子弹命中某 tile 只碎那一片 —— 局部弹坑,而不是整块消失
+  for (let i = LEVEL.rects.length - 1; i >= 0; i--) {
+    const r = LEVEL.rects[i];
+    if (r.destructible === false) continue;
+    const cols = Math.max(1, Math.round(r.w / TILE));
+    const rows = Math.max(1, Math.round(r.h / TILE));
+    const tw = r.w / cols, th = r.h / rows;
+    for (let c = 0; c < cols; c++) {
+      for (let ro = 0; ro < rows; ro++) {
+        LEVEL.rects.push({
+          x: r.x - r.w / 2 + tw * (c + 0.5),
+          y: r.y - r.h / 2 + th * (ro + 0.5),
+          w: tw, h: th, type: r.type, destructible: true,
+        });
+      }
+    }
+    LEVEL.rects.splice(i, 1);
+  }
   for (const r of LEVEL.rects) {
     ensureRectHp(r);
     const b = world.createBody({ type: 'static', position: Vec2(r.x, r.y) });
@@ -46,7 +67,7 @@ export function buildLevel(world) {
   return bodies;
 }
 
-// 破坏一块地形:从 rects 移除 + 销毁刚体(调用方负责特效/音效)
+// 破坏一块地形(tile 或整块):从 rects 移除 + 销毁刚体(调用方负责特效/音效)
 export function destroyRect(r) {
   const i = LEVEL.rects.indexOf(r);
   if (i >= 0) LEVEL.rects.splice(i, 1);
