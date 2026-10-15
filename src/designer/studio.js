@@ -1,7 +1,7 @@
 // 装备工坊:抠图台(点色抠背景/橡皮擦/撤销) + 穿戴台(素材拖到小人身上,保存后游戏内实时生效)
 // 素材存 localStorage 'contra-assets'(id -> dataURL);穿戴走 contra-equip-head/torso,
 // parts 支持 {img: 素材id, x, y, w, h, rot} 图片零件(坐标 = 身体局部空间,200px = 1m)。
-import { loadAssets, saveAssets, loadEquip, saveEquip } from './gunPresets.js';
+import { loadAssets, saveAssets, loadEquip, saveEquip } from '../game/domain/gunPresets.js';
 
 const $ = (id) => document.getElementById(id);
 const toastEl = $('toast');

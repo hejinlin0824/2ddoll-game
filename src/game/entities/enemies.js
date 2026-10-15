@@ -4,8 +4,8 @@
 // 伤害:部位倍率 头×2/身×1/腿×0.2;头盔/背心消耗品先扣耐久,归零 → 布娃娃倒地(受击方向)。
 import { Player } from './player.js';
 import { Vec2 } from 'planck';
-import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from './gunPresets.js';
-import { LEVEL } from './level.js';
+import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from '../domain/gunPresets.js';
+import { LEVEL } from '../world/level.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 

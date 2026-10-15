@@ -23,19 +23,17 @@
 
 ## 页面与目录
 
-```
-game.html             游戏页面
-weapon-editor.html    武器与装备设计器
-src/game/
-  main.js             主循环:输入/相机/子弹/粒子/音效/HUD/子弹时间
-  player.js           ★ 核心:主动式布娃娃主角(物理、双臂 IK、姿态、开火、穿戴)
-  wheel.js            武器/装备轮盘(GTA式:按住Tab唤起+子弹时间+扇区选择+卸下/选中)
-  enemies.js          敌人 = AI 驱动的 Player 实例(波次模式不重生)
-  waves.js            波次管理器(右缘刷新/品质难度曲线/15 波上限)
-  level.js            地形数据与绘制、碰撞分类常量(CAT)
-  gunPresets.js       枪械/装备数据格式、预设、localStorage 读写
-  editor.js           设计器逻辑(拼枪 + 装备定制)
-```
+- game.html(游戏)/ weapon-editor.html(枪械设计器)/ asset-studio.html(装备工坊,暂缓)/ fonts.html(字体审批)/ index.html(陈列馆)
+- src/game/
+  - game.js          装配根:world/player/waves 组装、依赖包 C、step/frame 编排、调试句柄、渲染
+  - core/config.js   分辨率与物理常量
+  - domain/          纯数据+纯函数:gunPresets / affixes(词缀) / inventory(经济) / waves(波次)
+  - entities/        player(布娃娃主角) / enemies(Dummy=AI 驱动的 Player)
+  - systems/         audio / input / camera / feel(手感状态机) / fx / combat / hud
+  - ui/              wheel(轮盘) / backpack(背包) / menu(主菜单)
+  - world/level.js   地形数据与绘制
+- src/designer/      editor.js / studio.js(设计器页面专用)
+- 依赖方向与各模块职责详见 ARCHITECTURE.md
 
 ## 游戏架构(改代码前必读)
 

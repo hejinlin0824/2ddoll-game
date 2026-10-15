@@ -5,7 +5,7 @@
 //   轮盘中心留死区;光标隐藏(css cursor:none),方向即选择。
 // - T 键切换 武器/装备 两层;当前在用/穿戴的项带「当前」徽标,
 //   悬停它 = 卸下,悬停其他 = 选中;松开 Tab 应用高亮项,左键立即应用并收起,全部实时生效。
-import { GUN_PRESETS, EQUIP_PRESETS, saveEquip } from './gunPresets.js';
+import { GUN_PRESETS, EQUIP_PRESETS, saveEquip } from '../domain/gunPresets.js';
 
 const TAU = Math.PI * 2;
 // 未穿戴的显式存档(空 parts):区别于"从没存过"(后者 loadEquip 会回退出厂默认)

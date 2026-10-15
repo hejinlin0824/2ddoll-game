@@ -1,6 +1,6 @@
 // 波次管理器:敌人从地图最右侧刷新,按波次推进
 // 第 1 波 5 人、每波 +1、上限 10;最多 15 波;难度从无甲到全套金装
-import { Dummy } from './enemies.js';
+import { Dummy } from '../entities/enemies.js';
 import { Vec2 } from 'planck';
 
 const SPAWN_X = 74.5;      // 地图右缘(边界 78,留 3.5m)

@@ -2,7 +2,7 @@
 import {
   PART_TYPES, GUN_PRESETS, METER_SCALE,
   EQUIP_PRESETS, EQUIP_SLOTS, loadEquip, saveEquip,
-} from './gunPresets.js';
+} from '../game/domain/gunPresets.js';
 
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');

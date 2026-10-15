@@ -7,9 +7,9 @@ import {
   invGet, invEquipped, invSetEquipped, invRepair, invRepairCost,
   invUpgrade, invUpgradeCost, invUpgradeRate, invForge, invCombine,
   invIsFull, invUsedCount, BP_CAP, invTakeItem, BOXES, invOpenBox,
-} from './inventory.js';
-import { QUALITY } from './gunPresets.js';
-import { itemTitle, AFFIX_BY_ID } from './affixes.js';
+} from '../domain/inventory.js';
+import { QUALITY } from '../domain/gunPresets.js';
+import { itemTitle, AFFIX_BY_ID } from '../domain/affixes.js';
 
 const QLABEL = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
 const SLABEL = { head: '头盔', body: '防弹衣' };

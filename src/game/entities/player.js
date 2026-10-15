@@ -5,9 +5,9 @@
 // 物理引擎负责所有中间过渡、惯性甩动和落地时的物理抖动。
 // 按 R 关掉全部电机 = 纯布娃娃(瘫倒),E 复位。
 import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
-import { CAT, groundYAt } from './level.js';
-import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from './gunPresets.js';
-import { computeGunMods, rollAffixes } from './affixes.js';
+import { CAT, groundYAt } from '../world/level.js';
+import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
+import { computeGunMods, rollAffixes } from '../domain/affixes.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
