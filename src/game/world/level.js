@@ -85,12 +85,17 @@ export function isCustomActive() {
   return !!c && Array.isArray(c.rects) && localStorage.getItem('contra-level-active') === '1';
 }
 function applyCustomIfActive() {
+  if (!isCustomActive()) return;
   const c = loadCustomLevel();
-  if (!c || !Array.isArray(c.rects) || localStorage.getItem('contra-level-active') !== '1') return;
+  // v1 存的是左下角(与消费端错位的旧格式),v2 起存中心点;旧档按绘制意图转一次
+  const toCenter = (r) => (c.version >= 2 ? r : { ...r, x: r.x + r.w / 2, y: r.y + r.h / 2 });
   // 固定主地表(防掉深渊)+ 用户画的块(全部可破坏)
   LEVEL.rects = [
     { x: 33, y: -1.5, w: 90, h: 3, type: 'ground', destructible: false },
-    ...c.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, type: r.type || 'plat', destructible: true })),
+    ...c.rects.map((r) => {
+      const t = toCenter(r);
+      return { x: t.x, y: t.y, w: t.w, h: t.h, type: t.type || 'plat', destructible: true };
+    }),
   ];
 }
 applyCustomIfActive();

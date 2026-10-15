@@ -14,7 +14,7 @@ import { initAudio, beep, gunSynth, noiseBurst, setMuffle, getActx } from './sys
 import { updateStatusPanel, streakShow, streakHide, lootToast } from './systems/hud.js';
 import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak, tickFeel } from './systems/feel.js';
 import { input, attachInput, bindCamera } from './systems/input.js';
-import { cam, w2s, aimWorld, updateCamera, clamp, lerp } from './systems/camera.js';
+import { cam, w2s, makeW2S, aimWorld, updateCamera, clamp, lerp } from './systems/camera.js';
 import { bullets, spawnBullet, castRay, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups } from './systems/combat.js';
 import { particles, beams, debris, decals, floaters, flash, burst, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
@@ -101,6 +101,7 @@ function syncArmorFromInventory() {
   const mh = h ? computeArmorMods('head', h.affixes || []) : null;
   const mb = b ? computeArmorMods('body', b.affixes || []) : null;
   player.armorMods = { head: mh, body: mb };
+  player.armorDefensePct = (mh?.defenseFlat || 0) + (mb?.defenseFlat || 0); // 铁壁:百分比减伤(player.defense)
   player.armorLifestealPct = (mh?.lifesteal || 0) + (mb?.lifesteal || 0);
   player.dropRatePct = (mh?.dropRatePct || 0) + (mb?.dropRatePct || 0);
   player.coinGainPct = (mh?.coinGainPct || 0) + (mb?.coinGainPct || 0);
@@ -156,7 +157,8 @@ const C = {
   groundYAt, bounds: LEVEL.bounds, QUALITY: Q,
   invAddCoins, syncArmorFromInventory, setHitFlash, addDecal,
 };
-window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals }); // 调试句柄
+window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }); // 调试句柄
+window.__combat = { spawnBullet, stepBullets, applyHitscanDamage, onEnemyDied, stepPickups, alertEnemiesNear }; // 调试:命中管线直调
 window.__actx = getActx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
 window.__feel = () => ({ ...feel, timeScale, menu: menuIsOpen() }); // 调试:手感层状态
 window.__level = () => LEVEL.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, hp: r.hp ?? null, max: r.maxHp ?? null })); // 调试:地形块耐久
@@ -199,7 +201,7 @@ function step(dt) {
       alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传唤更远
       gunSynth(st.sfx);
       beep(2400, 200, 0.16, 'square', 0.045); // 高频"滋"的激光层
-      applyHitscanDamage(enemies, ev, tEnd);
+      applyHitscanDamage(C, ev, tEnd);
     } else if (ev.type === 'melee') {
       beep(ev.shield ? 170 : 240, ev.shield ? 80 : 110, 0.12, 'square', 0.07);
       // 挥击弧线刮风尘土
@@ -300,11 +302,7 @@ function drawEnemyBars(c, enemies, w2sC, scale) {
 function drawWorld(c, camO, VW, VH, ppmZ, time) {
   const zl = ppmZ / PPM; // 像素尺寸随倍率缩放
   const z = zl;
-  const ox = camO.oX || 0, oy = camO.oY || 0; // trauma 震动偏移(狙击镜自建相机无震动)
-  const w2sC = (wx, wy) => [
-    (wx - camO.x) * PPM * camO.zoom + VW / 2 + ox,
-    VH * 0.60 - (wy - camO.y) * PPM * camO.zoom + oy,
-  ];
+  const w2sC = makeW2S(camO, VW, VH, PPM); // 与 camera.js 同一份公式(狙击镜内视图也走这里)
   drawSky(c, VW, VH);
   drawParallax(c, VW, VH, camO.x, PPM);
   drawTerrain(c, LEVEL.rects, w2sC, ppmZ);
@@ -440,10 +438,6 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
     c.lineWidth = 1.6 * zl;
     c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
   }
-
-  // 敌人
-  for (const e of enemies) e.draw(c, w2sC, ppmZ, time);
-  drawEnemyBars(c, enemies, w2sC, PPM * camO.zoom);
 
   // 受击数字(漫画果冻风:弹出过冲→回弹→淡出,描边)
   for (const f of floaters) {

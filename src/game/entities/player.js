@@ -186,11 +186,13 @@ export class Player {
       hipF: 0.05, kneeF: -0.08, hipB: -0.05, kneeB: -0.12 };
   }
 
-  // 当前武器的属性(基础词条 + 主武器词缀聚合);手枪不 tgt 主武器词缀
+  // 当前武器的属性(基础词条 + 主武器词缀聚合);手枪不 tgt 主武器词缀。
+  // HUD 每帧、开火每发都读 —— 记忆化:换枪或外部重算 gunMods(新对象)时自动失效
   stats() {
+    const m = this.weapon === 'rifle' ? this.gunMods : null;
+    if (this._statsCache && this._statsW === this.weapon && this._statsM === m) return this._statsCache;
     const base = this.weapon === 'rifle' ? this.gunDef?.stats : PISTOL_STATS;
     const s = { ...(base || DEFAULT_STATS) };
-    const m = this.weapon === 'rifle' ? this.gunMods : null;
     if (m) {
       s.damage = Math.round(s.damage * m.dmgMul * 10) / 10;
       s.rpm = Math.round(s.rpm * m.rpmMul);
@@ -200,7 +202,9 @@ export class Player {
       s.range = Math.round(s.range * m.rangeMul);
       s.armorDmgMul = m.armorDmgMul;
     }
-    return s || DEFAULT_STATS;
+    this._statsW = this.weapon;
+    this._statsM = m;
+    return (this._statsCache = s || DEFAULT_STATS);
   }
 
   // 吸血总百分比(主武器词缀 + 防具词缀)
@@ -257,8 +261,10 @@ export class Player {
     this.loadout = { head: loadEquip('head'), torso: loadEquip('torso') };
   }
 
+  // 百分比减伤 = 防具"铁壁"词条聚合(syncArmorFromInventory 写入;结算端钳 0~0.8)。
+  // loadout 里是视觉预设,从来没有 defense 字段,别再读它
   get defense() {
-    return (this.loadout.head?.defense || 0) + (this.loadout.torso?.defense || 0);
+    return (this.armorDefensePct || 0) / 100;
   }
 
   // 受击闪白:整具布娃娃罩白色半透明(近战/枪击命中反馈用)
@@ -319,6 +325,11 @@ export class Player {
   setShield(on) {
     if (this.shield === on) return;
     this.shield = on;
+    if (on) {
+      // 碎过的盾重新架起时修好(盾耐久存在档里,不重置的话该存档的盾永久是 0)
+      this.shieldHp = 100;
+      try { localStorage.setItem('contra-shield-hp', String(this.shieldHp)); } catch { /* 忽略 */ }
+    }
     if (on && this.weapon !== 'pistol') {
       this.weapon = 'pistol';
       this.recoilT = 0;

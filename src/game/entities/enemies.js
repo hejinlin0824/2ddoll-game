@@ -118,11 +118,11 @@ export class Dummy {
     return true;
   }
 
-  // 击中部位:有甲先扣耐久(承伤=伤害),归零报碎;无甲扣血。dir = 子弹方向(死亡布娃娃受力)
+  // 击中部位:有甲先扣耐久(承伤=伤害×破甲倍率),归零报碎;无甲扣血。dir = 子弹方向(死亡布娃娃受力)
   // 受击反馈(确定性,调研结论:踉跄规则要可预期,玩家潜意识讨厌纯随机):
   //  每发都有的:闪白 + 沿弹道击退 + 打断瞄准;韧性条满 → 踉跄(站不稳开不了枪 0.45s)
   //  爆头夸张化:双倍韧性 + 更久闪白(奖励精确射击)
-  hit(zone, dmg, dir) {
+  hit(zone, dmg, dir, armorMul = 1) {
     if (!this.alive) return null;
     const head = zone === 'head';
     this.flashT = head ? 0.22 : 0.14; // 受击闪白(爆头更久)
@@ -134,7 +134,7 @@ export class Dummy {
     this.p.torso.setLinearVelocity(Vec2(v.x + dir.x * kb, v.y + dir.y * kb * 0.5 + (head ? 0.8 : 0.3)));
     const armor = this.armor[zone];
     if (armor && armor.dur > 0) {
-      armor.dur = Math.max(0, armor.dur - dmg);
+      armor.dur = Math.max(0, armor.dur - dmg * armorMul); // 破甲词条:对耐久伤害加倍
       if (armor.dur === 0) broke = zone;
       this.poise += dmg * 0.5 * (head ? 1.5 : 1);
       this.fireT = Math.max(this.fireT, 0.22); // 打断瞄准(被压制)

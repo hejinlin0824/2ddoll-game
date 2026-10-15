@@ -365,6 +365,7 @@ function renderGallery(selectId) {
       delete assets[id];
       saveAssets(assets);
       imgCache.delete(id);
+      cropCache.delete(id); // 裁剪缓存同步清,否则同 id 重建的素材还用旧裁剪框
       // 同步清掉穿戴里引用它的零件
       for (const s of ['head', 'torso']) {
         placed[s] = placed[s].filter((it) => it.id !== id);

@@ -11,14 +11,17 @@ export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // 分层正弦伪噪声:输出约 ±1 的平滑曲线(比随机抖动高级,不会闪烁)
 export const nz = (t) => Math.sin(t) * 0.55 + Math.sin(t * 2.17 + 1.3) * 0.28 + Math.sin(t * 4.9 + 2.1) * 0.17;
 
-// 世界坐标 -> 屏幕(狙击开镜时整体按 cam.zoom 放大)
-export function w2s(wx, wy, W, H, PPM) {
-  const z = cam.zoom;
-  return [
-    (wx - cam.x) * PPM * z + W / 2 + cam.oX,
-    H * 0.60 - (wy - cam.y) * PPM * z + cam.oY,
+// 世界坐标 -> 屏幕:参数化工厂,主视图(cam)与狙击镜内视图(放大镜自建相机)共用同一份公式,
+// 改偏移/缩放规则只动这一处。camO.oX/oY 是 trauma 震动偏移(镜内相机没有,自然为 0)
+export function makeW2S(camO, W, H, PPM) {
+  const z = camO.zoom;
+  const ox = camO.oX || 0, oy = camO.oY || 0;
+  return (wx, wy) => [
+    (wx - camO.x) * PPM * z + W / 2 + ox,
+    H * 0.60 - (wy - camO.y) * PPM * z + oy,
   ];
 }
+export function w2s(wx, wy, W, H, PPM) { return makeW2S(cam, W, H, PPM)(wx, wy); }
 
 // 准星当前指的世界点:每帧用画布坐标 + 当前相机实时重算。
 // 不能存世界快照 —— 相机一动快照就过时,开镜时误差会被放大。

@@ -19,6 +19,7 @@ export function spawnBullet(x, y, dx, dy, st, damage, faction = 'player') {
     life,
     rifle: st.damage >= 18,            // 曳光粗细
     maxSp, damage, faction,
+    armorMul: st.armorDmgMul ?? 1,     // 破甲词条:对护甲耐久的伤害倍率(出厂定格,命中端用)
   });
 }
 
@@ -100,11 +101,46 @@ export function alertEnemiesNear(enemies, pos, r) {
   }
 }
 
-// 沿途伤害:第一个命中的敌人全额,之后按词条 falloff 逐个衰减
-export function applyHitscanDamage(enemies, ev, maxT) {
+// 命中反馈(弹丸与狙击 hitscan 共用一条管线):
+// 材质分化特效 + 受击飘字 + 碎甲飞 debris + 吸血结算。dmg = 已乘部位倍率的最终伤害
+function hitFeedback(C, e, zone, res, x, y, dir, dmg) {
+  const player = C.player, pstate = C.pstate;
+  // 命中分化:甲上火花+金属叮(闷),肉上血雾(脆)—— 反馈通道按材质分层
+  if (res.absorbed) {
+    burst(x, y, 5, '#ffe9a8', 3.6);
+    C.particles.push({ x, y, vx: -dir.x * 2 + (Math.random() - 0.5), vy: 1 + Math.random() * 2, life: 0.3, size: 2, color: '#fff6d8', grav: 0.5 });
+    beep(1500, 950, 0.05, 'square', 0.04);
+  } else {
+    burst(x, y, 4, zone === 'head' ? '#ffd77a' : '#c9563c', 3);
+    for (let bi = 0; bi < 2; bi++) {
+      C.particles.push({ x, y, vx: dir.x * (1.5 + Math.random() * 2), vy: dir.y * 2 + Math.random(), life: 0.32, size: 2.2, color: '#a83a28', grav: 1 });
+    }
+  }
+  // 受击数字:护甲灰 / 普通红 / 爆头金粗
+  const shown = Math.round(dmg * 10) / 10;
+  if (res.absorbed) floaters.push({ x: x + (Math.random() - 0.5) * 0.12, y, vy: 2 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 1.4, rot: (Math.random() - 0.5) * 0.3, age: 0, text: String(shown), color: '#dfe6f2', size: 17, bold: false, life: 0.66, max: 0.66 });
+  else floaters.push({ x: x + (Math.random() - 0.5) * 0.15, y, vy: (zone === 'head' ? 3.1 : 2.4) + Math.random() * 0.9, vx: (Math.random() - 0.5) * 1.8, rot: (Math.random() - 0.5) * 0.3, age: 0, text: (zone === 'head' ? '爆头 ' : '') + String(shown), color: zone === 'head' ? '#ffc21c' : '#ff5b4a', size: zone === 'head' ? 30 : 21, bold: true, life: zone === 'head' ? 0.9 : 0.78, max: zone === 'head' ? 0.9 : 0.78 });
+  if (res.broke === 'head') {
+    spawnHelmetDebris(e.x, e.y - 0.4, e.armor.head.quality); // 头盔被击飞
+    beep(520, 170, 0.16, 'square', 0.08);
+  }
+  if (res.broke === 'body') {
+    spawnVestDebris(e.x, e.y, e.armor.body.quality); // 背心碎裂
+    beep(320, 120, 0.2, 'square', 0.08);
+  }
+  // 吸血词条:按造成伤害回血(护甲吸收的部分减半)
+  const lsPct = player.lifestealPct || 0;
+  if (lsPct > 0) pstate.hp = Math.min(pstate.maxHp, pstate.hp + dmg * (res.absorbed ? 0.5 : 1) * (lsPct / 100));
+}
+
+// 狙击沿途伤害:第一个命中的敌人全额,之后按词条 falloff 逐个衰减。
+// 与弹丸同一条管线:部位倍率/护甲吸收(吃破甲词条)/击退踉跄/受击反馈全都有
+// (此前直呼 hurt() 把这些全绕过了 —— AWP 无视护甲、无爆头反馈)
+export function applyHitscanDamage(C, ev, maxT) {
   const d = ev.parts[0];
   const hits = [];
-  for (const e of enemies) {
+  for (const e of C.enemies) {
+    if (!e.alive) continue;
     const rx = e.x - ev.x, ry = e.y - ev.y;
     const t = rx * d.dx + ry * d.dy;                    // 沿线投影
     const off = Math.abs(-rx * d.dy + ry * d.dx);       // 到线距离
@@ -115,7 +151,14 @@ export function applyHitscanDamage(enemies, ev, maxT) {
   hits.sort((a, b) => a.t - b.t);
   let mult = 1;
   for (const h of hits) {
-    h.e.hurt?.(ev.parts[0].damage * mult);
+    const e = h.e;
+    const hx = ev.x + d.dx * h.t, hy = ev.y + d.dy * h.t;
+    const zone = e.zoneAt(hx, hy) || 'body';            // 射线在敌人身上的落点定部位
+    const dir = { x: d.dx, y: d.dy };
+    const zmul = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2; // 部位倍率与弹丸一致
+    const dmg = ev.parts[0].damage * zmul * mult;
+    const res = e.hit(zone, dmg, dir, ev.stats.armorDmgMul ?? 1) ?? { broke: null, absorbed: false };
+    hitFeedback(C, e, zone, res, hx, hy, dir, dmg);
     mult *= ev.stats.falloff ?? 0.55;
   }
 }
@@ -191,36 +234,9 @@ export function stepBullets(dt, C) {
         if (!zone) continue;
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;
         const bdir = { x: b.vx / (sp || 1), y: b.vy / (sp || 1) };
-        const res = e.hit(zone, b.damage * mult, bdir);
-        // 吸血词条:按造成伤害回血(护甲吸收的部分减半)
-        const lsPct = (player.lifestealPct || 0);
-        if (lsPct > 0) {
-          const heal = b.damage * mult * (res.absorbed ? 0.5 : 1) * (lsPct / 100);
-          pstate.hp = Math.min(pstate.maxHp, pstate.hp + heal);
-        }
-        // 命中分化:甲上火花+金属叮(闷),肉上血雾(脆)—— 反馈通道按材质分层
-        if (res.absorbed) {
-          burst(b.x, b.y, 5, '#ffe9a8', 3.6);
-          C.particles.push({ x: b.x, y: b.y, vx: -bdir.x * 2 + (Math.random() - 0.5), vy: 1 + Math.random() * 2, life: 0.3, size: 2, color: '#fff6d8', grav: 0.5 });
-          beep(1500, 950, 0.05, 'square', 0.04);
-        } else {
-          burst(b.x, b.y, 4, zone === 'head' ? '#ffd77a' : '#c9563c', 3);
-          for (let bi = 0; bi < 2; bi++) {
-            C.particles.push({ x: b.x, y: b.y, vx: bdir.x * (1.5 + Math.random() * 2), vy: bdir.y * 2 + Math.random(), life: 0.32, size: 2.2, color: '#a83a28', grav: 1 });
-          }
-        }
-        // 受击数字:护甲灰 / 普通红 / 爆头金粗
-        const shown = Math.round(b.damage * mult * 10) / 10;
-        if (res.absorbed) floaters.push({ x: b.x + (Math.random() - 0.5) * 0.12, y: b.y, vy: 2 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 1.4, rot: (Math.random() - 0.5) * 0.3, age: 0, text: String(shown), color: '#dfe6f2', size: 17, bold: false, life: 0.66, max: 0.66 });
-        else floaters.push({ x: b.x + (Math.random() - 0.5) * 0.15, y: b.y, vy: (zone === 'head' ? 3.1 : 2.4) + Math.random() * 0.9, vx: (Math.random() - 0.5) * 1.8, rot: (Math.random() - 0.5) * 0.3, age: 0, text: (zone === 'head' ? '爆头 ' : '') + String(shown), color: zone === 'head' ? '#ffc21c' : '#ff5b4a', size: zone === 'head' ? 30 : 21, bold: true, life: zone === 'head' ? 0.9 : 0.78, max: zone === 'head' ? 0.9 : 0.78 });
-        if (res.broke === 'head') {
-          spawnHelmetDebris(e.x, e.y - 0.4, e.armor.head.quality); // 头盔被击飞
-          beep(520, 170, 0.16, 'square', 0.08);
-        }
-        if (res.broke === 'body') {
-          spawnVestDebris(e.x, e.y, e.armor.body.quality); // 背心碎裂
-          beep(320, 120, 0.2, 'square', 0.08);
-        }
+        const dmg = b.damage * mult;
+        const res = e.hit(zone, dmg, bdir, b.armorMul ?? 1); // 破甲词条随弹丸生效
+        hitFeedback(C, e, zone, res, b.x, b.y, bdir, dmg);   // 反馈与狙击共用一条管线
         bullets.splice(i, 1); consumed = true; break;
       }
     } else {
@@ -354,7 +370,7 @@ export function stepPickups(dt, C) {
       } else {
         const it = pk.type === 'armorRef' ? invInsertItem(pk.item) : invAddDrop(pk.slot, pk.quality);
         if (it) lootToast(it); // 右下角品质卡
-        floaters.push({ x: pk.x, y: gy, vy: 1.2, text: `拾获 ${pk.slot === 'head' ? '头盔' : '防弹衣'} · ${(C.QUALITY[pk.quality]?.label || '').toUpperCase()}`, color: C.QUALITY[pk.quality]?.color ?? '#fff', size: 11, bold: false, life: 1, max: 1 });
+        floaters.push({ x: pk.x, y: gy, vy: 1.2, text: `拾获 ${pk.slot === 'head' ? '头盔' : '防弹衣'} · ${C.QUALITY[pk.quality]?.label || ''}`, color: C.QUALITY[pk.quality]?.color ?? '#fff', size: 11, bold: false, life: 1, max: 1 });
         beep(400, 800, 0.1, 'square', 0.05);
       }
       pickups.splice(i, 1);

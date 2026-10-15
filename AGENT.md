@@ -49,10 +49,13 @@
   grips.muzzle 出膛、直射光标点——弹道必然穿准星。
 - 布娃娃测试:R 关电机瘫倒,E 复位。B 物理线框。
 
-### 熟练度(后坐力已按用户要求移除)
+### 熟练度(竖直后坐已移除;保留热量 + 轻推背)
 - `player.skill` 0.1~1(localStorage `contra-skill`),每枪 +0.006。
-- `player.heat` 热量只影响散布:散布 = (0.012+0.075·heat)·(1.35-0.75·skill)。
-- 弹道永远精确指向光标(无上抬/无震颤/无推背)——别把后坐力系统加回来。
+- `player.heat` 热量只影响散布:散布 = (0.012+0.075·heat)·(1.35-0.75·skill);
+  每发 += 0.26·recoil词条·熟练度因子·heatMul(稳固词条降),停火按 (0.35+0.4·skill)/s 冷却。
+- 弹道永远精确指向光标(无上抬/无震颤/无弹道偏移)——别把竖直后坐力加回来。
+- 保留**每发水平轻推背**:扣扳机时 -facing·kick 冲量(kick = 0.7~1.15 × recoil词条 × 熟练度因子,
+  player.js 开火分支),纯体感不影响弹道;删它之前先问用户。
 
 ### 武器/装备轮盘(子弹时间)
 - 按住 Tab 唤起 wheel.js;世界时间走 main.js 的 timeScale(轮盘开 = 0.08,指数平滑过渡),
@@ -98,7 +101,7 @@
 - **真实伤害已接通**:弹丸 damage = 词条 damage(非归一),命中端 ×部位倍率;敌人子弹 ×0.35,玩家受击再 ×(1-防御)。
 - 子弹曲线变速:初速 30% maxSp,随 age 二次曲线加速到满速(rampT = 0.6·寿命)——
   曳光随速度自动变长,越飞越快越有劲儿。别改回线性加速,会被毙。
-- 后坐力系统已按用户要求整体移除(无上抬/无震颤/无推背);别加回来。
+- 竖直后坐力已按用户要求移除(无上抬/无震颤/无弹道偏移);保留热量散布与水平轻推背;别把竖直后坐加回来。
 
 ### 词条系统(affixes.js,DDD 领域层)
 - **词缀 = 纯数据定义**(40 条:20 前缀 + 20 后缀),物品实例只存 affixes: [{id, v}] 引用;
@@ -244,9 +247,9 @@
 - 玩家 HP 30、盔 12/甲 24,死亡 → 布娃娃倒地 2.5s → resetPlayer 复位(背包与金币保留)。
 - 弹道:初速全员上调(AK46/M4 52/AWP 115/MP5 40/霰弹 38/手枪 34),加速曲线更陡
   (rampT = 0.42×寿命);玩家跳 13 且全身起跳(四肢单独给速度,否则关节拖拽跳不高)。小兵:HP 10、护甲耐久×0.5(脆,打得爽)、武器从预设池随机(不抄玩家的枪)。
-- **后坐力手感**:recoilClimb 累计(每发 +=(0.010+0.012×recoil)×宽限系数,
-  前三发系数 0.25 渐升,停火 0.4s 重置);弹道与枪口视觉都 + climb×facing;
-  停火 0.13s 后 climb 按 2.4/s 回落。鼠标下压 = aim 下压,天然对抗上抬。
+- **后坐力手感(现行)**:竖直 climb 已删;每发累计热量(+= 0.26×recoil词条×熟练度因子×heatMul,
+  上限 1,停火按 (0.35+0.4·skill)/s 冷却)推高散布公式;每发 -facing 水平轻推背冲量,
+  熟练度越高越稳。弹道不受影响,永远指向光标。
 - **枪口火舌**:render 里三层焰瓣(白芯/黄/橙)沿 flashAng 展开,长度随机抖动,
   侧瓣小火花+光晕;玩家与敌人开枪都触发。
 - planck 坑:**Circle 构造是 (position, radius) 顺序**,Box 是 (hx, hy, center?, angle?),
@@ -349,7 +352,9 @@
 
 ## 调试入口
 
-- `window.__game()` 返回 `{ player, world, input, bullets, wheel }`。
-- `window.__frame(t)` 手动推帧:后台标签页 rAF 整体暂停(抓帧全黑/timeScale 不动都是这个),自动化测试用它确定性地驱动主循环。
+- `window.__game()` 返回 `{ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }`。
+- `window.__combat` = 命中管线直调句柄 `{ spawnBullet, stepBullets, applyHitscanDamage, onEnemyDied, stepPickups, alertEnemiesNear }`(自动化测试不 import 模块,直接调它)。
+- `window.__feel()` = 手感层状态;`window.__level()` = 地形块数组(注意:只有 x/y/w/h/hp/max,没有 type 字段)。
+- `window.__frame(t)` 手动推帧:后台标签页 rAF 整体暂停(抓帧全黑/timeScale 不动都是这个),自动化测试用它确定性地驱动主循环;`__frameN(n)` 批量推 n 帧。
 - B 键物理线框;R 布娃娃;E 复位。
 - 浏览器在后台时 rAF 暂停,canvas 抓帧全黑不是 bug;游戏页抓帧用 `canvas.toDataURL()`。

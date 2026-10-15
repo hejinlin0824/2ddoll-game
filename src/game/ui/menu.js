@@ -18,6 +18,7 @@ const savedScene = localStorage.getItem('contra-scene');
 let scene = SCENES.find((x) => x.id === savedScene && x.ready) || SCENES[0];
 activateCustomLevel(scene.id === 'custom'); // 选中态与激活 flag 对齐(防存档清了 flag 还开着)
 let leaveT = null;
+let gearT = null;              // 「装备整备」的开背包定时器(1s 内回菜单要取消,见 start/menuShow)
 let sfx = () => {};            // main 注入 beep
 let boom = () => {};           // main 注入 noiseBurst(开门"哗"的气流声)
 let onSlam = () => {};         // main 注入:全开瞬间的震屏+闪光(真空门效果的一部分)
@@ -46,6 +47,7 @@ export function menuShow() {
   if (!m || open) return;
   open = true;
   clearTimeout(leaveT);
+  clearTimeout(gearT); gearT = null; // 还没弹的"装备整备"背包别再弹(玩家已经回菜单了)
   const left = m.querySelector('.menu-left'), right = m.querySelector('.menu-right');
   document.getElementById('menuSeam').style.opacity = '0';
   document.getElementById('menuStart').textContent = started ? '继 续 战 斗' : '进 入 战 场';
@@ -119,7 +121,13 @@ function start(alsoGear) {
   requestAnimationFrame(anim);
   clearTimeout(leaveT);
   leaveT = setTimeout(() => document.body.classList.remove('in-menu'), Math.round(T_B * 1000) + 120); // 门划开的同时 HUD 淡入
-  if (alsoGear) setTimeout(() => bpToggle(), 1050); // 装备整备:进门后直接开背包
+  if (alsoGear) {
+    clearTimeout(gearT);
+    gearT = setTimeout(() => {
+      gearT = null;
+      if (!open && !helpIsOpen()) bpToggle(); // 触发前再校验:玩家若已回菜单/开帮助就不弹
+    }, 1050); // 装备整备:进门后直接开背包
+  }
 }
 
 function build() {

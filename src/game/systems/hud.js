@@ -7,24 +7,30 @@ import { itemTitle, AFFIX_BY_ID } from '../domain/affixes.js';
 const QLABEL = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
 const SLOT_LABEL = { head: '头盔', body: '防弹衣' };
 
-// ---- 左上角角色面板 ----
+// ---- 左上角角色面板(DOM 引用缓存:面板每 5 帧刷一次,别每次都 getElementById)----
+const PNL_IDS = ['pnlHp', 'pnlHpText', 'pnlHelm', 'pnlVest', 'pnlHelmBar', 'pnlVestBar', 'pnlHelmText', 'pnlVestText', 'pnlMain', 'pnlSide'];
+let PNL = null;
+function pnl() {
+  if (!PNL) PNL = Object.fromEntries(PNL_IDS.map((id) => [id, document.getElementById(id)]));
+  return PNL;
+}
 export function updateStatusPanel(pstate, player) {
-  const el = (id) => document.getElementById(id);
-  if (!el('pnlHp')) return;
+  const el = pnl();
+  if (!el.pnlHp) return;
   const hpPct = Math.max(0, pstate.hp / pstate.maxHp) * 100;
-  el('pnlHp').style.width = hpPct + '%';
-  el('pnlHpText').textContent = `${Math.ceil(pstate.hp)}/${pstate.maxHp}`;
+  el.pnlHp.style.width = hpPct + '%';
+  el.pnlHpText.textContent = `${Math.ceil(pstate.hp)}/${pstate.maxHp}`;
   const h = invEquipped('head'), b = invEquipped('body');
   const hq = h ? QUALITY[h.quality] : null, bq = b ? QUALITY[b.quality] : null;
-  el('pnlHelm').style.width = (h ? Math.max(0, h.dur / h.maxDur) * 100 : 0) + '%';
-  el('pnlVest').style.width = (b ? Math.max(0, b.dur / b.maxDur) * 100 : 0) + '%';
-  el('pnlHelmBar').style.borderColor = hq ? hq.color : 'rgba(244,233,216,0.25)';
-  el('pnlVestBar').style.borderColor = bq ? bq.color : 'rgba(244,233,216,0.25)';
-  el('pnlHelmText').textContent = h ? `${QLABEL[h.quality]} 盔 ${Math.ceil(h.dur)}` : '无头盔';
-  el('pnlVestText').textContent = b ? `${QLABEL[b.quality]} 甲 ${Math.ceil(b.dur)}` : '无护甲';
-  el('pnlMain').textContent = player.weapon === 'rifle' ? (player.gunDef?.name || '主武器') : '手枪';
-  el('pnlMain').style.opacity = player.weapon === 'rifle' ? 1 : 0.45;
-  el('pnlSide').style.opacity = player.weapon === 'pistol' ? 1 : 0.45;
+  el.pnlHelm.style.width = (h ? Math.max(0, h.dur / h.maxDur) * 100 : 0) + '%';
+  el.pnlVest.style.width = (b ? Math.max(0, b.dur / b.maxDur) * 100 : 0) + '%';
+  el.pnlHelmBar.style.borderColor = hq ? hq.color : 'rgba(244,233,216,0.25)';
+  el.pnlVestBar.style.borderColor = bq ? bq.color : 'rgba(244,233,216,0.25)';
+  el.pnlHelmText.textContent = h ? `${QLABEL[h.quality]} 盔 ${Math.ceil(h.dur)}` : '无头盔';
+  el.pnlVestText.textContent = b ? `${QLABEL[b.quality]} 甲 ${Math.ceil(b.dur)}` : '无护甲';
+  el.pnlMain.textContent = player.weapon === 'rifle' ? (player.gunDef?.name || '主武器') : '手枪';
+  el.pnlMain.style.opacity = player.weapon === 'rifle' ? 1 : 0.45;
+  el.pnlSide.style.opacity = player.weapon === 'pistol' ? 1 : 0.45;
 }
 
 // ---- 连杀计数(里程牌 + 滚轮数字)----
@@ -32,11 +38,14 @@ export function updateStatusPanel(pstate, player) {
 const STREAK_LABEL = (n) => n >= 10 ? '天下无双' : n >= 7 ? '杀神' : n === 6 ? '六连杀' : n === 5 ? '五连杀' : n === 4 ? '四连杀' : n === 3 ? '三连杀' : '双杀';
 const STREAK_TIER = (n) => n >= 10 ? { c: '#ff5b4a', glow: '#ff8a5c' } : n >= 7 ? { c: '#ff9a3c', glow: '#ffb14a' } : n >= 5 ? { c: '#ffc21c', glow: '#ffd24a' } : { c: '#ffe9a8', glow: '#fff2cc' };
 const odoEl = () => document.getElementById('streakOdo');
+let STREAK = null, STREAK_LBL = null; // 连杀公告的容器/文字缓存
 export function streakShow(n) {
-  const box = document.getElementById('streak');
+  if (!STREAK) STREAK = document.getElementById('streak');
+  const box = STREAK;
   if (!box) return;
   const tier = STREAK_TIER(n);
-  const lbl = document.getElementById('streakLabel');
+  if (!STREAK_LBL) STREAK_LBL = document.getElementById('streakLabel');
+  const lbl = STREAK_LBL;
   lbl.textContent = STREAK_LABEL(n);
   lbl.style.color = tier.c;
   lbl.style.textShadow = `0 0 18px ${tier.glow}88, 0 2px 10px rgba(0,0,0,0.8)`;
@@ -63,8 +72,8 @@ export function streakShow(n) {
   if (n % 5 === 0) box.classList.add('big'); // 里程碑:整块弹大
 }
 export function streakHide() {
-  const box = document.getElementById('streak');
-  if (box) box.classList.remove('show');
+  if (!STREAK) STREAK = document.getElementById('streak');
+  if (STREAK) STREAK.classList.remove('show');
 }
 
 // ---- 拾取 toast:右下角品质卡,2s 消失(刷宝的爽点在捡到那一眼)----

@@ -103,6 +103,9 @@ const sum = (affixes, stat) => affixes.reduce((t, a) => {
   return def && def.stat === stat ? t + a.v : t;
 }, 0);
 const mul = (affixes, stat) => Math.max(0, 1 + sum(affixes, stat) / 100);
+// 减少类词条(精准/迅装/稳固):v 是"降低百分比",乘区 = 1 - 降低。
+// 不能走 mul(),否则词缀变负面(枪更散/换弹更慢/热量更猛);下限 0.2 防叠加到零。
+const red = (affixes, stat) => Math.max(0.2, 1 - sum(affixes, stat) / 100);
 
 // 枪械聚合:伤害/射速/弹容/散布/换弹/射程/吸血
 export function computeGunMods(affixes = []) {
@@ -110,11 +113,11 @@ export function computeGunMods(affixes = []) {
     dmgMul: mul(affixes, 'dmgPct'),
     rpmMul: mul(affixes, 'rpmPct'),
     magFlat: sum(affixes, 'magFlat'),
-    spreadMul: mul(affixes, 'spreadRed'),
-    reloadMul: mul(affixes, 'reloadRed'),
+    spreadMul: red(affixes, 'spreadRed'),
+    reloadMul: red(affixes, 'reloadRed'),
     rangeMul: mul(affixes, 'rangePct'),
     armorDmgMul: mul(affixes, 'armorDmgPct'),
-    heatMul: mul(affixes, 'heatRed'),
+    heatMul: red(affixes, 'heatRed'),
     lifesteal: sum(affixes, 'lifesteal'),
   };
 }

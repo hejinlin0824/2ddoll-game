@@ -3,7 +3,8 @@
 // 固定主地表(33,-1.5,90,3)不可删除 —— 保证出生区有地面,你画的块在游戏里全部可被子弹打碎。
 const KEY = 'contra-level-custom';
 const VIEW = { x0: -12, x1: 78, y0: -4, y1: 13 };
-const GROUND = { x: 33, y: -1.5, w: 90, h: 3, type: 'ground', fixed: true };
+// 编辑器内部统一用"左下角"表示;存档 v2 起存"中心点"(游戏 LEVEL.rects 的约定),出/入各转一次
+const GROUND = { x: -12, y: -3, w: 90, h: 3, type: 'ground', fixed: true }; // 与游戏主地表(33,-1.5,90,3)同物
 const SNAP = 0.5;
 const MIN = 0.5;
 
@@ -18,12 +19,16 @@ let mouseW = null;
 function load() {
   try {
     const c = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (c && Array.isArray(c.rects)) return c.rects;
+    if (c && Array.isArray(c.rects)) {
+      // v1 存左下角(旧版,直接用);v2 存中心点,转回左下角供内部绘制
+      return c.rects.map((r) => (c.version >= 2 ? { ...r, x: r.x - r.w / 2, y: r.y - r.h / 2 } : { ...r }));
+    }
   } catch { /* 忽略 */ }
   return [];
 }
 function save(silent) {
-  localStorage.setItem(KEY, JSON.stringify({ version: 1, rects }));
+  const out = rects.map((r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2, w: r.w, h: r.h, type: r.type }));
+  localStorage.setItem(KEY, JSON.stringify({ version: 2, rects: out }));
   if (!silent) toast('已保存 —— 到游戏主菜单选「我的关卡」开打');
 }
 function toast(msg) {
