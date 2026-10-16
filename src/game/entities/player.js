@@ -8,7 +8,7 @@ import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from '../world/level.js';
 import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
-import { skinImg, skinXf, skinFitScale, SKIN_BOX } from '../domain/skin.js';
+import { skinImg, skinXf, skinFitScale, SKIN_END_ANCHORED, SKIN_BOX } from '../domain/skin.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
@@ -776,15 +776,18 @@ export class Player {
       if (!this.useSkin) return false;
       const im = skinImg(part);
       if (!im) return false;
+      const box = SKIN_BOX[part];
       const xf = skinXf(part);
       const [x, y] = P(b);
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(R(b));
-      const s = skinFitScale(part, im.naturalWidth, im.naturalHeight) * ppm * (xf.scale || 1); // skinFitScale 返回米/像素,必须乘 ppm
+      const s = skinFitScale(part, im.naturalWidth, im.naturalHeight) * ppm * (xf.scale || 1); // skinFitScale 是米/像素,必须乘 ppm
+      const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+      // 端点锚定(foreArm/calf):图底对齐身体末端 —— 小臂底=手=枪握点,小腿底=脚底=落地;其余居中
+      const dy = SKIN_END_ANCHORED[part] ? (box.h / 2 - (box.tip || 0)) * ppm - dh : -dh / 2;
       if (dark) ctx.filter = 'brightness(0.72) saturate(0.85)';
-      ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
-        -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
+      ctx.drawImage(im, -dw / 2 + (xf.ox || 0) * ppm, dy + (xf.oy || 0) * ppm, dw, dh);
       ctx.filter = 'none';
       ctx.restore();
       return true;
