@@ -23,7 +23,8 @@
 
 ## 页面与目录
 
-- game.html(游戏)/ weapon-editor.html(枪械设计器)/ asset-studio.html(装备工坊,暂缓)/ fonts.html(字体审批)/ index.html(陈列馆)
+- game.html(游戏)/ weapon-editor.html(枪械设计器)/ level-editor.html(关卡设计器)/
+  skin-studio.html(皮肤工坊)/ asset-studio.html(装备工坊,暂缓)/ fonts.html(字体审批)
 - src/game/
   - game.js          装配根:world/player/waves 组装、依赖包 C、step/frame 编排、调试句柄、渲染
   - core/config.js   分辨率与物理常量
@@ -91,6 +92,7 @@
 | `contra-skill` | 熟练度 |
 | `contra-shield` / `contra-shield-hp` | 盾牌是否装备 / 耐久 |
 | `contra-inv` | 背包(金币+装备实例,inventory.js) |
+| `contra-skin` | **自绘皮肤六件套**(皮肤工坊产物,skin.js;头/躯干/大臂/小臂/大腿/小腿) |
 | `contra-scene` | 选中的场景('wild'/'custom';level.js 的自定义关卡守卫拿它当事实来源) |
 
 - 主武器:双手 IK 持枪,8.5 发/秒,弹 6→34 m/s,镜头微震;副武器手枪:单手 0.22m、4 发/秒。
@@ -306,6 +308,23 @@
 - ⚠️ 工坊/编辑器/游戏同源共享 localStorage —— 测试时写的测试素材和穿戴会污染用户存档,测完要清理。
 - 手枪渲染:滑套画在轴线上方(-y),gunMirrored(朝左)时 scale(1,-1) 垂直镜像 ——
   不镜像的话朝右打手枪上下颠倒(滑套跑到下面)。
+
+### 皮肤工坊(skin-studio.html + skin.js)——自绘主角六件套
+> 用户手绘简笔画(白底)上传 → 自动抠白底 + 裁边 → 贴到布娃娃的 头/躯干/大臂/小臂/大腿/小腿。
+> 模式 = Drawn to Life 分件换肤:贴图跟着物理刚体走,跑步/翻滚/布娃娃死亡全部自动正确,零动画成本。
+- **处理在上传时一次完成**(domain/skin.js `processSkinImage`):四边平均色当背景参考(抗纸面偏色)→
+  边缘连通洪水抠白(默认「保留内部白」:脸/衣服里的白色留下;轮廓不闭合会从缺口漏,可关掉或调容差)→
+  近白抗锯齿边软过渡 → 自动裁边(+2px)。产物 = 已处理的 PNG dataURL 直接落档,游戏端只消费。
+- **渲染约定**(player.js `skinCap`):贴图 contain 进部件标准框(D 的包围盒),竖直方向、
+  上端=根(头顶/肩/髋)、下端=端(下巴/手/脚);头/躯干随 facing 镜像(与 drawEquip 同款纸娃娃翻转,
+  只翻皮肤层别翻装备层);远侧肢 `ctx.filter='brightness(0.72)'` 压暗保持纵深。
+- **分层**:皮肤 = 底层,头盔/防弹衣(drawEquip)照常叠外面;某件没画就回退该件的程序绘制。
+  有小臂贴图时程序小手自动隐藏;有小腿贴图时程序靴子自动隐藏。
+- **只给主角**:`useSkin = !opts.palette`,敌人(带 palette)不吃皮肤,也不会跟玩家撞衫。
+- ⚠️ 上屏很小(全身 ~81px):提醒用户笔画粗、颜色亮;贴图比部件框细长时 contain 会缩得更小,属正常。
+- ⚠️ 工坊页 skinStudio.js 的模块级调用顺序:`SKIN_PARTS.forEach(redrawSlot)` 必须在
+  `drawAssembled` 定义之后(TDZ,曾在模块中段炸断导致 UI 建好但事件全没挂)。
+- 调试:`window.__skinTest(part, drawFn)` 工坊页注入合成白底图走完整上传管线。
 
 ### 素材化(枪声 + 背景)
 - 枪声:public/sfx/*.wav(CC0/CC-BY,署名见 ASSETS.md),main.js fetch+decodeAudioData 缓存,

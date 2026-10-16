@@ -8,6 +8,7 @@ import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from '../world/level.js';
 import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
+import { skinImg } from '../domain/skin.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
@@ -47,6 +48,7 @@ export class Player {
     this.events = [];
     this.C = { ...COLOR, ...(opts.palette || {}) };
     this.loadoutOpt = opts.loadout || null;
+    this.useSkin = !opts.palette; // 自绘皮肤只给主角:敌人带 palette 进来,跳过皮肤
     this.build();
   }
 
@@ -766,6 +768,26 @@ export class Player {
       ctx.restore();
     };
 
+    // 自绘皮肤六件套:有贴图画贴图,没有回退程序绘制(贴图未解码的帧也回退,就绪后自然出现)。
+    // 贴图方向约定:竖直、上端=根(肩/髋/头顶)、下端=端(手/脚);远侧肢加滤镜压暗保持纵深
+    const skinCap = (b, part, d, dark = false) => {
+      if (!this.useSkin) return false;
+      const im = skinImg(part);
+      if (!im) return false;
+      const [x, y] = P(b);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(R(b));
+      const bw = d.w * ppm, bh = d.h * ppm;
+      const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight);
+      if (dark) ctx.filter = 'brightness(0.72) saturate(0.85)';
+      ctx.drawImage(im, -im.naturalWidth * s / 2, -im.naturalHeight * s / 2, im.naturalWidth * s, im.naturalHeight * s);
+      ctx.filter = 'none';
+      ctx.restore();
+      return true;
+    };
+    const hasSkin = (part) => this.useSkin && !!skinImg(part);
+
     // 装备:在对应身体部件的局部空间里绘制(纸娃娃挂点式)
     // parts 支持两种零件:矩形 {x,y,w,h,color,r} / 图片 {img:素材id,x,y,w,h,rot}
     const assetImgs = new Map(); // 素材图缓存(id -> HTMLImageElement)
@@ -859,28 +881,38 @@ export class Player {
     };
 
     // 远侧肢体(暗色)→ 躯干 → 头 → 近侧腿 → 枪 → 近侧臂
-    cap(this.armUB, D.upperArm, this.C.skinDark);
-    cap(this.armLB, D.foreArm, this.C.skinDark);
-    hand(this.armLB);
-    boot(this.legLB, this.C.pantsDark, this.C.bootDark);
-    cap(this.legUB, D.thigh, this.C.pantsDark);
+    if (!skinCap(this.armUB, 'upperArm', D.upperArm, true)) cap(this.armUB, D.upperArm, this.C.skinDark);
+    if (!skinCap(this.armLB, 'foreArm', D.foreArm, true)) cap(this.armLB, D.foreArm, this.C.skinDark);
+    if (!hasSkin('foreArm')) hand(this.armLB);
+    if (!skinCap(this.legLB, 'calf', D.calf, true)) boot(this.legLB, this.C.pantsDark, this.C.bootDark);
+    if (!skinCap(this.legUB, 'thigh', D.thigh, true)) cap(this.legUB, D.thigh, this.C.pantsDark);
 
-    // 躯干
+    // 躯干(自绘皮肤优先,随朝向镜像;无皮肤画程序躯体+弹药带)
     {
       const [x, y] = P(this.torso);
       ctx.save();
       ctx.translate(x, y); ctx.rotate(R(this.torso));
-      const w = D.torso.w * ppm, h = D.torso.h * ppm;
-      ctx.fillStyle = this.C.skin;
-      ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
-      // 弹药带
-      ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.moveTo(-w * 0.4, -h * 0.32); ctx.lineTo(w * 0.42, h * 0.05); ctx.stroke();
-      ctx.strokeStyle = '#3d2f21'; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.moveTo(-w * 0.42, h * 0.02); ctx.lineTo(w * 0.4, h * 0.38); ctx.stroke();
-      // 腰带
-      ctx.fillStyle = '#603a1e';
-      ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
+      if (hasSkin('torso')) {
+        const im = skinImg('torso');
+        const bw = D.torso.w * ppm, bh = D.torso.h * ppm;
+        const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight);
+        ctx.save();
+        if (this.facing === -1) ctx.scale(-1, 1); // 只镜像皮肤层:装备层 drawEquip 自带镜像,别在外面翻它
+        ctx.drawImage(im, -im.naturalWidth * s / 2, -im.naturalHeight * s / 2, im.naturalWidth * s, im.naturalHeight * s);
+        ctx.restore();
+      } else {
+        const w = D.torso.w * ppm, h = D.torso.h * ppm;
+        ctx.fillStyle = this.C.skin;
+        ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
+        // 弹药带
+        ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(-w * 0.4, -h * 0.32); ctx.lineTo(w * 0.42, h * 0.05); ctx.stroke();
+        ctx.strokeStyle = '#3d2f21'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(-w * 0.42, h * 0.02); ctx.lineTo(w * 0.4, h * 0.38); ctx.stroke();
+        // 腰带
+        ctx.fillStyle = '#603a1e';
+        ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
+      }
       drawEquip(this.loadout.torso);
       ctx.restore();
     }
@@ -927,48 +959,58 @@ export class Player {
       ctx.restore();
     }
 
-    // 头 + 红头巾
+    // 头(自绘皮肤优先,随朝向镜像;无皮肤画程序头+红头巾+眼)
     {
       const [x, y] = P(this.head);
       ctx.save();
       ctx.translate(x, y); ctx.rotate(R(this.head));
-      const r = D.headR * ppm;
-      // 脖子(随头旋转,始终连接头与颈关节锚点;画在身体 -y 方向,朝向躯干)
-      ctx.strokeStyle = this.C.skin; ctx.lineWidth = 0.078 * ppm; ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(0, 0.03 * ppm);
-      ctx.lineTo(0, 0.33 * ppm);
-      ctx.stroke();
-      ctx.fillStyle = this.C.skin;
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-      // 头巾(头顶 2/5)
-      ctx.fillStyle = this.C.bandana;
-      ctx.beginPath();
-      ctx.roundRect(-r, -r, r * 2, r * 0.85, [r, r, r * 0.3, r * 0.3]);
-      ctx.fill();
-      // 飘带(脑后,随时间摆动)
-      const flap = Math.sin(time * 8) * 2.5;
-      ctx.strokeStyle = this.C.bandana; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(-this.facing * r * 0.8, -r * 0.4);
-      ctx.quadraticCurveTo(-this.facing * r * 1.7, -r * 0.7 + flap, -this.facing * r * 2.3, -r * 0.15 + flap * 1.6);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(-this.facing * r * 0.8, -r * 0.3);
-      ctx.quadraticCurveTo(-this.facing * r * 1.6, -r * 0.1 - flap, -this.facing * r * 2.1, -r * 0.55 - flap);
-      ctx.stroke();
-      // 眼睛
-      ctx.fillStyle = '#222';
-      ctx.beginPath(); ctx.arc(this.facing * r * 0.42, r * 0.05, 1.7, 0, Math.PI * 2); ctx.fill();
+      if (hasSkin('head')) {
+        const im = skinImg('head');
+        const bw = D.headR * 2 * ppm, bh = D.headR * 2 * ppm;
+        const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight);
+        ctx.save();
+        if (this.facing === -1) ctx.scale(-1, 1);
+        ctx.drawImage(im, -im.naturalWidth * s / 2, -im.naturalHeight * s / 2, im.naturalWidth * s, im.naturalHeight * s);
+        ctx.restore();
+      } else {
+        const r = D.headR * ppm;
+        // 脖子(随头旋转,始终连接头与颈关节锚点;画在身体 -y 方向,朝向躯干)
+        ctx.strokeStyle = this.C.skin; ctx.lineWidth = 0.078 * ppm; ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 0.03 * ppm);
+        ctx.lineTo(0, 0.33 * ppm);
+        ctx.stroke();
+        ctx.fillStyle = this.C.skin;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        // 头巾(头顶 2/5)
+        ctx.fillStyle = this.C.bandana;
+        ctx.beginPath();
+        ctx.roundRect(-r, -r, r * 2, r * 0.85, [r, r, r * 0.3, r * 0.3]);
+        ctx.fill();
+        // 飘带(脑后,随时间摆动)
+        const flap = Math.sin(time * 8) * 2.5;
+        ctx.strokeStyle = this.C.bandana; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-this.facing * r * 0.8, -r * 0.4);
+        ctx.quadraticCurveTo(-this.facing * r * 1.7, -r * 0.7 + flap, -this.facing * r * 2.3, -r * 0.15 + flap * 1.6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-this.facing * r * 0.8, -r * 0.3);
+        ctx.quadraticCurveTo(-this.facing * r * 1.6, -r * 0.1 - flap, -this.facing * r * 2.1, -r * 0.55 - flap);
+        ctx.stroke();
+        // 眼睛
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.arc(this.facing * r * 0.42, r * 0.05, 1.7, 0, Math.PI * 2); ctx.fill();
+      }
       drawEquip(this.loadout.head);
       ctx.restore();
     }
 
-    boot(this.legLF, this.C.pants, this.C.boot);
-    cap(this.legUF, D.thigh, this.C.pants);
+    if (!hasSkin('calf')) boot(this.legLF, this.C.pants, this.C.boot);
+    if (!skinCap(this.legUF, 'thigh', D.thigh)) cap(this.legUF, D.thigh, this.C.pants);
     gun();
-    cap(this.armUF, D.upperArm, this.C.skin);
-    cap(this.armLF, D.foreArm, this.C.skin);
-    hand(this.armLF);
+    if (!skinCap(this.armUF, 'upperArm', D.upperArm)) cap(this.armUF, D.upperArm, this.C.skin);
+    if (!skinCap(this.armLF, 'foreArm', D.foreArm)) cap(this.armLF, D.foreArm, this.C.skin);
+    if (!hasSkin('foreArm')) hand(this.armLF);
   }
 }

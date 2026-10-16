@@ -16,6 +16,7 @@ export default defineConfig({
         studio: 'asset-studio.html',
         levelEditor: 'level-editor.html',
         fonts: 'fonts.html',
+        skinStudio: 'skin-studio.html',
       },
     },
   },
