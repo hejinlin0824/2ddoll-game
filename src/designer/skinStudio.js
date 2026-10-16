@@ -2,7 +2,7 @@
 // → 组装预览 → 存档(contra-skin v2:src + ox/oy/scale)。
 // 处理管线/尺寸事实源在 domain/skin.js(SKIN_BOX 与游戏共用,不错位的根基);本层只管交互。
 import {
-  SKIN_PARTS, SKIN_LABEL, SKIN_BOX, loadSkin, saveSkin, clearSkin, processSkinImage, orientSkinImage,
+  SKIN_PARTS, SKIN_LABEL, SKIN_BOX, skinFitScale, loadSkin, saveSkin, clearSkin, processSkinImage, orientSkinImage,
 } from '../game/domain/skin.js';
 
 const $ = (id) => document.getElementById(id);
@@ -208,10 +208,10 @@ function renderEditor() {
   mCtx.fillStyle = 'rgba(232,160,76,0.75)';
   mCtx.font = '11px "Noto Sans SC"';
   mCtx.fillText('↑上端(根)', cx - (box.w * mEPPM) / 2, cy - (box.h * mEPPM) / 2 - 6);
-  // 贴图(contain × scale + 拖动偏移;与 player.js skinCap 同一套数学)
+  // 贴图(与 player.js skinCap 同一套适配数学:四肢按长度定标,其余 contain;× scale + 拖动偏移)
   const im = ed.img;
   if (im.complete && im.naturalWidth) {
-    const s0 = Math.min((box.w * mEPPM) / im.naturalWidth, (box.h * mEPPM) / im.naturalHeight) * ed.xf.scale;
+    const s0 = skinFitScale(ed.part, im.naturalWidth, im.naturalHeight) * mEPPM * ed.xf.scale;
     const dw = im.naturalWidth * s0, dh = im.naturalHeight * s0;
     const dx = cx - dw / 2 + ed.xf.ox * mEPPM, dy = cy - dh / 2 + ed.xf.oy * mEPPM;
     mCtx.drawImage(im, dx, dy, dw, dh);
@@ -337,7 +337,7 @@ function drawAssembled() {
     const im = imgOf(part);
     if (im && im.complete && im.naturalWidth) {
       const xf = slots[part];
-      const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight) * (xf.scale || 1);
+      const s = skinFitScale(part, im.naturalWidth, im.naturalHeight) * PPM2 * (xf.scale || 1);
       if (dark) actx.filter = 'brightness(0.72) saturate(0.85)';
       actx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * PPM2, -im.naturalHeight * s / 2 + (xf.oy || 0) * PPM2,
         im.naturalWidth * s, im.naturalHeight * s);
