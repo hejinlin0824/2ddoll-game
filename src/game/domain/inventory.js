@@ -2,7 +2,7 @@
 // 存档 'contra-inv' = { coins, items: [{id, slot, quality, dur, maxDur, equipped, affixes}] }
 // 装备 = 消耗品:碎了不清空存档,留在背包里等修复。
 // 词条领域(词缀定义/掷取/聚合)在 affixes.js —— 本层只管实例与持久化。
-import { rollAffixes, AFFIX_BY_ID } from './affixes.js';
+import { rollAffixes, AFFIX_BY_ID, absorbAffix, loadGunAffixes, saveGunAffixes } from './affixes.js';
 const KEY = 'contra-inv';
 export const QUALITY_ORDER = ['broken', 'normal', 'fine', 'rare', 'epic', 'legendary'];
 let seq = Date.now() % 100000;
@@ -50,21 +50,21 @@ export function invSpend(n) {
   return true;
 }
 
-// 新装备实例(掉落/奖励用);dur 默认满,可传 0(敌人掉落的破损件)
-// 掷两条词缀(1 前缀 + 1 后缀),耐久上限吃"全耐久/护甲耐久"词条加成
-export function invAddItem(slot, quality, dur) {
+// 新装备实例(掉落/奖励/搜尸用);dur 默认满。affixes 可显式传入(搜尸战利品/吸收材料),
+// 缺省现掷一对。slot 允许 'gun' = 武器词条材料(不可穿戴,供吸取/突破/分解,无耐久概念)
+export function invAddItem(slot, quality, dur, affixes, extra) {
   invLoad();
   const q = quality;
   const base = slot === 'head' ? 12 : 24;
   // 品质倍率
   const mul = { broken: 0.5, normal: 1, fine: 1.3, rare: 1.6, epic: 2, legendary: 2.6 }[q] ?? 1;
-  const affixes = rollAffixes(slot, q);
-  const durPct = affixes.reduce((t, a) => {
+  const useAffixes = affixes || rollAffixes(slot === 'body' ? 'body' : slot === 'head' ? 'head' : 'gun', q);
+  const durPct = useAffixes.reduce((t, a) => {
     const def = AFFIX_BY_ID[a.id];
     return def && (def.stat === 'allDurPct' || (slot === 'head' && def.stat === 'helmetDurPct') || (slot === 'body' && def.stat === 'armorDurPct')) ? t + a.v : t;
   }, 0);
-  const maxDur = Math.round(base * mul * (1 + durPct / 100) * 10) / 10;
-  const it = { id: 'i' + (seq++).toString(36) + Math.floor(Math.random() * 999).toString(36), slot, quality: q, dur: dur ?? maxDur, maxDur, equipped: false, affixes };
+  const maxDur = slot === 'gun' ? 0 : Math.round(base * mul * (1 + durPct / 100) * 10) / 10;
+  const it = { id: 'i' + (seq++).toString(36) + Math.floor(Math.random() * 999).toString(36), slot, quality: q, dur: slot === 'gun' ? 0 : (dur ?? maxDur), maxDur, equipped: false, affixes: useAffixes, ...(extra || {}) };
   inv.items.push(it);
   invSave();
   return it;
@@ -138,8 +138,60 @@ export function invUpgrade(id) {
   return { ok: true, msg: `强化成功!已升级为 ${it.quality}` };
 }
 
-// 合成:3 件同槽位同品质 → 1 件下一档品质(耐久取三件中最高上限)
-export function invCombine(ids) {
+// ---- 分解(替代丢弃):按品质+词条数折算金币 ----
+export const DECOMPOSE_VALUE = { broken: 5, normal: 12, fine: 25, rare: 50, epic: 100, legendary: 200 };
+export function invDecompose(id) {
+  invLoad();
+  const it = invItem(id);
+  if (!it || it.equipped) return { ok: false, msg: it ? '装备中的不能分解' : '不存在' };
+  const coins = (DECOMPOSE_VALUE[it.quality] ?? 10) + (it.affixes?.length || 0) * 10;
+  invTakeItem(id);
+  invAddCoins(coins);
+  return { ok: true, msg: `分解获得 ${coins} 金币`, coins };
+}
+
+// ---- 吸取词条(对标 D3 卡奈魔盒提取):材料的词条合并进目标后消失 ----
+// 装备材料 → 已装备的同槽装备(同词条数值相加,异词条追加,装备词条位上限 2);
+// 枪材料(slot 'gun') → 主武器槽位词条(上限 4 条,玩家和敌人共用这条成长线)
+export function invAbsorb(materialId) {
+  invLoad();
+  const m = invItem(materialId);
+  if (!m || m.equipped) return { ok: false, msg: m ? '装备中的不能作为材料' : '材料不存在' };
+  if (!m.affixes?.length) return { ok: false, msg: '这件没有词条可吸' };
+  let skipped = 0;
+  if (m.slot === 'gun') {
+    let list = (loadGunAffixes() || []).map((a) => ({ ...a }));
+    for (const a of m.affixes) {
+      const r = absorbAffix(list, a, 4);
+      if (r) list = r; else skipped++;
+    }
+    saveGunAffixes(list);
+    invTakeItem(materialId);
+    return { ok: true, msg: `已吸取进主武器词条${skipped ? `(词条位满,跳过 ${skipped} 条)` : ''}` };
+  }
+  const eq = inv.items.find((it) => it.equipped && it.slot === m.slot);
+  if (!eq) return { ok: false, msg: `先装备一件${m.slot === 'head' ? '头盔' : '防弹衣'}才能吸取` };
+  if (!eq.affixes) eq.affixes = [];
+  for (const a of m.affixes) {
+    const r = absorbAffix(eq.affixes, a, 2);
+    if (r) eq.affixes = r; else skipped++;
+  }
+  invTakeItem(materialId);
+  invSave();
+  return { ok: true, msg: `已吸取进${eq.slot === 'head' ? '头盔' : '防弹衣'}${skipped ? `(词条位满,跳过 ${skipped} 条)` : ''}` };
+}
+
+// ---- 突破(替代三合一):3 件同槽位同品质 → 三态判定 ----
+// 升(品质+1)/不变/失败(随机失去一条词条)。词条按"逐属性取三件最大值"继承(词条位上限:装备2/枪4)。
+// 概率:紫之前 90% 升 10% 败;紫→金 10% 升 80% 不变 10% 败(用户指定,失败会掉属性)
+export const BT_RATE = {
+  broken: { up: 0.9, keep: 0, fail: 0.1 },
+  normal: { up: 0.9, keep: 0, fail: 0.1 },
+  fine: { up: 0.9, keep: 0, fail: 0.1 },
+  rare: { up: 0.9, keep: 0, fail: 0.1 },
+  epic: { up: 0.1, keep: 0.8, fail: 0.1 },
+};
+export function invBreakthrough(ids) {
   invLoad();
   if (!ids || ids.length !== 3) return { ok: false, msg: '需要 3 件同槽位同品质' };
   const its = ids.map((x) => invItem(x));
@@ -148,19 +200,42 @@ export function invCombine(ids) {
   if (a.slot !== b.slot || b.slot !== c.slot || a.quality !== b.quality || b.quality !== c.quality) {
     return { ok: false, msg: '三件必须同槽位同品质' };
   }
+  if (its.some((it) => it.equipped)) return { ok: false, msg: '装备中的不能当素材' };
   const i = QUALITY_ORDER.indexOf(a.quality);
   if (i < 0 || i >= QUALITY_ORDER.length - 1) return { ok: false, msg: '已是最高品质' };
-  const mul = { broken: 0.5, normal: 1, fine: 1.3, rare: 1.6, epic: 2, legendary: 2.6 };
-  const nxtQ = QUALITY_ORDER[i + 1];
-  const nxtMul = mul[nxtQ] ?? 1;
-  const base = a.slot === 'head' ? 12 : 24;
-  const maxDur = Math.round(base * nxtMul * 10) / 10;
+  // 词条继承:逐属性键取三件中的最大值
+  const cap = a.slot === 'gun' ? 4 : 2;
+  const best = new Map();
+  for (const it of its) for (const af of (it.affixes || [])) {
+    const stat = AFFIX_BY_ID[af.id]?.stat;
+    if (!stat) continue;
+    if (!best.has(stat) || af.v > best.get(stat).v) best.set(stat, { ...af });
+  }
+  let affixes = [...best.values()].sort((x, y) => y.v - x.v).slice(0, cap);
+  const rate = BT_RATE[a.quality] ?? { up: 0.9, keep: 0, fail: 0.1 };
+  const roll = Math.random();
+  const outcome = roll < rate.up ? 'up' : roll < rate.up + rate.keep ? 'keep' : 'fail';
+  let msg;
+  if (outcome === 'fail' && affixes.length) {
+    const drop = affixes.splice(Math.floor(Math.random() * affixes.length), 1)[0];
+    msg = `突破失败…失去「${AFFIX_BY_ID[drop.id]?.label ?? drop.id}」词条`;
+  } else if (outcome === 'up') msg = `突破成功!升级为 ${QLABEL_OF[QUALITY_ORDER[i + 1]]}`;
+  else msg = '突破未成功,品质不变(素材已返还一件)';
+  const nxtQ = outcome === 'up' ? QUALITY_ORDER[i + 1] : a.quality;
   inv.items = inv.items.filter((x) => !ids.includes(x.id));
-  // 合成产物按新品质重掷一对词缀(与开箱/掉落一致,不出白板)
-  const it = { id: 'i' + (seq++).toString(36) + Math.floor(Math.random() * 999).toString(36), slot: a.slot, quality: nxtQ, dur: maxDur, maxDur, equipped: false, affixes: rollAffixes(a.slot, nxtQ) };
+  const it = { id: 'i' + (seq++).toString(36) + Math.floor(Math.random() * 999).toString(36), slot: a.slot, quality: nxtQ, dur: 0, maxDur: 0, equipped: false, affixes };
+  if (a.slot !== 'gun') { // 装备件耐久按新品质重算满
+    const mul = { broken: 0.5, normal: 1, fine: 1.3, rare: 1.6, epic: 2, legendary: 2.6 }[nxtQ] ?? 1;
+    const durPct = affixes.reduce((t, af) => {
+      const def = AFFIX_BY_ID[af.id];
+      return def && (def.stat === 'allDurPct' || (a.slot === 'head' && def.stat === 'helmetDurPct') || (a.slot === 'body' && def.stat === 'armorDurPct')) ? t + af.v : t;
+    }, 0);
+    it.maxDur = Math.round((a.slot === 'head' ? 12 : 24) * mul * (1 + durPct / 100) * 10) / 10;
+    it.dur = it.maxDur;
+  }
   inv.items.push(it);
   invSave();
-  return { ok: true, msg: `合成 ${nxtQ} ${it.slot === 'head' ? '头盔' : '防弹衣'}`, item: it };
+  return { ok: true, outcome, msg: outcome === 'keep' ? '突破未成功,品质不变(素材已返还一件)' : msg, item: it };
 }
 
 // 锻造:耐久上限 +50%(可重复),费用 25
@@ -174,12 +249,7 @@ export function invForge(id) {
   return { ok: true, msg: `锻造完成,耐久上限 ${it.maxDur}` };
 }
 
-// 死亡掉落入库(0 耐久装备)
-export function invAddDrop(slot, quality) {
-  return invAddItem(slot, quality, 0);
-}
-
-// ---- 背包容量(已穿戴的不占格子)----
+// ---- 背包容量(已穿戴的不占格子;枪词条材料也占格)----
 export const BP_CAP = 24;
 export function invIsFull() {
   invLoad();

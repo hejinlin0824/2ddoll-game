@@ -52,11 +52,14 @@ game.html ──▶ game.js(装配根:组装世界/系统/循环,~780行)
 
 ## 地形破坏(tile 化)
 
-- buildLevel 时可破坏 rect 细分为 0.5m tile(每个 tile = 小 rect + 独立静态刚体,
-  HP = 面积×40 ≈ 10),tile 就存进 LEVEL.rects —— groundYAt/命中/渲染等所有遍历零改动。
-- 子弹命中 tile 扣血,归零碎裂(destroyRect:splice + destroyBody);**溢出伤害沿弹道
-  继续啃相邻 tile**(damageTerrain 递归,深度≤3)—— 步枪一发打穿 2 块 + 第三块裂纹。
-- 主地表 destructible:false,不 tile 化、不可破坏(防掉深渊)。
+- buildLevel 时可破坏 rect 细分为 **0.25m tile**(TILE 常量,~13px;每个 tile = 小 rect + 独立静态
+  刚体,HP = 面积×40 ≈ 2.5),tile 就存进 LEVEL.rects —— groundYAt/命中/渲染等所有遍历零改动。
+- 子弹命中 tile 扣血,归零碎裂(destroyRect:splice + destroyBody);**溢出伤害沿弹道继续啃相邻
+  tile**(damageTerrain 递归,步距 0.27m≈tile,深度≤6)。主地表 destructible:false,不 tile 化。
+- **防隧道采样**:0.25m tile 下 stepBullets 沿本步弹道按 ~0.12m 间隔密集采样(采样间距必须小于
+  tile 尺寸,否则子弹穿tile)。
+- **贴花跟随宿主**:tile 碎裂时即时清除其范围内的弹孔/血渍(damageTerrain);另有 fx.js stepFx
+  每 0.3s 的兜底扫描 —— 贴花找不到宿主 rect 就删(防"击碎后弹孔悬空")。
 - 方案属业界"块删除"流派(Worms 位图挖洞/QuadTree 雕刻不适用 planck 刚体)。
 
 ## 已知约定(改代码前必读)

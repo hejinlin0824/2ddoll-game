@@ -5,27 +5,25 @@
 // 经济与存档逻辑全在 inventory.js,本层只管展示与交互。
 import {
   invGet, invEquipped, invSetEquipped, invRepair, invRepairCost,
-  invUpgrade, invUpgradeCost, invUpgradeRate, invForge, invCombine,
-  invIsFull, invUsedCount, BP_CAP, invTakeItem, BOXES, invOpenBox,
+  invUpgrade, invUpgradeCost, invUpgradeRate, invForge, invBreakthrough,
+  invAbsorb, invDecompose, invIsFull, invUsedCount, BP_CAP, invTakeItem, BOXES, invOpenBox,
 } from '../domain/inventory.js';
 import { QUALITY } from '../domain/gunPresets.js';
 import { itemTitle, AFFIX_BY_ID } from '../domain/affixes.js';
 import { beep, noiseBurst } from '../systems/audio.js';
 
 const QLABEL = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
-const SLABEL = { head: '头盔', body: '防弹衣' };
+const SLABEL = { head: '头盔', body: '防弹衣', gun: '武器词条' };
 
 let open = false;
 let tab = 'equip';          // 'equip' | 'shop'
-let sel = new Set();        // 三合一选择
+let sel = new Set();        // 突破选择
 let combineMode = false;
 let shopSelId = null;       // 工坊选中物品
-let onChanged = null;       // 穿戴变化后由 main 注入(同步玩家外观/耐久)
-let worldDrop = null;       // main 注入:把完整物品丢回世界
+let onChanged = null;       // 穿戴/吸取变动后由 main 注入(同步玩家外观/耐久/主武器词条)
 let gunInfo = () => ({ main: '主武器', side: '手枪', weapon: 'rifle' });
 
 export function bpInit(cb) { onChanged = cb; }
-export function bpSetWorldDrop(fn) { worldDrop = fn; }
 export function bpSetGunInfo(fn) { gunInfo = fn; }
 export function bpIsOpen() { return open; }
 
@@ -46,10 +44,14 @@ function affixLines(it) {
   }).join('');
 }
 
-// 物品卡内容(equip 页与工坊列表共用)
+// 物品卡内容(equip 页与工坊列表共用);枪词条材料无耐久概念
 function cardHtml(it) {
   const qc = q(it);
+  const isGun = it.slot === 'gun';
   const pct = durPct(it);
+  const name = isGun
+    ? `${it.gunName || '武器'}词条`
+    : itemTitle(it.affixes || [], SLABEL[it.slot] || it.slot);
   return `
     <div class="ic-icon ${it.slot === 'head' ? 'ic-helm' : 'ic-vest'}" style="border-color:${qc.color}66">
       ${it.slot === 'head'
@@ -57,9 +59,9 @@ function cardHtml(it) {
         : `<div class="ic-vest-shape" style="background:${qc.color}"></div>`}
     </div>
     <div class="ic-info">
-      <div class="ic-name" style="color:${qc.color}">${itemTitle(it.affixes || [], SLABEL[it.slot])}</div>
-      <div class="ic-dur"><div style="width:${pct * 100}%;background:${pct > 0.3 ? '#7ec97e' : '#e0713c'}"></div></div>
-      <div class="ic-sub">${QLABEL[it.quality]} · 耐久 ${Math.ceil(it.dur)}/${Math.ceil(it.maxDur)}${it.equipped ? ' · <span style="color:#ffb84d">已装备</span>' : ''}</div>
+      <div class="ic-name" style="color:${qc.color}">${name}</div>
+      ${isGun ? '' : `<div class="ic-dur"><div style="width:${pct * 100}%;background:${pct > 0.3 ? '#7ec97e' : '#e0713c'}"></div></div>`}
+      <div class="ic-sub">${isGun ? '材料 · 吸取进主武器' : `${QLABEL[it.quality]} · 耐久 ${Math.ceil(it.dur)}/${Math.ceil(it.maxDur)}`}${it.equipped ? ' · <span style="color:#ffb84d">已装备</span>' : ''}</div>
       ${affixLines(it)}
     </div>`;
 }
@@ -97,7 +99,7 @@ function renderEquip(inv) {
     if (it) wireDrag(el, it, 'eq', () => render());
   }
 
-  const grids = { head: document.getElementById('bagHead'), body: document.getElementById('bagBody') };
+  const grids = { head: document.getElementById('bagHead'), body: document.getElementById('bagBody'), gun: document.getElementById('bagGun') };
   for (const g of Object.values(grids)) g.innerHTML = '';
   const bag = inv.items.filter((it) => !it.equipped);
   let shown = 0;
@@ -106,33 +108,33 @@ function renderEquip(inv) {
     card.className = 'ic-card';
     card.style.setProperty('--qc', q(it).color);
     card.style.borderColor = q(it).color + '77';
-    card.innerHTML = cardHtml(it) + '<button class="ic-drop" title="丢弃">✕</button>';
+    card.innerHTML = cardHtml(it) + '<button class="ic-drop" title="分解">♻</button>';
     card.querySelector('.ic-drop').onclick = (e) => {
       e.stopPropagation();
-      discardItem(it, card);
+      decomposeItem(it, card);
     };
     wireDrag(card, it, 'bag', () => render());
     grids[it.slot].appendChild(card);
     shown++;
   }
   if (!shown) {
-    grids.head.innerHTML = '<span class="bag-empty">背包空空 —— 打敌人捡装备,或去工坊开箱</span>';
+    grids.head.innerHTML = '<span class="bag-empty">背包空空 —— 杀敌搜尸、或去工坊开箱</span>';
   }
 }
 
-// 两步确认丢弃(防手滑):第一次点变红"确认",再点才真丢
-function discardItem(it, cardEl) {
+// 两步确认分解(防手滑):第一次点变色"确认",再点真分解得金币
+function decomposeItem(it, cardEl) {
   const btn = cardEl.querySelector('.ic-drop');
   if (btn.dataset.armed) {
-    const taken = invTakeItem(it.id);
-    if (taken && worldDrop) worldDrop(taken);
-    toast('已丢弃到地面');
+    const r = invDecompose(it.id);
+    toast(r.msg);
+    onChanged && onChanged();
     render();
   } else {
     btn.dataset.armed = '1';
-    btn.textContent = '丢?';
+    btn.textContent = '得?';
     btn.classList.add('armed');
-    setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = '✕'; btn.classList.remove('armed'); } }, 1600);
+    setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = '♻'; btn.classList.remove('armed'); } }, 1600);
   }
 }
 
@@ -187,12 +189,9 @@ function dragUp(e) {
   const t = document.elementFromPoint(e.clientX, e.clientY);
   const panel = t && t.closest('.bp-panel');
   if (!panel) {
-    // 拖出面板 = 丢到地面(已穿戴的先卸下再丢)
-    if (d.item.equipped && invUsedCount() >= BP_CAP) { toast('背包已满,无法卸下'); render(); return; }
-    const taken = invTakeItem(d.item.id);
-    if (taken && worldDrop) worldDrop(taken);
-    toast('已丢到地面');
-    d.after && d.after(); onChanged && onChanged();
+    // 拖出面板不再丢弃(丢弃已移除,改分解);枪词条材料也不可穿戴,拖出无效
+    toast('拖出无效 —— 不用的物品用 ♻ 分解换金币');
+    d.after && d.after();
     return;
   }
   if (d.from === 'bag') {
@@ -237,38 +236,49 @@ function renderShop(inv) {
   if (combineMode) {
     const hint = document.createElement('div');
     hint.className = 'shop-hint';
-    hint.textContent = `三合一选择中:${sel.size}/3(同槽位同品质)`;
+    hint.textContent = `突破选择中:${sel.size}/3(同槽位同品质)`;
     list.appendChild(hint);
   }
 
   const it = invItemSafe(shopSelId);
   const detail = document.getElementById('shopDetail');
   if (!it) {
-    detail.innerHTML = '<div class="eq-empty" style="height:100%">没有可操作的装备</div>';
-  } else {
-    const qc = q(it);
-    const rc = invRepairCost(it.id);
-    const uc = invUpgradeCost(it.quality);
-    const ur = invUpgradeRate(it.quality);
-    detail.innerHTML = `
-      <div class="ic-card static" style="border-color:${qc.color}88">${cardHtml(it)}</div>
-      <div class="shop-btns">
-        <button id="opRepair" ${rc === 0 ? 'disabled' : ''}>修复 · ${rc} 金</button>
-        <button id="opUpgrade" ${uc === undefined ? 'disabled' : ''}>强化 → ${QLABEL[nextQuality(it.quality)] || 'MAX'} · ${uc ?? '-'} 金${ur !== undefined ? ` · 成功 ${Math.round(ur * 100)}%` : ''}</button>
-        <button id="opForge">锻造 · 25 金 · 耐久上限 ×1.5</button>
-        <button id="opCombine">${combineMode ? '确认合成(' + sel.size + '/3)' : '三合一 · 3 件同品质 → 上一档'}</button>
-      </div>`;
-    detail.querySelector('#opRepair').onclick = () => act(() => invRepair(it.id));
-    detail.querySelector('#opUpgrade').onclick = () => act(() => invUpgrade(it.id));
-    detail.querySelector('#opForge').onclick = () => act(() => invForge(it.id));
-    detail.querySelector('#opCombine').onclick = () => {
-      if (!combineMode) { combineMode = true; sel.clear(); render(); return; }
-      const r = invCombine([...sel]);
-      toast(r.msg);
-      if (r.ok) { combineMode = false; sel.clear(); onChanged && onChanged(); }
-      render();
-    };
-  }
+      detail.innerHTML = '<div class="eq-empty" style="height:100%">没有可操作的装备</div>';
+    } else {
+      const qc = q(it);
+      const rc = it.slot === 'gun' ? 0 : invRepairCost(it.id);
+      const uc = invUpgradeCost(it.quality);
+      const ur = invUpgradeRate(it.quality);
+      const canAbsorb = !it.equipped && (it.slot === 'gun' || invEquipped(it.slot));
+      const absorbLabel = it.slot === 'gun' ? '吸取 → 主武器词条' : `吸取 → 已装备的${SLABEL[it.slot]}`;
+      detail.innerHTML = `
+        <div class="ic-card static" style="border-color:${qc.color}88">${cardHtml(it)}</div>
+        <div class="shop-btns">
+          ${it.slot === 'gun' ? '' : `<button id="opRepair" ${rc === 0 ? 'disabled' : ''}>修复 · ${rc} 金</button>`}
+          <button id="opUpgrade" ${uc === undefined ? 'disabled' : ''}>强化 → ${QLABEL[nextQuality(it.quality)] || 'MAX'} · ${uc ?? '-'} 金${ur !== undefined ? ` · 成功 ${Math.round(ur * 100)}%` : ''}</button>
+          ${it.slot === 'gun' ? '' : '<button id="opForge">锻造 · 25 金 · 耐久上限 ×1.5</button>'}
+          <button id="opAbsorb" ${canAbsorb ? '' : 'disabled'} title="把这件的词条合并进目标(同词条数值相加)后消失">${absorbLabel}</button>
+          <button id="opBreak">${combineMode ? `确认突破(${sel.size}/3)` : '突破 · 3 件同槽同品质 · 概率升/不变/失败'}</button>
+        </div>`;
+      if (it.slot !== 'gun') {
+        detail.querySelector('#opRepair').onclick = () => act(() => invRepair(it.id));
+        detail.querySelector('#opForge').onclick = () => act(() => invForge(it.id));
+      }
+      detail.querySelector('#opUpgrade').onclick = () => act(() => invUpgrade(it.id));
+      detail.querySelector('#opAbsorb').onclick = () => {
+        const r = invAbsorb(it.id);
+        toast(r.msg);
+        if (r.ok) { shopSelId = null; onChanged && onChanged(); }
+        render();
+      };
+      detail.querySelector('#opBreak').onclick = () => {
+        if (!combineMode) { combineMode = true; sel.clear(); render(); return; }
+        const r = invBreakthrough([...sel]);
+        toast(r.msg);
+        if (r.ok) { combineMode = false; sel.clear(); shopSelId = r.item.id; onChanged && onChanged(); }
+        render();
+      };
+    }
 
   // 开箱区
   const boxes = document.getElementById('boxRow');

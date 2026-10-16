@@ -30,7 +30,7 @@ export function ensureRectHp(r) {
   return r;
 }
 
-const TILE = 0.5; // 可破坏块的细分粒度(米):子弹打哪碎哪,弹坑 ~0.5m
+const TILE = 0.25; // 可破坏块的细分粒度(米):碎块更小更密,弹坑更细腻(耐久按面积自动缩放)
 
 export function buildLevel(world) {
   const bodies = [];

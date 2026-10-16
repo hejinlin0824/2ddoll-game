@@ -204,19 +204,24 @@
 - 调试:`window.__feel()` = { hitStopT, killSlowT, trauma, streak, lowHpA, timeScale, menu }。
 - 调试:`window.__level()` = 地形块耐久列表;`window.__hitTest(x,y)` = 命中几何探针。
 
-### 背包 v2(backpack.js 重写 + game.html 新结构)
-- 居中卡片双页签:**装备**(左已装备区/右背包按类别分组,指针拖拽)+ **工坊**(选中装备
-  修复/强化/锻造/三合一 + 三档开箱)。
-- **拖拽用 Pointer Events**(鼠标触屏通吃):背包卡→对应装备位=穿戴(同槽旧件自动回包);
-  已装备→背包区=卸下(背包满禁止);拖出面板外=丢到地面。window 级 pointermove/up 兜底,
-  元素上只挂 pointerdown;7px 位移阈值区分点击/拖拽;ghost 跟随 + elementFromPoint 高亮落点。
+### 背包 v3(吸取/突破/分解/搜尸)
+- 居中卡片双页签:**装备**(左已装备区/右背包按类别分组:头盔/防弹衣/**武器词条材料**,指针拖拽)+
+  **工坊**(修复/强化/锻造/**吸取词条**/**突破** + 三档开箱)。
+- **吸取词条(对标 D3 卡奈魔盒提取)**:材料词条合并进目标后消失 —— 同词条数值相加
+  (吸血0.3+1→1.3),异词条追加(装备词条位上限 2,主武器 4),满位该条跳过。
+  枪材料(slot 'gun',搜尸得来)吸进主武器槽位词条(contra-gun-affixes,onChanged 即时刷新 gunMods)。
+- **突破(替代三合一)**:3 件同槽位同品质 → 三态:升(品质+1)/不变/失败(随机失去一条词条);
+  紫之前 90% 升 10% 败,紫→金 10/80/10(BT_RATE)。词条按"逐属性取三件最大值"继承。
+- **分解(替代丢弃)**:♻ 两步确认,按品质+词条数折金币(DECOMPOSE_VALUE),不再产生地面物品。
+- **敌人只爆金币**;装备走**搜尸**:站尸上(1.35m 内)按 Tab 开敌人装备栏,逐件拿走
+  武器词条/头盔/护甲(品质=敌人波次品质,词条死亡时掷好)。尸体保留 12s 供搜索。
+  ⚠️ Tab 路由(input.js):尸体在旁→搜尸,否则→轮盘;搜尸面板 Esc/Tab 关,走远自动关,时间走 0.08。
 - **容量 BP_CAP=24**(已穿戴不占格):invIsFull/invUsedCount。
-- **丢弃拾回必须完整保留词缀/耐久**:世界掉落两种类型 —— 'armor'(敌人掉落,invAddDrop
-  现掷词缀)与 **'armorRef'(带完整 item 对象,invTakeItem 取出/invInsertItem 放回)**。
-  别把丢弃的东西再 invAddDrop 重掷一遍,词缀会丢。
-- **开箱**(inventory.js BOXES/invOpenBox):青铜50/白银140/黄金320,品质权重表,金币在
-  invSpend 后、若背包满会退币。
-- 背包的枪槽是展示位(main 注入 bpSetGunInfo);丢弃回调 main 注入 bpSetWorldDrop。
+- 开箱不变(inventory.js BOXES/invOpenBox);背包的枪槽是展示位(bpSetGunInfo)。
+
+### 尸体搜索(ui/corpse.js)
+- 拿走 → invAddItem(k, quality, undefined, affixes, {gunName})(枪材料带 gunName 显示,无耐久);
+  lootTaken[k] 标记,行灰化;背包满拦截(cpToast)。
 
 ### 狙击枪(hitscan + 放大镜 + 站桩)
 - AWP mode='hitscan':开枪不生成子弹,发 hitscanShot 事件 → main.js castRay(slab 法射线 vs 地形 AABB)
@@ -395,6 +400,12 @@
     不把事件派发进页面(且每次 open 都会重新导航,页面状态会重置)。游戏监听器是普通
     DOM 监听,不依赖 isTrusted —— `el.dispatchEvent(new PointerEvent(...))` 三连
     (down 在元素上 / move+up 在 window 上)即可完整驱动拖拽逻辑,结果可信。
+12. **事件派发处理器里的 ReferenceError 是"静默"的**:dispatch 出去的 keydown 里 hook 名写错
+    (如把 openCorpse 写成属性名 corpseOpen)不会中断测试流程,错误只进 `__pageErrors` ——
+    "按键没反应"先查 __pageErrors 再怀疑逻辑(搜尸 Tab 失灵排查了半小时才看到这条)。
+13. **瞬移布娃娃/尸体必须整体平移所有刚体**(坑 5 的尸体版):只 setPosition 躯干,肢体关节还
+    在原地,关节求解器一帧内把躯体弹飞十几米 —— `for (const b of p.allBodies) b.setPosition(同
+    delta)` 且速度清零。
 
 ## 设计器数据格式
 
@@ -419,6 +430,7 @@
 
 - `window.__game()` 返回 `{ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }`。
 - `window.__combat` = 命中管线直调句柄 `{ spawnBullet, stepBullets, applyHitscanDamage, onEnemyDied, stepPickups, alertEnemiesNear }`(自动化测试不 import 模块,直接调它)。
+- `window.__corpse` = 搜尸管线直调 `{ nearby, open, close, isOpen }`。
 - `window.__feel()` = 手感层状态;`window.__level()` = 地形块数组(注意:只有 x/y/w/h/hp/max,没有 type 字段)。
 - `window.__frame(t)` 手动推帧:后台标签页 rAF 整体暂停(抓帧全黑/timeScale 不动都是这个),自动化测试用它确定性地驱动主循环;`__frameN(n)` 批量推 n 帧。
 - B 键物理线框;R 布娃娃;E 复位。

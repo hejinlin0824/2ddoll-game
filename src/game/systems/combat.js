@@ -1,8 +1,8 @@
 // 战斗系统:弹丸生命周期(曲线变速/碰撞/部位倍率/护甲吸收/击杀结算)+ 狙击 hitscan + 视线传唤。
 // stepBullets(dt, C) 由 game.js 的 step 每个物理步驱动;C = 依赖包(装配根组装一次)。
 import { LEVEL, ensureRectHp, destroyRect } from '../world/level.js';
-import { invEquipped, invSave, invIsFull, invInsertItem, invAddDrop } from '../domain/inventory.js';
-import { burst, debris, floaters, spawnHelmetDebris, spawnVestDebris, gibBurst, setGhost } from './fx.js';
+import { invEquipped, invSave, invIsFull, invInsertItem } from '../domain/inventory.js';
+import { burst, debris, decals, floaters, spawnHelmetDebris, spawnVestDebris, gibBurst, setGhost } from './fx.js';
 import { feel, addTrauma, killSlow, addStreak, resetStreak } from './feel.js';
 import { beep } from './audio.js';
 import { lootToast } from './hud.js';
@@ -51,11 +51,16 @@ function damageTerrain(r, damage, x, y, dir, depth = 0) {
     burst(x, y, 5, '#8a7c66', 3);
     addTrauma(0.08);
     beep(140, 60, 0.12, 'sawtooth', 0.06);
+    // 随碎块清除它上面的弹孔/血渍 —— 否则贴花悬空飘在原地(用户实测毙过)
+    for (let i = decals.length - 1; i >= 0; i--) {
+      const d = decals[i];
+      if (Math.abs(d.x - r.x) <= r.w / 2 + 0.1 && Math.abs(d.y - r.y) <= r.h / 2 + 0.1) decals.splice(i, 1);
+    }
     destroyRect(r);
-    // 溢出伤害沿弹道啃相邻 tile(打穿薄墙的感觉)
+    // 溢出伤害沿弹道啃相邻 tile(打穿薄墙的感觉);步距 ≈ tile 尺寸,小 tile 递归更深
     const overflow = -r.hp;
-    if (overflow >= 6 && depth < 3 && dir) {
-      const nx = x + dir.x * 0.4, ny = y + dir.y * 0.4;
+    if (overflow >= 2 && depth < 6 && dir) {
+      const nx = x + dir.x * 0.27, ny = y + dir.y * 0.27;
       const next = LEVEL.rects.find((t) => t !== r && t.destructible &&
         Math.abs(nx - t.x) <= t.w / 2 + 0.05 && Math.abs(ny - t.y) <= t.h / 2 + 0.05);
       if (next) damageTerrain(next, overflow, nx, ny, dir, depth + 1);
@@ -285,7 +290,12 @@ export function stepBullets(dt, C) {
     }
     if (consumed) continue;
     let rect = hitTerrainRect(b.x, b.y);
-    if (!rect && sp > 14) rect = hitTerrainRect((b.px + b.x) / 2, (b.py + b.y) / 2);
+    if (!rect && sp > 14) {
+      // 小 tile(0.25m)防隧道:沿本步弹道按 ~0.12m 间隔密集采样,两采样点间距必须小于 tile 尺寸
+      const dx = b.x - b.px, dy = b.y - b.py;
+      const n = Math.min(8, Math.ceil(Math.hypot(dx, dy) / 0.12));
+      for (let k = 1; k < n && !rect; k++) rect = hitTerrainRect(b.px + (dx * k) / n, b.py + (dy * k) / n);
+    }
     if (rect) {
       const hx = (b.px + b.x) / 2, hy = (b.py + b.y) / 2;
       burst(hx, hy, 5, '#ffd77a', 3.5);
@@ -314,15 +324,10 @@ export function onEnemyDied(C, ev, enemy) {
   alertEnemiesNear(enemies, ev, 11); // 死者的惨叫惊动 11m 内的队友
   const streak = addStreak();
   if (streak % 5 === 0) killSlow(0.8); // 慢放只跟每 5 连杀走(用户指定,清场/爆头不再触发)
-  // 掉落:金币 3~8(贪婪/掠夺加成)+ 装备(猎手/幸运加成)
+  // 掉落:只爆金币(贪婪加成);装备走"搜尸"(enemies die() 的 loot 表,站尸上 Tab)
   const coinN = Math.round(ev.coins * (1 + (player.coinGainPct || 0) / 100));
   for (let ci = 0; ci < coinN; ci++) {
     pickups.push({ type: 'coin', x: ev.x, y: ev.y - 0.3, vx: (Math.random() - 0.5) * 11, vy: 4.5 + Math.random() * 6, t: Math.random() * 6 });
-  }
-  const dropCh = 0.5 * (1 + (player.dropRatePct || 0) / 100);
-  for (const drop of ev.drops) {
-    if (Math.random() > dropCh) continue;
-    pickups.push({ type: 'armor', slot: drop.slot, quality: drop.quality, x: ev.x + (Math.random() - 0.5) * 0.6, y: ev.y - 0.3, vx: (Math.random() - 0.5) * 3, vy: 3 + Math.random() * 2, t: 0 });
   }
   // 击杀回血(回春词条)
   if (player.healOnKill) {

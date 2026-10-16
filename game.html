@@ -442,9 +442,11 @@
               <div class="bp-cat-grid" id="bagHead"></div>
               <div class="bp-cat">防弹衣</div>
               <div class="bp-cat-grid" id="bagBody"></div>
+              <div class="bp-cat">武器词条</div>
+              <div class="bp-cat-grid" id="bagGun"></div>
             </div>
           </div>
-          <div class="bp-hint">拖动背包物品到左侧装备位穿戴(原装备自动回背包)· 已装备物品拖回背包卸下 · 拖出面板外丢到地面 · ✕ 两步确认丢弃 · Esc 关闭</div>
+          <div class="bp-hint">拖动背包物品到左侧装备位穿戴 · 装备中的拖回背包卸下 · ♻ 分解得金币 · 工坊:修复/强化/锻造/吸取词条/突破(3 件同槽同品质,概率升/不变/失败掉词条)· Esc 关闭</div>
         </div>
 
         <div id="pageShop" style="display:none">
@@ -459,11 +461,35 @@
               <div id="boxRow"></div>
             </div>
           </div>
-          <div class="bp-hint">修复 1 金/点耐久 · 强化有成功率(失败吞金)· 锻造耐久上限 ×1.5(可叠加)· 三合一:3 件同槽位同品质 → 1 件上一档</div>
+          <div class="bp-hint">修复 1 金/点耐久 · 吸取:材料词条合并进装备/主武器后消失 · 突破(3 件同槽同品质):紫前 90% 升,紫→金 10% 升 80% 不变,失败随机掉词条 · 强化有成功率(失败吞金)</div>
         </div>
       </div>
     </div>
     <div id="bpToast"></div>
+    <div id="corpse" style="display:none"></div>
+    <div id="cpToast" style="position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 9;
+      background: rgba(232,160,76,0.92); color: #241a08; padding: 6px 18px; border-radius: 999px;
+      font-size: 12.5px; opacity: 0; transition: opacity 0.3s; pointer-events: none;"></div>
+    <style>
+      #corpse { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+        background: rgba(4,6,12,0.45); backdrop-filter: blur(2px); }
+      #corpse .cp-card { width: 380px; background: rgba(16,20,32,0.97); border: 1px solid rgba(244,233,216,0.25);
+        border-radius: 14px; padding: 14px; box-shadow: 0 20px 70px rgba(0,0,0,0.6); }
+      #corpse .cp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+      #corpse .cp-head span { font-weight: 700; color: #ffb14a; font-size: 15px; letter-spacing: 2px; }
+      #corpse .cp-head button { background: none; border: 1px solid rgba(244,233,216,0.25); color: #f0e6d2;
+        border-radius: 7px; width: 26px; height: 26px; cursor: pointer; }
+      #corpse .cp-row { display: flex; align-items: center; gap: 10px; border: 1px solid; border-radius: 10px;
+        padding: 9px 11px; margin-bottom: 8px; background: rgba(244,233,216,0.04); }
+      #corpse .cp-row.taken { opacity: 0.42; }
+      #corpse .cp-info { flex: 1; }
+      #corpse .cp-name { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+      #corpse .cp-done { font-size: 10px; font-weight: 400; color: #8fc7ff; margin-left: 8px; }
+      #corpse .cp-aff { font-size: 11px; opacity: 0.75; line-height: 1.5; }
+      #corpse .cp-take { background: rgba(232,160,76,0.9); color: #241a08; border: none; border-radius: 8px;
+        padding: 7px 14px; font-weight: 700; font-size: 12px; cursor: pointer; }
+      #corpse .cp-hint { font-size: 10.5px; opacity: 0.55; line-height: 1.6; margin-top: 4px; }
+    </style>
     <div id="help">
       <div class="help-card">
         <div class="help-head"><span>操 作 说 明</span><button id="helpClose">✕</button></div>
@@ -483,6 +509,7 @@
           <div>
             <div class="help-sec">系统</div>
             <div class="help-row"><b>Tab</b> 武器轮盘(子弹时间)· <b>T</b> 切装备页</div>
+            <div class="help-row"><b>站尸上 Tab</b> 搜索敌尸拿装备/词条</div>
             <div class="help-row"><b>G</b> 背包 · <b>Esc/P/M</b> 暂停</div>
             <div class="help-row"><b>R</b> 布娃娃测试 · <b>E</b> 复位 · <b>B</b> 调试视图</div>
           </div>

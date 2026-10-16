@@ -1,6 +1,6 @@
 // 特效系统:粒子/弹壳/碎片/地面痕迹/受击飘字/狙击光束 + 枪口火舌与护甲碎裂的计时器。
 // 生成器(burst/gibBurst/...)给战斗层调用;stepFx 由 game.js 的 step 每个物理步驱动。
-import { groundYAt } from '../world/level.js';
+import { groundYAt, LEVEL } from '../world/level.js';
 import { QUALITY } from '../domain/gunPresets.js';
 
 export const particles = [];  // 粒子(弹壳/尘土/血雾)
@@ -77,6 +77,7 @@ export function gibBurst(x, y, dir) {
 }
 
 // 物理步进(dt = 世界时间):粒子弹跳/碎片/痕迹淡出/飘字果冻上浮/光束衰减
+let sweepT = 0.3; // 悬空贴花扫描计时
 export function stepFx(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
@@ -111,6 +112,17 @@ export function stepFx(dt) {
   for (let i = decals.length - 1; i >= 0; i--) {
     decals[i].life -= dt;
     if (decals[i].life <= 0) decals.splice(i, 1);
+  }
+  // 悬空贴花兜底:地形被啃穿后,残留在已消失 tile 上的弹孔/血渍要跟着消失。
+  // 销毁时的即时清理(damageTerrain)有时序漏网,这里每 0.3s 全量校验一次宿主
+  sweepT -= dt;
+  if (sweepT <= 0) {
+    sweepT = 0.3;
+    for (let i = decals.length - 1; i >= 0; i--) {
+      const d = decals[i];
+      const host = LEVEL.rects.some((t) => Math.abs(d.x - t.x) <= t.w / 2 + 0.08 && Math.abs(d.y - t.y) <= t.h / 2 + 0.08);
+      if (!host) decals.splice(i, 1);
+    }
   }
 
   for (let i = floaters.length - 1; i >= 0; i--) {

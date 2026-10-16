@@ -38,6 +38,10 @@ export function attachInput(hooks) {
       return;
     }
     if (hooks.bpIsOpen() && pauseKey) return; // 背包开着:Esc 归背包关背包,其余暂停键忽略
+    if (hooks.corpseIsOpen && hooks.corpseIsOpen()) {
+      if (!e.repeat) { e.preventDefault(); hooks.corpseClose(); } // 搜尸面板:任意暂停键/Tab 关闭
+      return;
+    }
     if (hooks.menuIsOpen()) {
       // 主菜单/暂停期间:再按暂停键 = 开门继续战斗;其余按键全部吞掉(防背后开枪/切武器)
       if (pauseKey && !e.repeat) { e.preventDefault(); hooks.menuToggle(); hooks.initAudio(); }
@@ -50,9 +54,10 @@ export function attachInput(hooks) {
       hooks.initAudio();
       return;
     }
-    // Tab = 武器轮盘:必须 preventDefault,否则浏览器焦点会切走
+    // Tab:站在尸体上 = 搜尸;否则 = 武器轮盘(必须 preventDefault,否则浏览器焦点切走)
     if (e.code === 'Tab') {
       e.preventDefault();
+      if (hooks.corpseNearby && hooks.corpseNearby()) { hooks.corpseOpen(); hooks.initAudio(); return; }
       if (!e.repeat && !wheel.open) wheel.openWheel();
       hooks.initAudio();
       return;

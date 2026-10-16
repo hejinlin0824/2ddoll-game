@@ -5,7 +5,7 @@
 import { Player } from './player.js';
 import { Vec2 } from 'planck';
 import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from '../domain/gunPresets.js';
-import { computeGunMods } from '../domain/affixes.js';
+import { computeGunMods, rollAffixes } from '../domain/affixes.js';
 import { LEVEL } from '../world/level.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -75,6 +75,8 @@ export class Dummy {
     this.respawnT = 0;
     this.freezeT = 0;    // 重生不许继承旧尸的冻结(位姿快照对新刚体是传送门)
     this.frozen = null;
+    this.loot = null;    // 旧尸战利品作废
+    this.lootTaken = {};
     this.resetArmor();
   }
 
@@ -177,19 +179,22 @@ export class Dummy {
     this.p.torso.setLinearVelocity(Vec2(v.x + vx, v.y + vy));
   }
 
-  // 死亡:布娃娃倒地(Player.setRagdoll 自带关节瘫软),掉落由事件抛给 main
+  // 死亡:布娃娃倒地。只爆金币(装备不落地);尸体带战利品表 —— 玩家站尸上按 Tab 搜索拿走
+  // (武器词条/头盔/护甲,品质=敌人波次品质) —— 对标暗黑的"搜尸体"战利品交互
   die(dir, zone) {
     this.alive = false;
     this.respawnT = this.respawn ? 3.5 : 0;
     this.p.setRagdoll(true);
     const v = this.p.torso.getLinearVelocity();
     this.p.torso.setLinearVelocity(Vec2(dir.x * 3 + v.x, dir.y * 1.5 + 2.5));
-    const drops = [];
-    for (const slot of ['head', 'body']) {
-      if (Math.random() < 0.5) drops.push({ slot, quality: this.quality });
-    }
+    this.loot = {
+      gun: { name: this.gunName, quality: this.quality, affixes: rollAffixes('gun', this.quality) },
+      head: { quality: this.quality, affixes: rollAffixes('head', this.quality) },
+      body: { quality: this.quality, affixes: rollAffixes('body', this.quality) },
+    };
+    this.lootTaken = {};
     // zone/dir 给 main 的手感层:爆头击杀顿帧更狠、爆浆沿弹道方向喷
-    this.events.push({ type: 'died', x: this.x, y: this.y, zone, dir, coins: 3 + Math.floor(Math.random() * 6), drops });
+    this.events.push({ type: 'died', x: this.x, y: this.y, zone, dir, coins: 3 + Math.floor(Math.random() * 6) });
   }
 
   // 尸体受击:子弹继续推动布娃娃
@@ -267,9 +272,9 @@ export class Dummy {
         }
         return;
       }
-      // 波次模式:尸体保留 6 秒(布娃娃残响),之后销毁刚体并标记,由 main 移出注册表
+      // 波次模式:尸体保留 12 秒供搜索(站尸上 Tab),之后销毁刚体并标记,由 main 移出注册表
       this.deadT = (this.deadT || 0) + dt;
-      if (this.deadT > 6 && !this.destroyed) {
+      if (this.deadT > 12 && !this.destroyed) {
         this.destroyed = true;
         this.p.destroy();
       }

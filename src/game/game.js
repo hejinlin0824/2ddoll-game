@@ -7,8 +7,9 @@ import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID, loadGunAffixe
 import { WeaponWheel } from './ui/wheel.js';
 import { Dummy } from './entities/enemies.js';
 import { WaveDirector } from './domain/waves.js';
-import { invLoad, invGet, invEquipped, invSetEquipped, invSave, invAddCoins, invAddDrop, invIsFull, invInsertItem } from './domain/inventory.js';
-import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire, bpSetWorldDrop, bpSetGunInfo } from './ui/backpack.js';
+import { invLoad, invEquipped, invIsFull, invAddCoins } from './domain/inventory.js';
+import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire, bpSetGunInfo } from './ui/backpack.js';
+import { corpseInit, corpseIsOpen, openCorpse, closeCorpse } from './ui/corpse.js';
 import { menuInit, menuIsOpen, menuShow, menuToggle, helpIsOpen, helpClose } from './ui/menu.js';
 import { initAudio, beep, gunSynth, noiseBurst, setMuffle, getActx } from './systems/audio.js';
 import { updateStatusPanel, streakShow, streakHide, lootToast } from './systems/hud.js';
@@ -113,17 +114,19 @@ function syncArmorFromInventory() {
 }
 invLoad();                  // 背包存档(首次自动发新手装)
 syncArmorFromInventory();   // 玩家外观/耐久绑定到已装备实例
-bpInit(() => syncArmorFromInventory()); // 背包里装备/修复/升级后同步到玩家
-bpSetWorldDrop((item) => { // 背包拖出丢弃 = 完整物品(词缀/耐久保留)落回世界
-  const p = player.torso.getPosition();
-  pickups.push({
-    type: 'armorRef', item, slot: item.slot, quality: item.quality,
-    x: p.x + (Math.random() - 0.5) * 0.5, y: p.y + 0.5,
-    vx: (Math.random() - 0.5) * 3.2, vy: 4.5, t: 0,
-  });
-});
+// 背包/搜尸里 穿戴/吸取/突破 变动后的统一同步:防具属性 + 主武器槽位词条(吸取材料会改它)
+function onInvChanged() {
+  syncArmorFromInventory();
+  const aff = loadGunAffixes() || [];
+  player.gunDef.affixes = aff;
+  player.gunMods = computeGunMods(aff);
+}
+bpInit(onInvChanged);
+corpseInit(onInvChanged);
 bpWire(); // ★ 绑定背包按钮事件(漏掉这行按钮就是死的)
-attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, toggleDebug: () => { debugDraw = !debugDraw; }, initAudio });
+attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, toggleDebug: () => { debugDraw = !debugDraw; }, initAudio,
+  corpseNearby: () => !!corpseNearby(), corpseOpen: () => { const c = corpseNearby(); if (c) openCorpse(c); },
+  corpseIsOpen, corpseClose: closeCorpse });
 bindCamera(cam);
 menuInit({ beep, noiseBurst, initAudio, onSlam: () => { addTrauma(0.45); feel.menuFlashT = 0.22; } }); // 主菜单:背景=实时场景,真空门三段式
 bpSetGunInfo(() => ({ main: player.gunDef?.name || '主武器', side: '手枪', weapon: player.weapon }));
@@ -162,15 +165,33 @@ const C = {
 };
 window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }); // 调试句柄
 window.__combat = { spawnBullet, stepBullets, applyHitscanDamage, onEnemyDied, stepPickups, alertEnemiesNear }; // 调试:命中管线直调
+window.__corpse = { nearby: () => corpseNearby(), open: openCorpse, close: closeCorpse, isOpen: corpseIsOpen }; // 调试:搜尸管线直调
 window.__actx = getActx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
 window.__feel = () => ({ ...feel, timeScale, menu: menuIsOpen() }); // 调试:手感层状态
 window.__level = () => LEVEL.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, hp: r.hp ?? null, max: r.maxHp ?? null })); // 调试:地形块耐久
+// 尸体搜索:最近的可搜尸体(1.35m 内,有战利品未销毁)
+function corpseNearby() {
+  const p = player.torso.getPosition();
+  let best = null, bd = 1.35;
+  for (const e of enemies) {
+    if (e.alive || e.destroyed || !e.loot) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+
 function step(dt) {
   input.aim = aimWorld(W, H, PPM);
-  if (wheel.open || bpIsOpen() || menuIsOpen()) {
-    // 轮盘/背包/主菜单期间禁火;主菜单还锁走位(待机演示画面)
+  if (wheel.open || bpIsOpen() || corpseIsOpen() || menuIsOpen()) {
+    // 轮盘/背包/搜尸/主菜单期间禁火;主菜单还锁走位(待机演示画面)
     input.fire = false;
     if (menuIsOpen()) { input.left = input.right = input.down = false; }
+  }
+  if (corpseIsOpen()) {
+    // 尸体没了(被回收/超时)或走远了 → 自动收起搜尸面板
+    const c = corpseNearby();
+    if (!c) closeCorpse();
   }
   player.update(dt, input);
   input.jumpPressed = false;
@@ -734,8 +755,8 @@ function frame(now) {
     decayTimers(dt); // 火舌/红闪/白闪计时器也走真实时间(慢动作里火舌不会虚胖 12 倍)
     setMuffle(F.lowHpA); // 低血量闷化(音频系统)
 
-    // ---- 子弹时间合成:菜单待机 > 轮盘/背包 > 顿帧 > 击杀慢放 > 正常 ----
-    let tsTarget = menuIsOpen() ? 0.3 : (wheel.open || bpIsOpen()) ? 0.08 : 1;
+    // ---- 子弹时间合成:菜单待机 > 轮盘/背包/搜尸 > 顿帧 > 击杀慢放 > 正常 ----
+    let tsTarget = menuIsOpen() ? 0.3 : (wheel.open || bpIsOpen() || corpseIsOpen()) ? 0.08 : 1;
     if (feel.killSlowT > 0) tsTarget = Math.min(tsTarget, 0.32);
     if (feel.hitStopT > 0) {
       timeScale = Math.min(timeScale, 0.02); // 顿帧:入要快(硬切),出靠下面的平滑爬回

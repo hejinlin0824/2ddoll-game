@@ -131,8 +131,8 @@ export function computeArmorMods(slot, affixes = []) {
 }
 
 // ---- 主武器槽位词缀:跟"槽位"走而不是跟具体某把枪 ----
-// 独立键持久化:轮盘换枪/设计器重画/死亡重生都不重掷(否则同一把枪死前死后词缀不同);
-// 轮盘切枪时由 wheel.js 把它带到新枪上重新聚合。
+// 独立键持久化(contra-gun-affixes),跟槽位走 —— 轮盘换枪/设计器重画/死亡重生都不重掷
+// (以前写进枪数据里,死亡会给新枪随机重掷一遍)
 const GUN_AFFIX_KEY = 'contra-gun-affixes';
 export function loadGunAffixes() {
   try {
@@ -142,6 +142,19 @@ export function loadGunAffixes() {
 }
 export function saveGunAffixes(affixes) {
   try { localStorage.setItem(GUN_AFFIX_KEY, JSON.stringify(affixes)); } catch { /* 忽略 */ }
+}
+
+// 词条吸收(吸取材料):同属性键数值相加,异属性键追加新词条位(满位则该条吸不进,返回 null)。
+// 对标暗黑3卡奈魔盒的词条提取 + PoE 加工:数值成长走"吸收合并"而不是重掷
+export function absorbAffix(list, affix, maxEntries = 2) {
+  const def = AFFIX_BY_ID[affix.id];
+  if (!def) return list.map((a) => ({ ...a }));
+  const out = list.map((a) => ({ ...a }));
+  const hit = out.find((a) => AFFIX_BY_ID[a.id]?.stat === def.stat);
+  if (hit) { hit.v = +(hit.v + affix.v).toFixed(1); return out; }
+  if (out.length >= maxEntries) return null;
+  out.push({ id: affix.id, v: +affix.v.toFixed(1) });
+  return out;
 }
 
 // 物品名:"A且B的xxx"
