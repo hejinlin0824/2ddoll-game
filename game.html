@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>魂斗罗·布娃娃 — 旅行陈列馆小游戏</title>
+    <title>HERO — 布娃娃突击</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=ZCOOL+QingKe+HuangYou&family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet" />
@@ -208,10 +208,8 @@
         background: rgba(10, 14, 24, 0.72); border: 1px solid rgba(244,233,216,0.18); border-radius: 14px;
         padding: 10px 12px; backdrop-filter: blur(6px); }
       #pnl .ava { width: 52px; height: 52px; border-radius: 12px; position: relative; overflow: hidden;
-        background: linear-gradient(180deg, #22304d 0%, #16203a 100%); border: 2px solid rgba(244,233,216,0.3); }
-      #pnl .ava .face { position: absolute; left: 10px; top: 16px; width: 30px; height: 30px; border-radius: 50%; background: #e2b088; }
-      #pnl .ava .band { position: absolute; left: 8px; top: 12px; width: 34px; height: 13px; border-radius: 10px 10px 4px 4px; background: #d8302c; }
-      #pnl .ava .eye { position: absolute; left: 30px; top: 32px; width: 4px; height: 4px; border-radius: 50%; background: #222; }
+        background: linear-gradient(180deg, #22304d 0%, #16203a 100%); border: 2px solid rgba(232,160,76,0.55); }
+      #pnl .ava img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; display: block; user-select: none; }
       #pnl .bars { display: flex; flex-direction: column; gap: 5px; width: 130px; }
       #pnl .bar { height: 10px; background: rgba(244,233,216,0.12); border-radius: 5px; overflow: hidden; position: relative; }
       #pnl .bar > div { height: 100%; border-radius: 5px; }
@@ -249,10 +247,16 @@
       .menu-left { left: 0; background: linear-gradient(105deg, rgba(8, 10, 20, 0.82), rgba(8, 10, 20, 0.6)); border-right: 1px solid rgba(244, 233, 216, 0.14); }
       .menu-right { right: 0; background: linear-gradient(255deg, rgba(8, 10, 20, 0.55), rgba(8, 10, 20, 0.28)); border-left: 1px solid rgba(244, 233, 216, 0.1); }
       .menu-left { display: flex; flex-direction: column; justify-content: center; padding: 0 7% ; color: #f0e6d2; }
-      .menu-brand { font-family: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif; font-size: 46px; letter-spacing: 4px; line-height: 1.15;
-        text-shadow: 0 3px 0 rgba(0,0,0,0.55); }
-      .menu-brand span { color: #ffb14a; }
-      .menu-sub { font-size: 12px; opacity: 0.5; letter-spacing: 6px; margin: 4px 0 34px; }
+      .menu-brand { font-family: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif; font-size: 52px; letter-spacing: 10px; line-height: 1;
+        background: linear-gradient(180deg, #ffe9a8 0%, #ffb14a 55%, #ff7a3c 100%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 3px 0 rgba(0,0,0,0.55)) drop-shadow(0 0 18px rgba(255,177,74,0.28));
+        transform: skewX(-3deg); }
+      .brand-row { display: flex; align-items: center; gap: 16px; margin-bottom: 30px; }
+      .brand-ava { width: 66px; height: 66px; border-radius: 15px; object-fit: cover; object-position: 50% 0;
+        border: 2px solid rgba(232,160,76,0.85); background: linear-gradient(180deg, #22304d, #16203a);
+        box-shadow: 0 0 22px rgba(232,160,76,0.35), 0 6px 18px rgba(0,0,0,0.5); user-select: none; }
+      .menu-sub { font-size: 11px; opacity: 0.5; letter-spacing: 5px; margin: 8px 0 0; }
       .menu-scene-title { font-size: 12px; opacity: 0.55; letter-spacing: 4px; margin-bottom: 10px; }
       #menuScenes { display: flex; flex-direction: column; gap: 8px; margin-bottom: 26px; }
       .scene-card {
@@ -378,7 +382,7 @@
       window.addEventListener("unhandledrejection", (e) => window.__pageErrors.push("unhandled: " + String(e && e.reason)));
     </script>
     <div id="pnl" class="hud">
-      <div class="ava"><div class="face"></div><div class="band"></div><div class="eye"></div></div>
+      <div class="ava"><img src="./hero-avatar.png" alt="HERO" draggable="false"></div>
       <div class="bars">
         <div class="bar hp"><div id="pnlHp" style="width:100%"></div><span class="lt" id="pnlHpText">30/30</span></div>
         <div class="bar" id="pnlHelmBar" style="border:1px solid rgba(244,233,216,0.25)"><div id="pnlHelm" style="width:100%;background:#59c2ff"></div><span class="lt" id="pnlHelmText"></span></div>
@@ -398,8 +402,13 @@
     <div id="menu">
       <div class="menu-seam" id="menuSeam"></div>
       <div class="menu-half menu-left">
-        <div class="menu-brand">魂斗罗<span>·布娃娃</span></div>
-        <div class="menu-sub">RAGDOLL CONTRA</div>
+        <div class="brand-row">
+          <img class="brand-ava" src="./hero-avatar.png" alt="HERO" draggable="false">
+          <div>
+            <div class="menu-brand">HERO</div>
+            <div class="menu-sub">RAGDOLL CONTRA · 布娃娃突击</div>
+          </div>
+        </div>
         <div class="menu-scene-title">选 择 战 场</div>
         <div id="menuScenes"></div>
         <button id="menuStart" class="menu-primary">进 入 战 场</button>

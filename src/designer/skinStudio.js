@@ -435,4 +435,14 @@ window.__skinInfo = (part) => {
   const im = imgOf(part);
   return im && im.naturalWidth ? { w: im.naturalWidth, h: im.naturalHeight, inSlots: !!slots[part] } : null;
 };
+// 通用抠白处理钩子:url 加载 → 抠白底+裁边 → 返回 PNG dataURL(不动存档)
+window.__skinProcess = (url, opts = {}) => new Promise((resolve) => {
+  const im = new Image();
+  im.onload = () => {
+    const r = processSkinImage(im, opts);
+    resolve(r.ok ? r.dataURL : null);
+  };
+  im.onerror = () => resolve(null);
+  im.src = url;
+});
 window.__skinSave = () => { document.getElementById('bSave').click(); return localStorage.getItem('contra-skin')?.length || 0; };
