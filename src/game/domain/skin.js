@@ -27,14 +27,18 @@ export const SKIN_BOX = {
   helmet: { w: 0.40, h: 0.32, anchor: 'head' },  // 锚在头部局部空间,框中心=头圆心
   vest: { w: 0.36, h: 0.60, anchor: 'torso' },   // 锚在躯干局部空间,框中心=躯干中心
 };
-// 贴图适配基准缩放(米/像素,不含用户 scale;调用处必须再乘 ppm/mEPPM/PPM2):
-// **全部部件按长度(高度)定标** —— 画多高就填满框高,宽度随素材(钳制防炸开)。
-// 为什么不用 contain:躯干框竖长(宽高比 0.47),用户躯干素材偏方时 contain 按宽度缩,
-// 高度只填中间一段 → 头/腿之间全是空挡(用户实测毙过);四肢框细长同理(小臂被压扁)。
+// 贴图适配基准(米/像素,不含用户 scale;调用处必须再乘 ppm/mEPPM/PPM2),返回 {sx, sy}:
+// - **四肢 = 拉伸填充**:不管画多细都撑满部件框的宽和高 —— 简笔画细线条腿按长度定标会渲染成
+//   1~2px 的细线(用户实测"腿太细、小腿看不见"毙过);比例画得接近框则几乎无变形。
+// - 头/躯干/头盔/背心 = 按长度定标(高度填满,宽度随素材钳制):躯干框竖长,contain 会把方形
+//   躯干压成 1/3 高(用户实测毙过),拉伸又会把宽躯干压窄,长度定标是这两者间的正确解。
 export function skinFitScale(part, iw, ih) {
   const b = SKIN_BOX[part];
-  const wCap = (part === 'head' ? 1.8 : 2.2) * b.w;
-  return Math.min(b.h / ih, wCap / iw);
+  if (SKIN_END_ANCHORED[part] || part === 'upperArm' || part === 'thigh') {
+    return { sx: b.w / iw, sy: b.h / ih }; // 拉伸填充(foreArm/calf 含在 END_ANCHORED 里)
+  }
+  const s = Math.min(b.h / ih, ((part === 'head' ? 1.8 : 2.2) * b.w) / iw);
+  return { sx: s, sy: s };
 }
 // 端点锚定件(foreArm/calf):图片**底边**对齐身体末端而不是居中 ——
 // 小臂底端=手=枪的握把(枪系统锚定在 armLF 刚体末端),小腿底端=脚底=落地点。

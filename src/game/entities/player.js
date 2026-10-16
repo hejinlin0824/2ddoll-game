@@ -782,8 +782,9 @@ export class Player {
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(R(b));
-      const s = skinFitScale(part, im.naturalWidth, im.naturalHeight) * ppm * (xf.scale || 1); // skinFitScale 是米/像素,必须乘 ppm
-      const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+      const f = skinFitScale(part, im.naturalWidth, im.naturalHeight);
+      const us = (xf.scale || 1);
+      const dw = im.naturalWidth * f.sx * ppm * us, dh = im.naturalHeight * f.sy * ppm * us; // f 是米/像素,必须乘 ppm
       // 端点锚定(foreArm/calf):图底对齐身体末端 —— 小臂底=手=枪握点,小腿底=脚底=落地;其余居中
       const dy = SKIN_END_ANCHORED[part] ? (box.h / 2 - (box.tip || 0)) * ppm - dh : -dh / 2;
       if (dark) ctx.filter = 'brightness(0.72) saturate(0.85)';
@@ -801,7 +802,8 @@ export class Player {
       const xf = skinXf(part);
       ctx.save();
       if (this.facing === -1) ctx.scale(-1, 1);
-      const s = skinFitScale(part, im.naturalWidth, im.naturalHeight) * ppm * (xf.scale || 1);
+      const f = skinFitScale(part, im.naturalWidth, im.naturalHeight);
+      const s = f.sx * ppm * (xf.scale || 1); // 头盔/背心是长度定标,sx==sy
       ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
         -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
       ctx.restore();
@@ -919,7 +921,8 @@ export class Player {
           ctx.save();
           if (this.facing === -1) ctx.scale(-1, 1);
           const xf = skinXf('torso');
-          const s = skinFitScale('torso', im.naturalWidth, im.naturalHeight) * ppm * (xf.scale || 1);
+          const f = skinFitScale('torso', im.naturalWidth, im.naturalHeight);
+          const s = f.sx * ppm * (xf.scale || 1); // 躯干是长度定标,sx==sy
           ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
             -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
           ctx.restore();
@@ -992,7 +995,8 @@ export class Player {
       if (hasSkin('head')) {
         const im = skinImg('head');
         const xf = skinXf('head');
-        const s = skinFitScale('head', im.naturalWidth, im.naturalHeight) * ppm * (xf.scale || 1);
+        const f = skinFitScale('head', im.naturalWidth, im.naturalHeight);
+        const s = f.sx * ppm * (xf.scale || 1); // 头是长度定标,sx==sy
         ctx.save();
         if (this.facing === -1) ctx.scale(-1, 1);
         ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
@@ -1033,7 +1037,7 @@ export class Player {
       ctx.restore();
     }
 
-    if (!hasSkin('calf')) boot(this.legLF, this.C.pants, this.C.boot);
+    if (!skinCap(this.legLF, 'calf')) boot(this.legLF, this.C.pants, this.C.boot);
     if (!skinCap(this.legUF, 'thigh')) cap(this.legUF, D.thigh, this.C.pants);
     gun();
     if (!skinCap(this.armUF, 'upperArm')) cap(this.armUF, D.upperArm, this.C.skin);

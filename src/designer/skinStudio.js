@@ -223,15 +223,16 @@ function renderEditor() {
     mCtx.textAlign = 'center';
     mCtx.fillText(ed.part === 'foreArm' ? '↑手/枪握点对齐这条线' : '↑脚底对齐这条线', cx, tipY + 14);
   }
-  // 贴图(与 player.js skinCap 同一套适配数学:按长度定标 + 端点锚定/居中;× scale + 拖动偏移)
+  // 贴图(与 player.js skinCap 同一套适配数学:四肢拉伸填充/其余长度定标 + 端点锚定/居中)
   const im = ed.img;
   if (im.complete && im.naturalWidth) {
-    const s0 = skinFitScale(ed.part, im.naturalWidth, im.naturalHeight) * mEPPM * ed.xf.scale;
-    const dw = im.naturalWidth * s0, dh = im.naturalHeight * s0;
+    const f = skinFitScale(ed.part, im.naturalWidth, im.naturalHeight);
+    const s0x = f.sx * mEPPM * ed.xf.scale, s0y = f.sy * mEPPM * ed.xf.scale;
+    const dw = im.naturalWidth * s0x, dh = im.naturalHeight * s0y;
     const dx = cx - dw / 2 + ed.xf.ox * mEPPM;
     const dy = (SKIN_END_ANCHORED[ed.part] ? tipY - dh : cy - dh / 2) + ed.xf.oy * mEPPM;
     mCtx.drawImage(im, dx, dy, dw, dh);
-    ed._fit = { s0, dx, dy }; // 供命中/逆变换
+    ed._fit = { s0x, s0y, dx, dy }; // 供命中/逆变换
   }
   // 标记点
   const drawPt = (p, color, label) => {
@@ -286,14 +287,13 @@ function setScale(v) {
   renderEditor();
 }
 function applyMark() {
-  const { s0, dx, dy } = ed._fit || {};
-  if (!s0) return;
-  // 屏幕 → 源图像素坐标
-  const toImg = (p) => [(p[0] - dx) / s0, (p[1] - dy) / s0];
+  const { s0x, s0y, dx, dy } = ed._fit || {};
+  if (!s0x) return;
+  // 屏幕 → 源图像素坐标(宽高各自逆变换,适配拉伸填充)
+  const toImg = (p) => [(p[0] - dx) / s0x, (p[1] - dy) / s0y];
   const [ax, ay] = toImg(ed.markA);
   const [bx, by] = toImg(ed.markB);
-  const r = orientSkinImage(ed.img, ax, ay, bx, by);
-  if (!r.ok) { toast(r.msg); ed.markA = ed.markB = null; renderEditor(); return; }
+  const r = orientSkinImage(ed.img, ax, ay, bx, by);  if (!r.ok) { toast(r.msg); ed.markA = ed.markB = null; renderEditor(); return; }
   slots[ed.part] = { src: r.dataURL, ox: 0, oy: 0, scale: 1 };
   delete rawKeep[ed.part]; // 已转正,不再参与"调容差重处理"(那会丢掉转正)
   const im = imgOf(ed.part);
@@ -353,8 +353,9 @@ function drawAssembled() {
     const im = imgOf(part);
     if (im && im.complete && im.naturalWidth) {
       const xf = slots[part];
-      const s = skinFitScale(part, im.naturalWidth, im.naturalHeight) * PPM2 * (xf.scale || 1);
-      const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+      const f = skinFitScale(part, im.naturalWidth, im.naturalHeight);
+      const dw = im.naturalWidth * f.sx * PPM2 * (xf.scale || 1);
+      const dh = im.naturalHeight * f.sy * PPM2 * (xf.scale || 1);
       const dy = SKIN_END_ANCHORED[part] ? (SKIN_BOX[part].h / 2 - (SKIN_BOX[part].tip || 0)) * PPM2 - dh : -dh / 2;
       if (dark) actx.filter = 'brightness(0.72) saturate(0.85)';
       actx.drawImage(im, -dw / 2 + (xf.ox || 0) * PPM2, dy + (xf.oy || 0) * PPM2, dw, dh);
