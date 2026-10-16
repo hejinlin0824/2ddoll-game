@@ -309,22 +309,31 @@
 - 手枪渲染:滑套画在轴线上方(-y),gunMirrored(朝左)时 scale(1,-1) 垂直镜像 ——
   不镜像的话朝右打手枪上下颠倒(滑套跑到下面)。
 
-### 皮肤工坊(skin-studio.html + skin.js)——自绘主角六件套
-> 用户手绘简笔画(白底)上传 → 自动抠白底 + 裁边 → 贴到布娃娃的 头/躯干/大臂/小臂/大腿/小腿。
+### 皮肤工坊(skin-studio.html + skin.js)——自绘主角八件套 + 装备外观 DIY
+> 用户手绘简笔画(白底)上传 → 自动抠白底/裁边 → **标记上端/下端自动转正** → **拖动微调+缩放** →
+> 贴到 头/躯干/大臂/小臂/大腿/小腿(皮肤层) + **头盔/防弹衣(装备外观层)**。
 > 模式 = Drawn to Life 分件换肤:贴图跟着物理刚体走,跑步/翻滚/布娃娃死亡全部自动正确,零动画成本。
-- **处理在上传时一次完成**(domain/skin.js `processSkinImage`):四边平均色当背景参考(抗纸面偏色)→
-  边缘连通洪水抠白(默认「保留内部白」:脸/衣服里的白色留下;轮廓不闭合会从缺口漏,可关掉或调容差)→
-  近白抗锯齿边软过渡 → 自动裁边(+2px)。产物 = 已处理的 PNG dataURL 直接落档,游戏端只消费。
-- **渲染约定**(player.js `skinCap`):贴图 contain 进部件标准框(D 的包围盒),竖直方向、
-  上端=根(头顶/肩/髋)、下端=端(下巴/手/脚);头/躯干随 facing 镜像(与 drawEquip 同款纸娃娃翻转,
-  只翻皮肤层别翻装备层);远侧肢 `ctx.filter='brightness(0.72)'` 压暗保持纵深。
-- **分层**:皮肤 = 底层,头盔/防弹衣(drawEquip)照常叠外面;某件没画就回退该件的程序绘制。
-  有小臂贴图时程序小手自动隐藏;有小腿贴图时程序靴子自动隐藏。
-- **只给主角**:`useSkin = !opts.palette`,敌人(带 palette)不吃皮肤,也不会跟玩家撞衫。
-- ⚠️ 上屏很小(全身 ~81px):提醒用户笔画粗、颜色亮;贴图比部件框细长时 contain 会缩得更小,属正常。
-- ⚠️ 工坊页 skinStudio.js 的模块级调用顺序:`SKIN_PARTS.forEach(redrawSlot)` 必须在
-  `drawAssembled` 定义之后(TDZ,曾在模块中段炸断导致 UI 建好但事件全没挂)。
-- 调试:`window.__skinTest(part, drawFn)` 工坊页注入合成白底图走完整上传管线。
+- **处理在上传时一次完成**(domain/skin.js):四边平均色当背景参考 → 边缘连通洪水抠白(默认「保留
+  内部白」;调容差会对原图重处理)→ 近白软边 → 自动裁边;`orientSkinImage(src, ax, ay, bx, by)` 按
+  用户点的"上端→下端"两点把素材旋转转正(任意角度都行,躺着画的/拍歪的都救得回来)再重裁边。
+- **SKIN_BOX 是部件标准框的唯一事实源**(皮肤八件,米):游戏渲染(skinCap/skinEquip)、工坊编辑器、
+  组装预览三处共用 —— 保证不错位不偏移的根基就是"别处不准再写一份尺寸"。base 六件与 player.js 的 D
+  数值一致(改 D 必须同步 SKIN_BOX)。
+- **渲染约定**(player.js `skinCap`/`skinEquip`):贴图 contain(等比,绝不拉伸)进标准框 × 用户 scale,
+  再加用户 ox/oy 偏移(工坊里拖出来的三个数,part 局部空间);竖直方向、上端=根(头顶/肩/髋)、
+  下端=端(下巴/手/脚);头/躯干/头盔/防弹衣随 facing 镜像(只翻皮肤层,装备层 drawEquip 自带);
+  远侧肢 `ctx.filter='brightness(0.72)'` 压暗。
+- **头盔/防弹衣 = 装备外观层**:仅在该部位真的穿着护甲时显示,替代视觉预设(数值/耐久仍走背包装备);
+  头盔锚在头部局部空间(框中心=头圆心)、防弹衣锚在躯干局部空间。
+- **分层**:皮肤=底层,头盔/防弹衣=外层;某件没画就回退该件的程序绘制/预设。有小臂图隐藏程序小手、
+  有小腿图隐藏程序靴。**只给主角**:`useSkin = !opts.palette`,敌人不吃皮肤。
+- 存档 v2:`parts[p] = { src, ox, oy, scale }`;v1 旧档缺字段默认 0/0/1(自动兼容)。
+- ⚠️ 上屏很小(全身 ~81px):提醒用户笔画粗、颜色亮;素材比标准框细长时 contain 会缩得更小,属正常。
+- ⚠️ 工坊页模块级调用顺序:`SKIN_PARTS.forEach(redrawSlot)` 必须在 `drawAssembled` 定义之后(TDZ)。
+- 调试:`window.__skinTest(part, drawFn)` 注入合成白底图;`__skinMark(part, ax,ay, bx,by)` 直调端点
+  转正;`__skinXf/__skinInfo/__skinSave`;游戏页 `window.__skin = { skinImg, skinXf, loadSkin }`。
+- ⚠️ 后台标签页测皮肤:rAF 暂停会让画布停在"图片解码完成前"的旧帧 —— 必须先推 1 帧创建 Image、
+  等 ~700ms 解码、再 `__frameN` 重渲染,然后才采样像素(AGENT.md 坑 7 的皮肤版)。
 
 ### 素材化(枪声 + 背景)
 - 枪声:public/sfx/*.wav(CC0/CC-BY,署名见 ASSETS.md),main.js fetch+decodeAudioData 缓存,

@@ -8,7 +8,7 @@ import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from '../world/level.js';
 import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
-import { skinImg } from '../domain/skin.js';
+import { skinImg, skinXf, SKIN_BOX } from '../domain/skin.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
@@ -768,25 +768,46 @@ export class Player {
       ctx.restore();
     };
 
-    // 自绘皮肤六件套:有贴图画贴图,没有回退程序绘制(贴图未解码的帧也回退,就绪后自然出现)。
-    // 贴图方向约定:竖直、上端=根(肩/髋/头顶)、下端=端(手/脚);远侧肢加滤镜压暗保持纵深
-    const skinCap = (b, part, d, dark = false) => {
+    // 自绘皮肤/装备外观:有贴图画贴图,没有回退程序绘制(贴图未解码的帧也回退,就绪后自然出现)。
+    // 贴图 contain(等比)进部件标准框(SKIN_BOX,与工坊编辑器同一份数据 → 所见即所得,不错位),
+    // 再应用用户微调(ox/oy 偏移 + scale 缩放,皮肤工坊里拖出来的就是这三个数)。
+    // 方向约定:竖直、上端=根(肩/髋/头顶)、下端=端(手/脚);远侧肢加滤镜压暗保持纵深
+    const skinCap = (b, part, dark = false) => {
       if (!this.useSkin) return false;
       const im = skinImg(part);
       if (!im) return false;
+      const box = SKIN_BOX[part];
+      const xf = skinXf(part);
       const [x, y] = P(b);
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(R(b));
-      const bw = d.w * ppm, bh = d.h * ppm;
-      const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight);
+      const bw = box.w * ppm, bh = box.h * ppm;
+      const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight) * (xf.scale || 1);
       if (dark) ctx.filter = 'brightness(0.72) saturate(0.85)';
-      ctx.drawImage(im, -im.naturalWidth * s / 2, -im.naturalHeight * s / 2, im.naturalWidth * s, im.naturalHeight * s);
+      ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
+        -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
       ctx.filter = 'none';
       ctx.restore();
       return true;
     };
     const hasSkin = (part) => this.useSkin && !!skinImg(part);
+    // 装备外观层(头盔/防弹衣):自绘图仅在该部位真的穿着护甲时显示,替代视觉预设;
+    // 画在对应身体的局部空间(头盔=头部、防弹衣=躯干),随朝向镜像 —— 与皮肤层同款变换数学
+    const skinEquip = (part) => {
+      const im = this.useSkin ? skinImg(part) : null;
+      if (!im) return false;
+      const box = SKIN_BOX[part];
+      const xf = skinXf(part);
+      ctx.save();
+      if (this.facing === -1) ctx.scale(-1, 1);
+      const bw = box.w * ppm, bh = box.h * ppm;
+      const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight) * (xf.scale || 1);
+      ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
+        -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
+      ctx.restore();
+      return true;
+    };
 
     // 装备:在对应身体部件的局部空间里绘制(纸娃娃挂点式)
     // parts 支持两种零件:矩形 {x,y,w,h,color,r} / 图片 {img:素材id,x,y,w,h,rot}
@@ -881,39 +902,45 @@ export class Player {
     };
 
     // 远侧肢体(暗色)→ 躯干 → 头 → 近侧腿 → 枪 → 近侧臂
-    if (!skinCap(this.armUB, 'upperArm', D.upperArm, true)) cap(this.armUB, D.upperArm, this.C.skinDark);
-    if (!skinCap(this.armLB, 'foreArm', D.foreArm, true)) cap(this.armLB, D.foreArm, this.C.skinDark);
+    if (!skinCap(this.armUB, 'upperArm', true)) cap(this.armUB, D.upperArm, this.C.skinDark);
+    if (!skinCap(this.armLB, 'foreArm', true)) cap(this.armLB, D.foreArm, this.C.skinDark);
     if (!hasSkin('foreArm')) hand(this.armLB);
-    if (!skinCap(this.legLB, 'calf', D.calf, true)) boot(this.legLB, this.C.pantsDark, this.C.bootDark);
-    if (!skinCap(this.legUB, 'thigh', D.thigh, true)) cap(this.legUB, D.thigh, this.C.pantsDark);
+    if (!skinCap(this.legLB, 'calf', true)) boot(this.legLB, this.C.pantsDark, this.C.bootDark);
+    if (!skinCap(this.legUB, 'thigh', true)) cap(this.legUB, D.thigh, this.C.pantsDark);
 
     // 躯干(自绘皮肤优先,随朝向镜像;无皮肤画程序躯体+弹药带)
     {
       const [x, y] = P(this.torso);
       ctx.save();
       ctx.translate(x, y); ctx.rotate(R(this.torso));
-      if (hasSkin('torso')) {
-        const im = skinImg('torso');
-        const bw = D.torso.w * ppm, bh = D.torso.h * ppm;
-        const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight);
-        ctx.save();
-        if (this.facing === -1) ctx.scale(-1, 1); // 只镜像皮肤层:装备层 drawEquip 自带镜像,别在外面翻它
-        ctx.drawImage(im, -im.naturalWidth * s / 2, -im.naturalHeight * s / 2, im.naturalWidth * s, im.naturalHeight * s);
-        ctx.restore();
-      } else {
-        const w = D.torso.w * ppm, h = D.torso.h * ppm;
-        ctx.fillStyle = this.C.skin;
-        ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
-        // 弹药带
-        ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.moveTo(-w * 0.4, -h * 0.32); ctx.lineTo(w * 0.42, h * 0.05); ctx.stroke();
-        ctx.strokeStyle = '#3d2f21'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.moveTo(-w * 0.42, h * 0.02); ctx.lineTo(w * 0.4, h * 0.38); ctx.stroke();
-        // 腰带
-        ctx.fillStyle = '#603a1e';
-        ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
+      {
+        // 躯干基底:自绘皮肤(带微调变换)或程序躯体
+        const im = hasSkin('torso') ? skinImg('torso') : null;
+        if (im) {
+          ctx.save();
+          if (this.facing === -1) ctx.scale(-1, 1);
+          const box = SKIN_BOX.torso, xf = skinXf('torso');
+          const bw = box.w * ppm, bh = box.h * ppm;
+          const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight) * (xf.scale || 1);
+          ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
+            -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
+          ctx.restore();
+        } else {
+          const w = D.torso.w * ppm, h = D.torso.h * ppm;
+          ctx.fillStyle = this.C.skin;
+          ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
+          // 弹药带
+          ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(-w * 0.4, -h * 0.32); ctx.lineTo(w * 0.42, h * 0.05); ctx.stroke();
+          ctx.strokeStyle = '#3d2f21'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(-w * 0.42, h * 0.02); ctx.lineTo(w * 0.4, h * 0.38); ctx.stroke();
+          // 腰带
+          ctx.fillStyle = '#603a1e';
+          ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
+        }
       }
-      drawEquip(this.loadout.torso);
+      // 防弹衣外观层:自绘图(仅穿着护甲时)优先,否则视觉预设
+      if (!(this.loadout.torso && skinEquip('vest'))) drawEquip(this.loadout.torso);
       ctx.restore();
     }
 
@@ -966,11 +993,13 @@ export class Player {
       ctx.translate(x, y); ctx.rotate(R(this.head));
       if (hasSkin('head')) {
         const im = skinImg('head');
-        const bw = D.headR * 2 * ppm, bh = D.headR * 2 * ppm;
-        const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight);
+        const box = SKIN_BOX.head, xf = skinXf('head');
+        const bw = box.w * ppm, bh = box.h * ppm;
+        const s = Math.min(bw / im.naturalWidth, bh / im.naturalHeight) * (xf.scale || 1);
         ctx.save();
         if (this.facing === -1) ctx.scale(-1, 1);
-        ctx.drawImage(im, -im.naturalWidth * s / 2, -im.naturalHeight * s / 2, im.naturalWidth * s, im.naturalHeight * s);
+        ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
+          -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
         ctx.restore();
       } else {
         const r = D.headR * ppm;
@@ -1002,15 +1031,16 @@ export class Player {
         ctx.fillStyle = '#222';
         ctx.beginPath(); ctx.arc(this.facing * r * 0.42, r * 0.05, 1.7, 0, Math.PI * 2); ctx.fill();
       }
-      drawEquip(this.loadout.head);
+      // 头盔外观层:自绘图(仅戴盔时)优先,否则视觉预设
+      if (!(this.loadout.head && skinEquip('helmet'))) drawEquip(this.loadout.head);
       ctx.restore();
     }
 
     if (!hasSkin('calf')) boot(this.legLF, this.C.pants, this.C.boot);
-    if (!skinCap(this.legUF, 'thigh', D.thigh)) cap(this.legUF, D.thigh, this.C.pants);
+    if (!skinCap(this.legUF, 'thigh')) cap(this.legUF, D.thigh, this.C.pants);
     gun();
-    if (!skinCap(this.armUF, 'upperArm', D.upperArm)) cap(this.armUF, D.upperArm, this.C.skin);
-    if (!skinCap(this.armLF, 'foreArm', D.foreArm)) cap(this.armLF, D.foreArm, this.C.skin);
+    if (!skinCap(this.armUF, 'upperArm')) cap(this.armUF, D.upperArm, this.C.skin);
+    if (!skinCap(this.armLF, 'foreArm')) cap(this.armLF, D.foreArm, this.C.skin);
     if (!hasSkin('foreArm')) hand(this.armLF);
   }
 }

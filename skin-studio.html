@@ -39,9 +39,27 @@
     #guide { background: rgba(16,20,32,0.85); border: 1px solid rgba(244,233,216,0.18); border-radius: 12px;
       padding: 10px 12px; font-size: 11.5px; line-height: 1.7; opacity: 0.85; }
     #guide b { color: #ffb14a; }
-    #toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 6;
+    #toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 8;
       background: rgba(232,160,76,0.92); color: #241a08; padding: 6px 18px; border-radius: 999px;
       font-size: 12.5px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+    .tag { font-size: 10px; font-weight: 400; color: #8fc7ff; margin-left: 6px; }
+    #modal { position: fixed; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
+      background: rgba(4,6,12,0.72); backdrop-filter: blur(3px); }
+    .mcard { background: rgba(16,20,32,0.97); border: 1px solid rgba(244,233,216,0.25); border-radius: 14px;
+      padding: 14px; box-shadow: 0 20px 70px rgba(0,0,0,0.6); }
+    .mhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .mhead span { font-weight: 700; color: #ffb14a; font-size: 14px; }
+    .mhead button { background: none; border: 1px solid rgba(244,233,216,0.25); color: #f0e6d2;
+      border-radius: 7px; width: 26px; height: 26px; cursor: pointer; }
+    #mCv { background: repeating-conic-gradient(#2a2f3d 0% 25%, #1c212c 0% 50%) 0 0 / 20px 20px;
+      border-radius: 10px; cursor: crosshair; touch-action: none; max-width: 62vw; max-height: 60vh; }
+    .mtools { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .mtools button { background: rgba(244,233,216,0.08); border: 1px solid rgba(244,233,216,0.25);
+      color: #f0e6d2; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+    .mtools button.on { background: rgba(232,160,76,0.9); color: #241a08; font-weight: 700; }
+    .mtools .primary { background: rgba(232,160,76,0.9); color: #241a08; border-color: #e8a04c; font-weight: 700; }
+    .mtools label { font-size: 12px; display: flex; align-items: center; gap: 5px; }
+    #mHint { margin-top: 8px; font-size: 11.5px; opacity: 0.7; line-height: 1.5; max-width: 460px; }
   </style>
 </head>
 <body>
@@ -71,6 +89,20 @@
     </div>
   </div>
   <div id="toast"></div>
+  <div id="modal">
+    <div class="mcard">
+      <div class="mhead"><span id="mTitle"></span><button id="mClose">✕</button></div>
+      <canvas id="mCv" width="460" height="440"></canvas>
+      <div class="mtools">
+        <button id="mMark" class="on">① 标记上下端</button>
+        <button id="mDrag">② 拖动微调</button>
+        <label>缩放 <input type="range" id="mScale" min="40" max="220" value="100"> <span id="mScaleV">1.00×</span></label>
+        <button id="mReset">重置变换</button>
+        <button id="mOk" class="primary">确认 ✓</button>
+      </div>
+      <div id="mHint"></div>
+    </div>
+  </div>
   <script type="module" src="/src/designer/skinStudio.js"></script>
 </body>
 </html>

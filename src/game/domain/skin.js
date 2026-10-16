@@ -1,12 +1,28 @@
-// 皮肤领域层:玩家自绘皮肤六件套(头/躯干/大臂/小臂/大腿/小腿)。
-// 存档 'contra-skin' = { version: 1, parts: { head: {src}, ... } }
-// src = **已抠底、已裁边**的 PNG dataURL —— 处理发生在皮肤工坊上传时,游戏端只消费不处理。
+// 皮肤领域层:玩家自绘皮肤 + 装备外观 DIY(头/躯干/大臂/小臂/大腿/小腿 + 头盔/防弹衣)。
+// 存档 'contra-skin' = { version: 2, parts: { head: {src, ox, oy, scale}, ... } }
+// src = **已抠底、已裁边、已转正**的 PNG dataURL —— 处理发生在皮肤工坊上传时,游戏端只消费。
+// ox/oy/scale = 用户微调(部件标准框内,米,y 向下与图片一致);v1 存档没有这些字段,默认 0/0/1。
 // 渲染约定(player.draw):图片竖直摆放,上端 = 根(头顶/肩/髋),下端 = 端(下巴/手/脚);
-// 头/躯干随朝向左右镜像(与 drawEquip 同款纸娃娃翻转),四肢不翻。
+// 头/躯干/头盔/防弹衣随朝向左右镜像(与 drawEquip 同款纸娃娃翻转),四肢不翻。
+// 头盔/防弹衣是**装备外观层**:只在真的穿戴着对应护甲时显示,替代视觉预设(数值仍走背包装备)。
 // 敌人不吃皮肤(opts.palette 传入的 Dummy 在 player.draw 里跳过)。
-export const SKIN_PARTS = ['head', 'torso', 'upperArm', 'foreArm', 'thigh', 'calf'];
+export const SKIN_PARTS = ['head', 'torso', 'upperArm', 'foreArm', 'thigh', 'calf', 'helmet', 'vest'];
 export const SKIN_LABEL = {
   head: '头', torso: '躯干', upperArm: '大臂', foreArm: '小臂', thigh: '大腿', calf: '小腿',
+  helmet: '头盔(外观)', vest: '防弹衣(外观)',
+};
+// 部件标准框(米):贴图 contain(等比)进这个框,再乘用户缩放。
+// base 六件与 player.js 的 D 一致(改 D 记得同步这里);anchor 表示装备外观画在哪个身体的局部空间。
+// 游戏与工坊预览/编辑器共用这一份 —— 不错位、不偏移的根基就是"只有一个尺寸事实源"。
+export const SKIN_BOX = {
+  head: { w: 0.30, h: 0.30 },
+  torso: { w: 0.30, h: 0.52 },
+  upperArm: { w: 0.09, h: 0.26 },
+  foreArm: { w: 0.08, h: 0.24 },
+  thigh: { w: 0.115, h: 0.28 },
+  calf: { w: 0.095, h: 0.26 },
+  helmet: { w: 0.40, h: 0.32, anchor: 'head' },  // 锚在头部局部空间,框中心=头圆心
+  vest: { w: 0.36, h: 0.60, anchor: 'torso' },   // 锚在躯干局部空间,框中心=躯干中心
 };
 const KEY = 'contra-skin';
 
@@ -21,11 +37,17 @@ export function loadSkin() {
 }
 let __rawCache; let __skinCache;
 export function saveSkin(s) {
-  try { localStorage.setItem(KEY, JSON.stringify(s)); imgCache = {}; return true; } catch { return false; }
+  try { localStorage.setItem(KEY, JSON.stringify(s)); __rawCache = null; imgCache = {}; return true; } catch { return false; }
 }
 export function clearSkin() {
   try { localStorage.removeItem(KEY); } catch { /* 忽略 */ }
-  imgCache = {};
+  __rawCache = null; imgCache = {};
+}
+
+// 用户微调变换(v1 存档/缺字段 → 全默认)
+export function skinXf(part) {
+  const p = loadSkin()?.parts?.[part];
+  return { ox: p?.ox || 0, oy: p?.oy || 0, scale: p?.scale || 1 };
 }
 
 // ---- 游戏端图像缓存(part -> HTMLImageElement;同标签页重存/跨标签页 storage 都会失效) ----
@@ -44,6 +66,7 @@ export function skinImg(part) {
   }
   return im.complete && im.naturalWidth ? im : null;
 }
+window.__skin = { skinImg, skinXf, loadSkin }; // 调试句柄
 
 // ---- 上传处理管线(皮肤工坊用):抠白底 + 自动裁边,纯 canvas 无依赖 ----
 // 白底判定:取四边不透明像素的平均色当背景参考(抗纸面偏色);
@@ -135,4 +158,39 @@ export function processSkinImage(source, opts = {}) {
     ok: true, dataURL: out.toDataURL('image/png'),
     w: cw, h: ch, removedPct: +(100 * removed / (w * h)).toFixed(1),
   };
+}
+
+// ---- 端点标记转正(皮肤工坊用):用户点"上端(根)→下端(端)"两个点,素材自动旋转成
+// 上端在上、下端在下 —— 支持任意角度素材(躺着画的、照片拍歪的),转完重裁边。
+// (ax,ay)/(bx,by) = 上端/下端在**源图像素坐标**里的位置
+export function orientSkinImage(src, ax, ay, bx, by) {
+  const iw = src.naturalWidth || src.width;
+  const ih = src.naturalHeight || src.height;
+  if (!iw || !ih) return { ok: false, msg: '图片为空' };
+  const vx = bx - ax, vy = by - ay;
+  if (Math.hypot(vx, vy) < Math.min(iw, ih) * 0.12) return { ok: false, msg: '两个标记点太近,再分远一点' };
+  const th = Math.atan2(vx, vy); // 旋成 A→B 指向图片下方(+y)
+  const diag = Math.ceil(Math.hypot(iw, ih)) + 4;
+  const cv = document.createElement('canvas');
+  cv.width = diag; cv.height = diag;
+  const c = cv.getContext('2d');
+  c.translate(diag / 2, diag / 2);
+  c.rotate(th);
+  c.drawImage(src, -iw / 2, -ih / 2);
+  // 转完重裁透明边(+2px)
+  const d = c.getImageData(0, 0, diag, diag).data;
+  let x0 = diag, y0 = diag, x1 = -1, y1 = -1;
+  for (let y = 0; y < diag; y++) for (let x = 0; x < diag; x++) {
+    if (d[(y * diag + x) * 4 + 3] > 8) {
+      if (x < x0) x0 = x; if (y < y0) y0 = y;
+      if (x > x1) x1 = x; if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) return { ok: false, msg: '转正后什么都没剩?' };
+  x0 = Math.max(0, x0 - 2); y0 = Math.max(0, y0 - 2);
+  x1 = Math.min(diag - 1, x1 + 2); y1 = Math.min(diag - 1, y1 + 2);
+  const out = document.createElement('canvas');
+  out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
+  out.getContext('2d').drawImage(cv, -x0, -y0);
+  return { ok: true, dataURL: out.toDataURL('image/png'), w: out.width, h: out.height, rotatedDeg: +(th * 180 / Math.PI).toFixed(1) };
 }
