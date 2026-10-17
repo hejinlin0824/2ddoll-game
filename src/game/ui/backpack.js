@@ -14,6 +14,14 @@ import { beep, noiseBurst, uiSfx } from '../systems/audio.js';
 
 const QLABEL = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
 const SLABEL = { head: '头盔', body: '防弹衣', gun: '武器词条' };
+// 突破概率人话(与 inventory.js BT_RATE 对应):详情页"突破"操作行里展示
+const BT_DESC = {
+  broken: '这件 90% 升档,失败掉一条词条',
+  normal: '这件 90% 升档,失败掉一条词条',
+  fine: '这件 90% 升档,失败掉一条词条',
+  rare: '这件 90% 升档,失败掉一条词条',
+  epic: '高级→传说只有 10% 升,80% 不变,10% 失败掉词条',
+};
 
 let open = false;
 let tab = 'equip';          // 'equip' | 'shop'
@@ -94,9 +102,19 @@ function renderEquip(inv) {
     el.style.setProperty('--qc', it ? q(it).color : 'transparent');
     el.classList.toggle('filled', !!it);
     el.innerHTML = it
-      ? cardHtml(it)
-      : `<div class="eq-empty">${SLABEL[slot]}<span>拖入穿戴</span></div>`;
-    if (it) wireDrag(el, it, 'eq', () => render());
+      ? cardHtml(it) + '<button class="eq-x" title="脱下放回背包">卸下</button>'
+      : `<div class="eq-empty">${SLABEL[slot]}<span>拖入穿戴 / 点背包里的「穿」</span></div>`;
+    wireDrag(el, it, 'eq', () => render());
+    if (it) {
+      el.querySelector('.eq-x').onclick = (e) => {
+        e.stopPropagation();
+        if (invIsFull()) { toast('背包已满,先分解或突破腾格子'); return; }
+        invSetEquipped(it.id, false);
+        toast(`已脱下${SLABEL[slot]}`);
+        onChanged && onChanged();
+        render();
+      };
+    }
   }
 
   const grids = { head: document.getElementById('bagHead'), body: document.getElementById('bagBody'), gun: document.getElementById('bagGun') };
@@ -108,38 +126,81 @@ function renderEquip(inv) {
     card.className = 'ic-card';
     card.style.setProperty('--qc', q(it).color);
     card.style.borderColor = q(it).color + '77';
-    card.innerHTML = cardHtml(it) + '<button class="ic-drop" title="分解">♻</button>';
-    card.querySelector('.ic-drop').onclick = (e) => {
+    // 快捷操作行:穿/吸/分解 —— 拖拽保留,但不再是唯一路径(用户反馈"看不明白"的主因)
+    const canWear = it.slot !== 'gun';
+    const canSuck = !!(it.affixes || []).length && (it.slot === 'gun' || invEquipped(it.slot));
+    card.innerHTML = cardHtml(it) + `
+      <div class="ic-ops">
+        ${canWear ? '<button class="op-wear" title="换上这件,原装备自动回背包">穿</button>' : ''}
+        <button class="op-suck" ${canSuck ? '' : 'disabled'} title="把这件的词条合并进你装备中的${it.slot === 'gun' ? '主武器' : SLABEL[it.slot]},然后这件消失">吸</button>
+        <button class="op-cut" title="分解成金币">♻</button>
+      </div>`;
+    card.querySelector('.op-wear')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      decomposeItem(it, card);
-    };
+      invSetEquipped(it.id, true);
+      toast(`已换上${SLABEL[it.slot] || '装备'},原装备回背包`);
+      onChanged && onChanged();
+      render();
+    });
+    card.querySelector('.op-suck')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = invAbsorb(it.id);
+      toast(r.msg);
+      if (r.ok) onChanged && onChanged();
+      render();
+    });
+    const cutBtn = card.querySelector('.op-cut');
+    cutBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      twoStepConfirm(cutBtn, () => {
+        const r = invDecompose(it.id);
+        toast(r.msg);
+        onChanged && onChanged();
+        render();
+      });
+    });
+    // 纯点击(未拖动、没点在按钮上)= 带着这件去工坊精修
+    card.addEventListener('click', (e) => {
+      if (!lastClickWasPlain) return;
+      if (e.target.closest('.ic-ops') || e.target.closest('.ic-drop')) return;
+      tab = 'shop';
+      shopSelId = it.id;
+      render();
+    });
     wireDrag(card, it, 'bag', () => render());
     grids[it.slot].appendChild(card);
     shown++;
   }
   if (!shown) {
-    grids.head.innerHTML = '<span class="bag-empty">背包空空 —— 杀敌搜尸、或去工坊开箱</span>';
+    grids.head.innerHTML = '<span class="bag-empty">背包空空 —— 杀敌后站尸上按 Tab 搜刮,或去工坊开箱</span>';
   }
 }
 
-// 两步确认分解(防手滑):第一次点变色"确认",再点真分解得金币
-function decomposeItem(it, cardEl) {
-  const btn = cardEl.querySelector('.ic-drop');
+// 两步确认(防手滑):第一次点变色"确认?",1.6s 内再点才执行
+function twoStepConfirm(btn, fire) {
   if (btn.dataset.armed) {
-    const r = invDecompose(it.id);
-    toast(r.msg);
-    onChanged && onChanged();
-    render();
+    delete btn.dataset.armed;
+    fire();
   } else {
     btn.dataset.armed = '1';
-    btn.textContent = '得?';
-    btn.classList.add('armed');
-    setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = '♻'; btn.classList.remove('armed'); } }, 1600);
+    const old = btn.textContent;
+    btn.textContent = '确认?';
+    btn.style.borderColor = '#e0713c';
+    btn.style.color = '#ff9a6c';
+    setTimeout(() => {
+      if (btn.isConnected && btn.dataset.armed) {
+        delete btn.dataset.armed;
+        btn.textContent = old;
+        btn.style.borderColor = '';
+        btn.style.color = '';
+      }
+    }, 1600);
   }
 }
 
 // ---- 指针拖拽( Pointer Events,鼠标/触屏通吃)----
 let drag = null; // { item, from, ghost, sx, sy, moved }
+let lastClickWasPlain = false; // 最近一次 pointerup 是"没挪动的纯点击"(click 跳工坊用)
 function wireDrag(el, item, from, after) {
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button !== 0) return;
@@ -184,6 +245,7 @@ function dragUp(e) {
   clearHot();
   if (d.ghost) d.ghost.remove();
   d.el.classList.remove('dragging');
+  lastClickWasPlain = !d.moved; // 纯点击:随后的 click 事件据此决定要不要跳工坊
   if (!d.moved) return; // 纯点击,不算拖拽
 
   const t = document.elementFromPoint(e.clientX, e.clientY);
@@ -223,20 +285,31 @@ function renderShop(inv) {
   list.innerHTML = '';
   const items = [...inv.items].sort((a, b) => (a.equipped === b.equipped ? 0 : a.equipped ? -1 : 1));
   if (!shopSelId && items.length) shopSelId = items[0].id;
+  const selItem = invItemSafe(shopSelId);
   for (const it of items) {
     const chip = document.createElement('button');
     chip.className = 'shop-chip' + (it.id === shopSelId ? ' sel' : '');
     chip.style.borderColor = q(it).color + (it.id === shopSelId ? '' : '55');
     if (it.id === shopSelId) chip.style.boxShadow = `0 0 8px ${q(it).color}66`;
     chip.textContent = `${itemTitle(it.affixes || [], SLABEL[it.slot])}${it.equipped ? ' ·装备中' : ''}`;
-    chip.onclick = () => { if (combineMode) toggleCombinePick(it.id); else { shopSelId = it.id; } render(); };
+    // 突破选材模式:只有与"基准件"同槽同品质的可选,其余灰掉(以前全部能点,选完才报错)
+    if (combineMode && selItem) {
+      const ok = it.slot === selItem.slot && it.quality === selItem.quality && !it.equipped;
+      chip.style.opacity = ok || sel.has(it.id) ? '' : '0.28';
+      if (!ok && !sel.has(it.id)) chip.disabled = true;
+    }
+    chip.onclick = () => {
+      if (combineMode) { toggleCombinePick(it.id); }
+      else { shopSelId = it.id; }
+      render();
+    };
     if (combineMode && sel.has(it.id)) chip.classList.add('picked');
     list.appendChild(chip);
   }
   if (combineMode) {
     const hint = document.createElement('div');
     hint.className = 'shop-hint';
-    hint.textContent = `突破选择中:${sel.size}/3(同槽位同品质)`;
+    hint.textContent = `挑选素材:${sel.size}/3 —— 只有点亮的(同种类同品质)可选`;
     list.appendChild(hint);
   }
 
@@ -244,22 +317,43 @@ function renderShop(inv) {
   const detail = document.getElementById('shopDetail');
   if (!it) {
       detail.innerHTML = '<div class="eq-empty" style="height:100%">没有可操作的装备</div>';
-    } else {
-      const qc = q(it);
-      const rc = it.slot === 'gun' ? 0 : invRepairCost(it.id);
-      const uc = invUpgradeCost(it.quality);
-      const ur = invUpgradeRate(it.quality);
-      const canAbsorb = !it.equipped && (it.slot === 'gun' || invEquipped(it.slot));
-      const absorbLabel = it.slot === 'gun' ? '吸取 → 主武器词条' : `吸取 → 已装备的${SLABEL[it.slot]}`;
-      detail.innerHTML = `
-        <div class="ic-card static" style="border-color:${qc.color}88">${cardHtml(it)}</div>
-        <div class="shop-btns">
-          ${it.slot === 'gun' ? '' : `<button id="opRepair" ${rc === 0 ? 'disabled' : ''}>修复 · ${rc} 金</button>`}
-          <button id="opUpgrade" ${uc === undefined ? 'disabled' : ''}>强化 → ${QLABEL[nextQuality(it.quality)] || 'MAX'} · ${uc ?? '-'} 金${ur !== undefined ? ` · 成功 ${Math.round(ur * 100)}%` : ''}</button>
-          ${it.slot === 'gun' ? '' : '<button id="opForge">锻造 · 25 金 · 耐久上限 ×1.5</button>'}
-          <button id="opAbsorb" ${canAbsorb ? '' : 'disabled'} title="把这件的词条合并进目标(同词条数值相加)后消失">${absorbLabel}</button>
-          <button id="opBreak">${combineMode ? `确认突破(${sel.size}/3)` : '突破 · 3 件同槽同品质 · 概率升/不变/失败'}</button>
-        </div>`;
+  } else {
+    const qc = q(it);
+    const rc = it.slot === 'gun' ? 0 : invRepairCost(it.id);
+    const uc = invUpgradeCost(it.quality);
+    const ur = invUpgradeRate(it.quality);
+    const canAbsorb = !it.equipped && (it.slot === 'gun' || invEquipped(it.slot));
+    // 每个操作一行:名称 + 一句话人话说明 + 右侧费用按钮(不再是一排长标签按钮)
+    detail.innerHTML = `
+      <div class="ic-card static" style="border-color:${qc.color}88">${cardHtml(it)}</div>
+      ${it.slot === 'gun' ? '' : `
+      <div class="op-row">
+        <div class="op-main"><div class="op-name">🔧 修复</div><div class="op-desc">补满耐久,1 金币 1 点 —— 耐久归零的护甲不再挡子弹,记得修</div></div>
+        <button class="op-go plain" id="opRepair" ${rc === 0 ? 'disabled' : ''}>${rc === 0 ? '无需修复' : `修 · ${rc} 金`}</button>
+      </div>`}
+      <div class="op-row">
+        <div class="op-main"><div class="op-name">⬆ 强化</div><div class="op-desc">品质直接升一档(耐久上限跟着涨),有成功率,失败金币不退${ur !== undefined ? ` —— 当前 ${Math.round(ur * 100)}%` : ''}</div></div>
+        <button class="op-go" id="opUpgrade" ${uc === undefined ? 'disabled' : ''}>${uc === undefined ? '已到顶' : `升到${QLABEL[nextQuality(it.quality)] || 'MAX'} · ${uc} 金`}</button>
+      </div>
+      ${it.slot === 'gun' ? '' : `
+      <div class="op-row">
+        <div class="op-main"><div class="op-name">🔨 锻造</div><div class="op-desc">耐久上限 ×1.5,可以重复锻 —— 想要打不烂的甲就靠它</div></div>
+        <button class="op-go plain" id="opForge">锻 · 25 金</button>
+      </div>`}
+      <div class="op-row">
+        <div class="op-main"><div class="op-name">✨ 吸取词条</div><div class="op-desc">把这件的词条合并进${it.slot === 'gun' ? '主武器' : `你装备中的${SLABEL[it.slot]}`}(同词条数值相加),然后这件消失</div></div>
+        <button class="op-go plain" id="opAbsorb" ${canAbsorb ? '' : 'disabled'}>${canAbsorb ? '吸取' : (it.equipped ? '装备中不可' : '先穿一件')}</button>
+      </div>
+      <div class="op-row" style="border-color:${combineMode ? 'var(--amber-2)' : 'var(--line)'}">
+        <div class="op-main"><div class="op-name">⚡ 突破</div><div class="op-desc">3 件同种类同品质合成 1 件:词条取三件中最强的。${BT_DESC[it.quality] || ''}</div></div>
+        <button class="op-go" id="opBreak">${combineMode ? '选材中…' : '挑素材'}</button>
+      </div>
+      ${combineMode ? `
+      <div class="bt-bar">
+        <span class="bt-n">素材 ${sel.size}/3 ${sel.size === 3 ? '· 可以突破了!' : '· 在上面列表点选'}</span>
+        <button class="op-go" id="btCancel" style="background:none;color:var(--text-dim);border:1px solid var(--line)">取消</button>
+        <button class="op-go" id="btGo" ${sel.size === 3 ? '' : 'disabled'}>⚡ 突破!</button>
+      </div>` : ''}`;
       if (it.slot !== 'gun') {
         detail.querySelector('#opRepair').onclick = () => act(() => invRepair(it.id));
         detail.querySelector('#opForge').onclick = () => act(() => invForge(it.id));
@@ -272,12 +366,19 @@ function renderShop(inv) {
         render();
       };
       detail.querySelector('#opBreak').onclick = () => {
-        if (!combineMode) { combineMode = true; sel.clear(); render(); return; }
-        const r = invBreakthrough([...sel]);
-        toast(r.msg);
-        if (r.ok) { combineMode = false; sel.clear(); shopSelId = r.item.id; onChanged && onChanged(); }
+        combineMode = true;
+        sel.clear();
         render();
       };
+      if (combineMode) {
+        detail.querySelector('#btCancel').onclick = () => { combineMode = false; sel.clear(); render(); };
+        detail.querySelector('#btGo').onclick = () => {
+          const r = invBreakthrough([...sel]);
+          toast(r.msg);
+          if (r.ok) { combineMode = false; sel.clear(); shopSelId = r.item.id; onChanged && onChanged(); }
+          render();
+        };
+      }
     }
 
   // 开箱区

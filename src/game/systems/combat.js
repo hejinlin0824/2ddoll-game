@@ -34,7 +34,8 @@ function hitTerrainRect(x, y) {
 window.__hitTest = (x, y) => { const r = hitTerrainRect(x, y); return r ? { x: r.x, y: r.y, hp: r.hp ?? null, destructible: !!r.destructible } : null; };
 // 子弹破坏地形(tile):命中 tile 扣血,归零碎裂(从世界移除+碎片飞溅);
 // 溢出伤害沿弹道继续啃穿相邻 tile —— 打出真实的弹坑,而不是整块消失。不可破坏块只冒尘。
-function damageTerrain(r, damage, x, y, dir, depth = 0) {
+// (game.js 的手雷起爆也调它炸弹坑,故 export)
+export function damageTerrain(r, damage, x, y, dir, depth = 0) {
   if (!r.destructible) { burst(x, y, 2, '#8a7c66', 2); return; }
   ensureRectHp(r);
   r.hp -= damage;

@@ -313,6 +313,7 @@ export class Dummy {
         this.p.torso.setLinearVelocity(Vec2(0, -2));
       }
       for (const ev of this.p.events) this.events.push(ev);
+      this.p.events.length = 0; // 内部 Player 不再在生产端清事件(玩家侧事件生命周期修复),转发后这里清
       return;
     }
     ai.left = ai.right = ai.down = ai.fire = false;
@@ -385,6 +386,7 @@ export class Dummy {
     this.p.update(dt, ai);
     // 内部 Player 的开枪/换弹事件转发给 main(子弹以 enemy 阵营生成)
     for (const ev of this.p.events) this.events.push(ev);
+    this.p.events.length = 0; // 转发后清(player.update 不再清,不清会跨帧重复转发)
   }
 
   // ---- 绘制:委托内部 Player(同款关节小人);受击时闪白+抖动 ----

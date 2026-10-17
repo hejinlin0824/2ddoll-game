@@ -29,8 +29,10 @@ export function burst(x, y, n, color, speed = 4) {
 }
 
 // ---- 地面痕迹:弹孔 / 血渍(FIFO 上限,防止长局堆积)----
-export function addDecal(kind, x, y, ang, size) {
-  decals.push({ kind, x, y, ang, size, life: 9, max: 9 });
+// life 可选:焦痕(scorch)又大又黑,9 秒满显示会被玩家当成"永远不消失"(用户实测毙过)
+// —— 统一 4.5 秒 + 渲染端提前淡出;弹孔/血渍小,不显眼,维持 9 秒
+export function addDecal(kind, x, y, ang, size, life = 9) {
+  decals.push({ kind, x, y, ang, size, life, max: life });
   if (decals.length > 90) decals.shift();
 }
 
@@ -112,7 +114,7 @@ export function explosion(x, y, big = false) {
       color: i % 3 ? '#3a3a42' : '#54545e', grav: -0.5,
     });
   }
-  addDecal('scorch', x, groundYAt(x, y) + 0.02, 0, R * 0.55);
+  addDecal('scorch', x, groundYAt(x, y) + 0.02, 0, R * 0.55, 4.5);
 }
 
 // ---- 断口喷血发射器:挂在刚体局部点上,随尸体姿态/位移实时喷 ----

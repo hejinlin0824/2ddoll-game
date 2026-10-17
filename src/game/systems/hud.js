@@ -8,7 +8,7 @@ const QLABEL = { broken: '破损', normal: '普通', fine: '优良', rare: '稀�
 const SLOT_LABEL = { head: '头盔', body: '防弹衣' };
 
 // ---- 左上角角色面板(DOM 引用缓存:面板每 5 帧刷一次,别每次都 getElementById)----
-const PNL_IDS = ['pnlHp', 'pnlHpText', 'pnlHelm', 'pnlVest', 'pnlHelmBar', 'pnlVestBar', 'pnlHelmText', 'pnlVestText', 'pnlMain', 'pnlSide'];
+const PNL_IDS = ['pnlHp', 'pnlHpText', 'pnlHelm', 'pnlVest', 'pnlHelmBar', 'pnlVestBar', 'pnlHelmText', 'pnlVestText', 'pnlMain', 'pnlSide', 'pnlNade', 'pnlNadeBar'];
 let PNL = null;
 function pnl() {
   if (!PNL) PNL = Object.fromEntries(PNL_IDS.map((id) => [id, document.getElementById(id)]));
@@ -31,6 +31,12 @@ export function updateStatusPanel(pstate, player) {
   el.pnlMain.textContent = player.weapon === 'rifle' ? (player.gunDef?.name || '主武器') : '手枪';
   el.pnlMain.style.opacity = player.weapon === 'rifle' ? 1 : 0.45;
   el.pnlSide.style.opacity = player.weapon === 'pistol' ? 1 : 0.45;
+  // 手雷槽:冷却走条(满 = 就绪);读条中灰显 + 秒数(首子节点是文本 "🧨 F")
+  const cd = player.grenadeCd || 0;
+  const ready = cd <= 0;
+  el.pnlNade.style.opacity = ready ? 1 : 0.55;
+  el.pnlNade.firstChild.textContent = ready ? '🧨 F' : `🧨 ${cd.toFixed(1)}s`;
+  el.pnlNadeBar.style.width = ready ? '100%' : `${((1 - cd / 3.2) * 100).toFixed(1)}%`;
 }
 
 // ---- 连杀计数(里程牌 + 滚轮数字)----

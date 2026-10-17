@@ -7,6 +7,7 @@ import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID, loadGunAffixe
 import { WeaponWheel } from './ui/wheel.js';
 import { Dummy } from './entities/enemies.js';
 import { Gunship } from './entities/airunit.js';
+import { throwGrenade, stepGrenades, drawGrenades } from './entities/grenade.js';
 import { WaveDirector } from './domain/waves.js';
 import { invLoad, invEquipped, invIsFull, invAddCoins } from './domain/inventory.js';
 import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire, bpSetGunInfo } from './ui/backpack.js';
@@ -17,7 +18,7 @@ import { updateStatusPanel, streakShow, streakHide, lootToast } from './systems/
 import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak, tickFeel } from './systems/feel.js';
 import { input, mouse, attachInput, bindCamera } from './systems/input.js';
 import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
-import { bullets, spawnBullet, castRay, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups } from './systems/combat.js';
+import { bullets, spawnBullet, castRay, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups, damageTerrain } from './systems/combat.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
@@ -253,7 +254,10 @@ function step(dt) {
   input.jumpPressed = false;
 
   for (const ev of player.events) {
-    if (ev.type === 'shot') {
+    if (ev.type === 'grenade') {
+      // 抛雷:实体由 grenade 模块管理,起爆结算走 handleDetonation(step 里驱动)
+      throwGrenade(world, ev.x, ev.y, ev.vx, ev.vy);
+    } else if (ev.type === 'shot') {
       const st = ev.stats;
       // 复仇词条:低血量(<35%,与红晕阈值一致)时玩家输出提升
       const lowMul = (pstate.hp < pstate.maxHp * 0.35 && player.lowHpDmgPct) ? 1 + player.lowHpDmgPct / 100 : 1;
@@ -334,8 +338,11 @@ function step(dt) {
       resetPlayer();
     }
   }
+  player.events.length = 0; // 消费后清空(生产端 update 不再清:帧间 keydown 直调 melee/grenade 的事件要活到这一步)
 
   stepBullets(dt, C); // 弹丸碰撞/部位倍率/护甲吸收/击杀(systems/combat.js)
+  const nade = stepGrenades(dt); // 手雷引信(起爆点交给 handleDetonation)
+  if (nade) handleDetonation(nade.x, nade.y);
   stepFx(dt); // 粒子/光束/碎片/痕迹/飘字(systems/fx.js)
   stepPickups(dt, C); // 磁吸/拾取/背包满拦截(systems/combat.js)
   // 波次推进 + 敌人更新 + 开火事件(敌人是 AI 驱动的 Player 实例,开枪走同一套弹道管线)
@@ -399,6 +406,34 @@ function step(dt) {
   }
 }
 
+// ---- 手雷起爆结算:特效 + 对敌范围伤害(部位管线) + 掀飞 + 炸地形弹坑 + 震屏 ----
+// 玩家不自伤(友军雷不炸主人,扔脚边清怪是常用操作);尸体也吃冲量(炸飞尸块的爽点)
+function handleDetonation(x, y) {
+  const R = 3.2;
+  explosion(x, y, true);
+  addTrauma(0.34);
+  noiseBurst(0.42, 0.12, 520);
+  beep(70, 30, 0.45, 'sawtooth', 0.11);
+  for (const e of enemies) {
+    const d = Math.hypot(e.x - x, e.y - y);
+    if (d > R) continue;
+    const dir = { x: (e.x - x) / (d || 1), y: (e.y - y) / (d || 1) * 0.6 + 0.55 };
+    if (!e.alive) { e.corpseHit?.(dir, 4.5); continue; } // 尸体:只掀不伤
+    const dmg = 42 * (1 - 0.65 * (d / R)); // 贴脸 42,边缘 ~15
+    e.hit('body', dmg, dir, 1.15);         // 走部位管线:护甲/踉跄/受击反馈全都有
+    e.knockback?.(dir.x * 6.5, 5.5);       // 冲击波掀飞
+  }
+  // 地形:爆心 1.9m 内的可破坏 tile 各吃一发(越近越狠)—— 炸出真实弹坑
+  for (const r of [...LEVEL.rects]) {
+    if (!r.destructible) continue;
+    const dx = Math.max(Math.abs(r.x - x) - r.w / 2, 0);
+    const dy = Math.max(Math.abs(r.y - y) - r.h / 2, 0);
+    const d = Math.hypot(dx, dy);
+    if (d <= 1.9) damageTerrain(r, 60 * (1 - 0.55 * (d / 1.9)), r.x, r.y, { x: 0, y: -1 });
+  }
+  alertEnemiesNear(enemies, { x, y }, 22); // 爆炸声传唤
+}
+
 // 角色面板已抽至 systems/hud.js(updateStatusPanel)
 // ---- 渲染 ----
 // 世界绘制(主视图与狙击放大镜共用,只差相机/画布/倍率)
@@ -440,7 +475,8 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
       c.strokeStyle = '#3d4454';
       c.lineWidth = 1;
       c.beginPath(); c.arc(0, 0, r * 1.6, 0, Math.PI * 2); c.stroke();
-    } else if (d.kind === 'scorch') { // 爆炸焦痕:黑芯 + 暗棕外晕
+    } else if (d.kind === 'scorch') { // 爆炸焦痕:黑芯 + 暗棕外晕;淡出曲线比弹孔早(前 1/3 保持,后 2/3 渐隐)
+      const fade = clamp(d.life / d.max * 3, 0, 1);
       const r = Math.max(2, d.size * ppmZ);
       c.globalAlpha = 0.6 * fade;
       c.fillStyle = '#191512';
@@ -528,6 +564,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   // 敌人
   for (const e of enemies) e.draw(c, w2sC, ppmZ, time);
   drawEnemyBars(c, enemies, w2sC, PPM * camO.zoom);
+  drawGrenades(c, w2sC, ppmZ, time); // 手雷(引信读秒弧 + 红灯急闪)
 
   // 可搜尸体标记:还有战利品没拿走的尸体,头顶一枚下沉闪烁的三角(不抢眼,找得到)
   for (const e of enemies) {

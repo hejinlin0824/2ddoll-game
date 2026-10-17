@@ -153,6 +153,8 @@ export class Player {
     this.jumpBuf = 0;        // 跳跃预输入
     this.fireCd = 0;
     this.recoilT = 0;
+    this.grenadeCd = 0; // 手雷冷却(无限雷,冷却 3.2s 一颗 —— 简单直接的成长感留给词条)
+    this.throwT = 0;    // 投掷挥臂动画(0.28s)
     this.fallVy = 0;
     this.t = 0;
 
@@ -541,6 +543,22 @@ export class Player {
     });
   }
 
+  // ---- 手雷(F):朝瞄准点抛出,冷却 3.2s;抛物线初速 = 距离定速 + 上抛补偿 ----
+  // aim = 鼠标世界坐标(input.js 直传);近战/换弹中不拦(互不吞输入,手感优先)
+  grenade(aim) {
+    if (this.ragdoll || this.grenadeCd > 0) return false;
+    const hand = this.armLF.getWorldPoint(Vec2(0, -D.foreArm.h / 2));
+    let dx = (aim?.x ?? hand.x + this.facing * 5) - hand.x;
+    let dy = (aim?.y ?? hand.y + 0.5) - hand.y;
+    const L = Math.hypot(dx, dy) || 1;
+    dx /= L; dy /= L;
+    const sp = clamp(L * 1.9, 8, 15); // 近处轻抛远处全力,4~8m 都顺手
+    this.grenadeCd = 3.2;
+    this.throwT = 0.28;
+    this.events.push({ type: 'grenade', x: hand.x, y: hand.y - 0.1, vx: dx * sp, vy: dy * sp + 3.4 });
+    return true;
+  }
+
   // 面朝左时,肘/膝的弯曲方向镜像,关节限位要跟着翻,
   // 否则左向姿态的弯腿/弯臂全部被限位顶成"反关节"
   setLimbMirror(m) {
@@ -630,6 +648,11 @@ export class Player {
         t.torso = -0.09 * lunge;
       }
     }
+    // 投雷挥臂:近臂从肩上向前下方甩(出手那一下要看得见)
+    if (this.throwT > 0) {
+      const k = Math.sin((1 - this.throwT / 0.28) * Math.PI);
+      t.shF = 2.6 - 1.7 * k; t.elF = Math.max(0.05, 0.9 - 0.85 * k);
+    }
     return t;
   }
 
@@ -640,7 +663,8 @@ export class Player {
 
   update(dt, input) {
     this.t += dt;
-    this.events.length = 0;
+    // ★ 事件不在生产端清空:keydown 里直调 melee()/grenade() push 的事件发生在帧间,
+    // 下一帧 update 开头清掉 = 静默丢失(近战伤害曾整条失效)。改由消费端(game.js)清。
     if (this.ragdoll) { this.updateCommon(dt); return; }
 
     const torso = this.torso;
@@ -745,6 +769,8 @@ export class Player {
     this.fireCd -= dt;
     this.recoilT = Math.max(0, this.recoilT - dt);
     this.meleeT = Math.max(0, this.meleeT - dt);
+    this.grenadeCd = Math.max(0, this.grenadeCd - dt);
+    this.throwT = Math.max(0, this.throwT - dt);
     this.heat = Math.max(0, this.heat - dt * (0.35 + 0.4 * this.skill));
     if (this.reloadT > 0) {
       this.reloadT -= dt;

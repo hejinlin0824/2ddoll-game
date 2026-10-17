@@ -71,6 +71,10 @@ export function attachInput(hooks) {
     if (e.code === 'KeyW' || e.code === 'ArrowUp' || e.code === 'Space') e.preventDefault();
     if (e.repeat) return;
     if (e.code === 'KeyV') hooks.getPlayer().melee(); // 近战:枪托/盾牌冲撞
+    if (e.code === 'KeyF') { // 手雷:朝鼠标位置抛(冷却中静默失败,HUD 上看得到读条)
+      const ok = hooks.getPlayer().grenade?.({ x: mouse.x, y: mouse.y });
+      if (ok) hooks.initAudio();
+    }
     if (e.code === 'KeyG') {
       if (wheel.open) wheel.forceClose();
       hooks.bpToggle();
