@@ -10,7 +10,7 @@ import {
 } from '../domain/inventory.js';
 import { QUALITY } from '../domain/gunPresets.js';
 import { itemTitle, AFFIX_BY_ID } from '../domain/affixes.js';
-import { beep, noiseBurst } from '../systems/audio.js';
+import { beep, noiseBurst, uiSfx } from '../systems/audio.js';
 
 const QLABEL = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
 const SLABEL = { head: '头盔', body: '防弹衣', gun: '武器词条' };
@@ -374,7 +374,7 @@ function playBoxAnim(item, box) {
   setTimeout(() => { // 开一条缝,露出品质光
     lid.classList.add('crack');
     glow.classList.add('on');
-    beep(300, 480, 0.12, 'sine', 0.04);
+    if (!uiSfx('click-a')) beep(300, 480, 0.12, 'sine', 0.04);
   }, 350);
   setTimeout(() => { // 抖动蓄力,光越来越烈
     boxEl.classList.add('shaking');

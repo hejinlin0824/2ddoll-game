@@ -3,11 +3,13 @@
 import { groundYAt, LEVEL } from '../world/level.js';
 import { QUALITY } from '../domain/gunPresets.js';
 
-export const particles = [];  // 粒子(弹壳/尘土/血雾)
+export const particles = [];  // 粒子(弹壳/尘土/血雾/火球)
 export const debris = [];     // 护甲碎片:头盔击飞 / 背心碎裂 / 爆浆碎肉
-export const decals = [];     // 地面痕迹:弹孔/血渍(容量上限 FIFO)
+export const decals = [];     // 地面痕迹:弹孔/血渍/焦痕(容量上限 FIFO)
 export const floaters = [];   // 受击数字(果冻动画)
 export const beams = [];      // 狙击 hitscan 光束(视觉)
+export const rings = [];      // 爆炸冲击波环(扩散圆环,渲染层画)
+export const jets = [];       // 喷血发射器(挂在刚体断口上,随尸体姿态喷血)
 // 枪口火舌 / 护甲碎裂白闪 / 玩家受击红闪 的计时器(渲染消费)
 export const flash = { t: 0, x: 0, y: 0, r: 26, ang: 0 };
 export let ghostT = 0;
@@ -76,6 +78,49 @@ export function gibBurst(x, y, dir) {
   addDecal('blood', x, groundYAt(x, y) + 0.02, 0, 0.3 + Math.random() * 0.25);
 }
 
+// ---- 复合爆炸:冲击波环 + 火球 + 火花 + 烟柱 + 地面焦痕 ----
+// big = 母体机坠毁级;小 = 火箭/无人机级。渲染层画 rings,其余全是粒子
+export function explosion(x, y, big = false) {
+  const R = big ? 3.6 : 1.9;
+  rings.push({ x, y, r: 0.25, vr: big ? 15 : 9.5, life: 0.42, max: 0.42, color: big ? '255,185,105' : '255,215,145' });
+  // 火球:大颗粒暖色,负重力上飘,先炸开后收拢(用初速扩散表现)
+  const fireCols = ['#fff3c8', '#ffd77a', '#ff9a3c', '#ff6a30'];
+  for (let i = 0; i < (big ? 30 : 14); i++) {
+    const a = Math.random() * Math.PI * 2, s = (big ? 7 : 4.5) * (0.3 + Math.random());
+    particles.push({
+      x: x + (Math.random() - 0.5) * 0.5, y: y + (Math.random() - 0.5) * 0.4,
+      vx: Math.cos(a) * s, vy: Math.abs(Math.sin(a)) * s * 0.8 + 1.2,
+      life: 0.3 + Math.random() * 0.32, size: (big ? 8 : 5) + Math.random() * (big ? 9 : 5),
+      color: fireCols[i % 4], grav: -1.6,
+    });
+  }
+  // 火花:小而快,受重力
+  for (let i = 0; i < (big ? 18 : 9); i++) {
+    const a = Math.random() * Math.PI * 2, s = (big ? 12 : 8) * (0.5 + Math.random());
+    particles.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.abs(Math.sin(a)) * s * 0.7 + 2,
+      life: 0.4 + Math.random() * 0.35, size: 1.8 + Math.random() * 1.6,
+      color: '#ffe9a8', grav: 1.3,
+    });
+  }
+  // 烟柱:深灰慢速上飘,寿命最长
+  for (let i = 0; i < (big ? 14 : 7); i++) {
+    particles.push({
+      x: x + (Math.random() - 0.5) * 0.8, y: y + (Math.random() - 0.5) * 0.3,
+      vx: (Math.random() - 0.5) * 1.6, vy: 1 + Math.random() * 1.8,
+      life: 0.9 + Math.random() * 0.8, size: (big ? 7 : 4.5) + Math.random() * 5,
+      color: i % 3 ? '#3a3a42' : '#54545e', grav: -0.5,
+    });
+  }
+  addDecal('scorch', x, groundYAt(x, y) + 0.02, 0, R * 0.55);
+}
+
+// ---- 断口喷血发射器:挂在刚体局部点上,随尸体姿态/位移实时喷 ----
+// 心跳式脉冲喷涌(压强随 sin 波动),到期自然止血压住
+export function bloodJet(body, lx, ly, dx, dy, ttl = 1.15) {
+  jets.push({ body, lx, ly, dx, dy, t: ttl, max: ttl, acc: 0 });
+}
+
 // 物理步进(dt = 世界时间):粒子弹跳/碎片/痕迹淡出/飘字果冻上浮/光束衰减
 let sweepT = 0.3; // 悬空贴花扫描计时
 export function stepFx(dt) {
@@ -97,6 +142,36 @@ export function stepFx(dt) {
   for (let i = beams.length - 1; i >= 0; i--) {
     beams[i].life -= dt;
     if (beams[i].life <= 0) beams.splice(i, 1);
+  }
+
+  // 冲击波环:扩张 + 淡出
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const r = rings[i];
+    r.r += r.vr * dt; r.vr *= 1 - 2.2 * dt;
+    r.life -= dt;
+    if (r.life <= 0) rings.splice(i, 1);
+  }
+
+  // 断口喷血:脉冲压强(心跳),发射点跟随刚体世界坐标
+  for (let i = jets.length - 1; i >= 0; i--) {
+    const j = jets[i];
+    j.t -= dt;
+    if (j.t <= 0 || !j.body.getWorldPoint) { jets.splice(i, 1); continue; }
+    const p = j.body.getWorldPoint({ x: j.lx, y: j.ly });
+    const pulse = 0.55 + 0.45 * Math.sin((j.max - j.t) * 17); // 心跳搏动
+    const fade = Math.min(1, j.t / 0.3);
+    j.acc += dt * 46 * pulse * fade;
+    while (j.acc >= 1) {
+      j.acc -= 1;
+      const spread = (Math.random() - 0.5) * 0.5;
+      particles.push({
+        x: p.x, y: p.y,
+        vx: j.dx * (2.5 + Math.random() * 5) * pulse - Math.sin(spread) * 2,
+        vy: 2 + Math.random() * 4.5 * pulse,
+        life: 0.4 + Math.random() * 0.45, size: 1.8 + Math.random() * 2.2,
+        color: Math.random() < 0.7 ? '#c41e12' : '#e8382a', grav: 1.35,
+      });
+    }
   }
 
   for (let i = debris.length - 1; i >= 0; i--) {

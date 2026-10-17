@@ -18,6 +18,37 @@ export function initAudio() {
 
 const outNode = () => master || actx.destination;
 
+// ---- UI 实录音效(Kenney UI Pack,CC0,public/ui/kenney/*.ogg)----
+// 按钮点击/切换用真实采样,比合成 beep 更"成品";缺失/解码失败自动静默
+const uiBufs = {};
+let uiLoaded = false;
+async function loadUiSounds() {
+  if (uiLoaded || !actx) return;
+  uiLoaded = true;
+  for (const name of ['click-a', 'click-b', 'switch-a', 'switch-b', 'tap-a', 'tap-b']) {
+    try {
+      const res = await fetch(`./ui/kenney/${name}.ogg`);
+      if (!res.ok) continue;
+      uiBufs[name] = await actx.decodeAudioData(await res.arrayBuffer());
+    } catch { /* 缺文件/格式不支持:静默回退合成音 */ }
+  }
+}
+export function uiSfx(kind = 'click-a', vol = 0.35) {
+  if (!actx) return 0;
+  loadUiSounds();
+  const buf = uiBufs[kind];
+  if (!buf) return 0; // 没加载好就无声(首次点击的加载是异步的,第二次起有声)
+  try {
+    const src = actx.createBufferSource();
+    src.buffer = buf;
+    const g = actx.createGain();
+    g.gain.value = vol;
+    src.connect(g).connect(outNode());
+    src.start();
+    return 1;
+  } catch { return 0; }
+}
+
 export function getActx() { return actx; }
 
 // f1 结频 / dur 时长 / at 延迟秒(心跳的双响用)

@@ -1,9 +1,10 @@
 // 战斗系统:弹丸生命周期(曲线变速/碰撞/部位倍率/护甲吸收/击杀结算)+ 狙击 hitscan + 视线传唤。
 // stepBullets(dt, C) 由 game.js 的 step 每个物理步驱动;C = 依赖包(装配根组装一次)。
 import { LEVEL, ensureRectHp, destroyRect } from '../world/level.js';
+import { Vec2 } from 'planck';
 import { invEquipped, invSave, invIsFull, invInsertItem } from '../domain/inventory.js';
-import { burst, debris, decals, floaters, spawnHelmetDebris, spawnVestDebris, gibBurst, setGhost } from './fx.js';
-import { feel, addTrauma, killSlow, addStreak, resetStreak } from './feel.js';
+import { burst, debris, decals, floaters, particles, explosion, spawnHelmetDebris, spawnVestDebris, gibBurst, setGhost } from './fx.js';
+import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak } from './feel.js';
 import { beep } from './audio.js';
 import { lootToast } from './hud.js';
 
@@ -18,6 +19,7 @@ export function spawnBullet(x, y, dx, dy, st, damage, faction = 'player') {
     age: 0, rampT: life * 0.42,
     life,
     rifle: st.damage >= 18,            // 曳光粗细
+    rocket: !!st.rocket,               // 火箭弹:粗橙尾焰 + 拖烟,砸地形开坑
     maxSp, damage, faction,
     armorMul: st.armorDmgMul ?? 1,     // 破甲词条:对护甲耐久的伤害倍率(出厂定格,命中端用)
   });
@@ -106,10 +108,19 @@ export function alertEnemiesNear(enemies, pos, r) {
   }
 }
 
+// 机械单位(空中部队)命中反馈:火花 + 金属叮 + 橙金数字,不走血肉管线;吸血照常结算
+function airHitFeedback(C, res, x, y, dir, dmg) {
+  burst(x, y, 5, '#ffd77a', 3.6);
+  C.particles.push({ x, y, vx: -dir.x * 2 + (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2, life: 0.3, size: 2, color: '#fff2c8', grav: 0.6 });
+  beep(1550, 900, 0.045, 'square', 0.035);
+  floaters.push({ x: x + (Math.random() - 0.5) * 0.12, y, vy: 2.2 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 1.5, rot: 0, age: 0, text: String(Math.round(dmg * 10) / 10), color: '#ffd77a', size: 18, bold: true, life: 0.7, max: 0.7 });
+  const lsPct = C.player.lifestealPct || 0;
+  if (lsPct > 0) C.pstate.hp = Math.min(C.pstate.maxHp, C.pstate.hp + dmg * (res.absorbed ? 0.5 : 1) * (lsPct / 100));
+}
+
 // 命中反馈(弹丸与狙击 hitscan 共用一条管线):
 // 材质分化特效 + 受击飘字 + 碎甲飞 debris + 吸血结算。dmg = 已乘部位倍率的最终伤害
-function hitFeedback(C, e, zone, res, x, y, dir, dmg) {
-  const player = C.player, pstate = C.pstate;
+function hitFeedback(C, e, zone, res, x, y, dir, dmg) {  const player = C.player, pstate = C.pstate;
   // 命中分化:甲上火花+金属叮(闷),肉上血雾(脆)—— 反馈通道按材质分层
   if (res.absorbed) {
     burst(x, y, 5, '#ffe9a8', 3.6);
@@ -163,12 +174,13 @@ export function applyHitscanDamage(C, ev, maxT) {
     const zmul = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2; // 部位倍率与弹丸一致
     const dmg = ev.parts[0].damage * zmul * mult;
     const res = e.hit(zone, dmg, dir, ev.stats.armorDmgMul ?? 1) ?? { broke: null, absorbed: false };
-    hitFeedback(C, e, zone, res, hx, hy, dir, dmg);
+    if (e.airUnit) airHitFeedback(C, res, hx, hy, dir, dmg); // 机械:火花金属叮
+    else hitFeedback(C, e, zone, res, hx, hy, dir, dmg);
     mult *= ev.stats.falloff ?? 0.55;
   }
 }
 
-// 玩家受击部位判定(随躯干旋转到局部坐标:趴下/倾斜时判定跟着姿态走,和敌人 zoneAt 同款)
+// 玩家受击部位判定(随躯干旋转到局部坐标:下蹲/倾斜时判定跟着姿态走,和敌人 zoneAt 同款)
 function playerZoneAt(player, px, py) {
   const h = player.head.getPosition();
   if (Math.hypot(px - h.x, py - h.y) <= 0.18) return 'head'; // 头是独立刚体,世界坐标圆判定天然随姿态
@@ -199,6 +211,10 @@ export function stepBullets(dt, C) {
       b.vx *= k; b.vy *= k;
     }
     b.x += b.vx * dt; b.y += b.vy * dt;
+    if (b.rocket && Math.random() < 0.7) { // 火箭尾烟
+      const rs = Math.hypot(b.vx, b.vy) || 1;
+      particles.push({ x: b.x - (b.vx / rs) * 0.35, y: b.y - (b.vy / rs) * 0.35, vx: (Math.random() - 0.5) * 1.5, vy: 0.4 + Math.random(), life: 0.4, size: 3, color: '#8b8b8b', grav: -0.3 });
+    }
     b.life -= dt;
     // ---- 命中判定(优先级:盾牌 > 尸体 > 部位 > 地形) ----
     let consumed = false;
@@ -226,7 +242,7 @@ export function stepBullets(dt, C) {
       if (e.alive) continue;
       const dz = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
       if (dz) {
-        e.corpseHit({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }, b.faction === 'player' ? 2.2 : 1.2);
+        e.corpseHit?.({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }, b.faction === 'player' ? 2.2 : 1.2);
         burst(b.x, b.y, 3, '#c9563c', 2.5);
         bullets.splice(i, 1); consumed = true; break;
       }
@@ -240,8 +256,9 @@ export function stepBullets(dt, C) {
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;
         const bdir = { x: b.vx / (sp || 1), y: b.vy / (sp || 1) };
         const dmg = b.damage * mult;
-        const res = e.hit(zone, dmg, bdir, b.armorMul ?? 1); // 破甲词条随弹丸生效
-        hitFeedback(C, e, zone, res, b.x, b.y, bdir, dmg);   // 反馈与狙击共用一条管线
+        const res = e.hit(zone, dmg, bdir, b.armorMul ?? 1) ?? { broke: null, absorbed: false };
+        if (e.airUnit) airHitFeedback(C, res, b.x, b.y, bdir, dmg); // 机械:火花金属叮
+        else hitFeedback(C, e, zone, res, b.x, b.y, bdir, dmg);     // 反馈与狙击共用一条管线
         bullets.splice(i, 1); consumed = true; break;
       }
     } else {
@@ -279,9 +296,11 @@ export function stepBullets(dt, C) {
           beep(180, 80, 0.12, 'sawtooth', 0.06);
           if (pstate.hp <= 0 && !player.ragdoll) {
             player.setRagdoll(true); // 倒地
+            player.deathImpulse?.({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }, zone); // 死亡动作随部位
             pstate.deadT = 2.5;
             resetStreak();
             addTrauma(0.5);
+            hitStop(0.12); // 主角阵亡:和敌人击杀同款的顿帧(用户:敌人死有卡顿,主角死没有)
             beep(120, 40, 0.5, 'sawtooth', 0.1);
           }
         }
@@ -304,7 +323,25 @@ export function stepBullets(dt, C) {
       for (let di = 0; di < 3; di++) {
         C.particles.push({ x: hx, y: hy, vx: (Math.random() - 0.5) * 3 - b.vx * 0.05, vy: 1 + Math.random() * 2.5, life: 0.4 + Math.random() * 0.25, size: 2 + Math.random() * 2, color: '#8a7c66', grav: 0.9 });
       }
-      damageTerrain(rect, b.damage, hx, hy, { x: b.vx / (sp || 1), y: b.vy / (sp || 1) }); // 打哪碎哪 + 溢出啃穿
+      // 火箭弹:命中点起爆 —— 复合爆炸特效 + 对玩家小范围冲击(打地面的威慑),
+      // 对地形伤害加倍(炸出弹坑);伤害只对玩家(敌方武器),地形走 damageTerrain
+      if (b.rocket) {
+        explosion(hx, hy, false);
+        addTrauma(0.2);
+        const bp = player.torso.getPosition();
+        const bd = Math.hypot(bp.x - hx, bp.y - hy);
+        if (!player.ragdoll && pstate.hp > 0 && bd < 1.9) {
+          const pdmg = 9 * (1 - Math.min(0.8, player.defense)) * (1 - bd / 1.9);
+          pstate.hp = Math.max(0, pstate.hp - pdmg);
+          C.setHitFlash(0.3);
+          const kv = player.torso.getLinearVelocity();
+          player.torso.setLinearVelocity(Vec2(kv.x + (bp.x - hx) / (bd || 1) * 5, kv.y + 2.5)); // 冲击波掀开
+          if (pstate.hp <= 0 && !player.ragdoll) { player.setRagdoll(true); player.deathImpulse?.({ x: (bp.x - hx) / (bd || 1), y: 0.4 }, 'body'); pstate.deadT = 2.5; resetStreak(); }
+        }
+        damageTerrain(rect, b.damage * 2.4, hx, hy, { x: b.vx / (sp || 1), y: b.vy / (sp || 1) });
+      } else {
+        damageTerrain(rect, b.damage, hx, hy, { x: b.vx / (sp || 1), y: b.vy / (sp || 1) }); // 打哪碎哪 + 溢出啃穿
+      }
       bullets.splice(i, 1);
       continue;
     }
@@ -320,6 +357,24 @@ export function onEnemyDied(C, ev, enemy) {
   enemy?.freezeHit?.(head ? 0.085 : 0.055);
   addTrauma(head ? 0.24 : 0.15);
   gibBurst(ev.x, ev.y, ev.dir || { x: 1, y: 0.3 });
+  // 飙血:沿弹道方向的锥形喷射 + 地面血泊(断肢断口的持续喷血在 player.dismember)
+  {
+    const dir = ev.dir || { x: 1, y: 0.3 };
+    const gy = C.groundYAt(ev.x, ev.y + 0.1);
+    for (let bi = 0; bi < 4; bi++) {
+      C.addDecal('blood', ev.x + dir.x * bi * 0.5 + (Math.random() - 0.5) * 0.9, gy - 0.02, 0, 0.26 + Math.random() * 0.26);
+    }
+    for (let bi = 0; bi < 24; bi++) {
+      const spread = (Math.random() - 0.5) * 1.1;
+      particles.push({
+        x: ev.x, y: ev.y + 0.15,
+        vx: dir.x * (2 + Math.random() * 6) - Math.sin(spread) * 2.5,
+        vy: 2 + Math.random() * 5.5,
+        life: 0.5 + Math.random() * 0.55, size: 2.4 + Math.random() * 2.8,
+        color: Math.random() < 0.7 ? '#c41e12' : '#e8382a', grav: 1.2,
+      });
+    }
+  }
   beep(220, 60, 0.3, 'sawtooth', 0.08);
   alertEnemiesNear(enemies, ev, 11); // 死者的惨叫惊动 11m 内的队友
   const streak = addStreak();

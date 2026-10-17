@@ -4,7 +4,7 @@
 import { invIsFull, invAddItem } from '../domain/inventory.js';
 import { AFFIX_BY_ID } from '../domain/affixes.js';
 import { QUALITY } from '../domain/gunPresets.js';
-import { beep } from '../systems/audio.js';
+import { beep, uiSfx } from '../systems/audio.js';
 
 const QLABEL = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
 const ROW_LABEL = { gun: '武器词条', head: '头盔', body: '护甲' };
@@ -20,7 +20,7 @@ export function openCorpse(enemy) {
   target = enemy;
   open = true;
   render();
-  beep(320, 520, 0.08, 'square', 0.04);
+  if (!uiSfx('switch-b')) beep(320, 520, 0.08, 'square', 0.04);
 }
 export function closeCorpse() {
   if (!open) return;

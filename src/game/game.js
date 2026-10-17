@@ -6,6 +6,7 @@ import { loadSavedGun, EQUIP_PRESETS, QUALITY } from './domain/gunPresets.js';
 import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID, loadGunAffixes } from './domain/affixes.js';
 import { WeaponWheel } from './ui/wheel.js';
 import { Dummy } from './entities/enemies.js';
+import { Gunship } from './entities/airunit.js';
 import { WaveDirector } from './domain/waves.js';
 import { invLoad, invEquipped, invIsFull, invAddCoins } from './domain/inventory.js';
 import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire, bpSetGunInfo } from './ui/backpack.js';
@@ -17,7 +18,7 @@ import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak, tickFeel } 
 import { input, mouse, attachInput, bindCamera } from './systems/input.js';
 import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
 import { bullets, spawnBullet, castRay, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups } from './systems/combat.js';
-import { particles, beams, debris, decals, floaters, flash, burst, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
+import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
 if (document.fonts?.load) {
@@ -69,12 +70,60 @@ const pickups = [];    // 掉落物:金币 / 0 耐久装备
 // ---- 实体注册 / 波次 / 玩家复位 ----
 export const enemies = []; // 敌人注册表
 const ENEMY_DMG_MUL = 0.35; // 敌方子弹伤害统一打折(玩家血条 30 才有意义)
+// 开场守军:布在平台/台阶/掩体上的驻防小队(不重生)。清掉守军后波次才会开始 —— 推进有层次。
+// y = 该立足面的"波次地面高"(平台顶 + 0.72,与地面刷新同一套偏移);每关布防不同
+const GARRISONS = {
+  wild: [
+    { x: 14.2, y: 4.77, behavior: 'guard' },
+    { x: 20.5, y: 3.77, behavior: 'patrol', min: -1.3, max: 1.3 },
+    { x: 27.5, y: 1.72, behavior: 'guard' },
+    { x: 45, y: 1.42, behavior: 'guard' },
+  ],
+  roof: [
+    { x: 5.5, y: 3.97, behavior: 'patrol', min: -1.6, max: 1.6 },
+    { x: 13.5, y: 5.37, behavior: 'guard' },   // 高塔狙击位
+    { x: 36.5, y: 4.97, behavior: 'guard' },
+    { x: 51.5, y: 5.37, behavior: 'patrol', min: -1.5, max: 1.5 },
+    { x: 67, y: 1.97, behavior: 'guard' },
+  ],
+  room: [
+    { x: 6.5, y: 1.17, behavior: 'guard' },
+    { x: 12, y: 3.17, behavior: 'patrol', min: -1, max: 1 },
+    { x: 23, y: 1.22, behavior: 'guard' },
+    { x: 45, y: 1.17, behavior: 'guard' },
+    { x: 55.5, y: 2.97, behavior: 'patrol', min: -1.2, max: 1.2 },
+  ],
+  desert: [
+    { x: 9.5, y: 1.87, behavior: 'patrol', min: -2, max: 2 },
+    { x: 19.5, y: 2.97, behavior: 'guard' },
+    { x: 46.5, y: 2.17, behavior: 'patrol', min: -2, max: 2 },
+    { x: 64.5, y: 1.97, behavior: 'guard' },
+  ],
+  tropic: [
+    { x: 11.5, y: 3.87, behavior: 'guard' },
+    { x: 16.5, y: 2.97, behavior: 'patrol', min: -1, max: 1 },
+    { x: 32.5, y: 2.87, behavior: 'guard' },
+    { x: 50, y: 2.67, behavior: 'patrol', min: -1, max: 1 },
+    { x: 67.5, y: 2.77, behavior: 'guard' },
+  ],
+};
+const _scene = localStorage.getItem('contra-scene') || 'wild';
+for (const g of (GARRISONS[_scene] || GARRISONS.wild)) {
+  enemies.push(new Dummy(world, { x: g.x, y: g.y }, {
+    behavior: g.behavior, min: g.min, max: g.max,
+    quality: 'normal', armorMul: 0, respawn: false,
+  }));
+}
 const waves = new WaveDirector(world, {
   onEvent: (ev) => {
     const p = player.torso.getPosition();
     if (ev.type === 'wave') {
       floaters.push({ x: p.x, y: p.y + 2.1, vy: 1.1, age: 0, text: `—— 第 ${ev.wave} 波 · ${ev.count} 人 ——`, color: '#ffb14a', size: 24, bold: true, font: 'hy', life: 1.6, max: 1.6 });
       beep(330, 660, 0.18, 'square', 0.07);
+    } else if (ev.type === 'gunship') {
+      floaters.push({ x: p.x, y: p.y + 2.6, vy: 0.9, age: 0, text: '⚠ 武装直升机来袭 ⚠', color: '#ff5b4a', size: 30, bold: true, font: 'hy', life: 2.4, max: 2.4 });
+      beep(420, 300, 0.35, 'square', 0.07);
+      beep(420, 300, 0.35, 'square', 0.07, 0.45); // 双音警报
     } else if (ev.type === 'allclear') {
       floaters.push({ x: p.x, y: p.y + 2.1, vy: 0.9, age: 0, text: '全部清场!你赢了 🎉', color: '#ffd24a', size: 28, bold: true, font: 'hy', life: 3, max: 3 });
       beep(523, 1046, 0.4, 'square', 0.09);
@@ -169,6 +218,9 @@ window.__corpse = { nearby: () => corpseNearby(), open: openCorpse, close: close
 window.__actx = getActx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
 window.__feel = () => ({ ...feel, timeScale, menu: menuIsOpen() }); // 调试:手感层状态
 window.__level = () => LEVEL.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, hp: r.hp ?? null, max: r.maxHp ?? null })); // 调试:地形块耐久
+window.__spawnGunship = (hp = 260) => { // 调试:直接召一架母体机(从右缘飞入)
+  enemies.push(new Gunship(world, { x: LEVEL.bounds.right - 2, y: 9.5 }, { enemies, hp }));
+}; // 调试:空中部队管线直调
 // 尸体搜索:最近的可搜尸体(1.35m 内,有战利品未销毁)
 function corpseNearby() {
   const p = player.torso.getPosition();
@@ -296,13 +348,42 @@ function step(dt) {
         gunSynth(ev.stats?.sfx, 0.55);
       } else if (ev.type === 'died') {
         onEnemyDied(C, ev, e); // 击杀结算:个体顿帧/爆浆/传唤/连杀/掉落/回血(systems/combat.js)
+      } else if (ev.type === 'blast') {
+        // 空中单位爆炸(无人机自爆/母体机坠毁):复合特效 + 范围伤害(吃玩家防御)
+        explosion(ev.x, ev.y, ev.big);
+        addTrauma(ev.big ? 0.5 : 0.22);
+        noiseBurst(ev.big ? 0.5 : 0.16, ev.big ? 0.12 : 0.07, ev.big ? 420 : 900);
+        if (ev.big) beep(90, 30, 0.5, 'sawtooth', 0.1);
+        const bp = player.torso.getPosition();
+        const bd = Math.hypot(bp.x - ev.x, bp.y - ev.y);
+        if (!player.ragdoll && pstate.hp > 0 && bd < ev.r) {
+          const pdmg = ev.dmg * (1 - Math.min(0.8, player.defense));
+          pstate.hp = Math.max(0, pstate.hp - pdmg);
+          C.setHitFlash(0.3);
+          floaters.push({ x: bp.x, y: bp.y + 0.6, vy: 2.3, age: 0, text: String(Math.round(pdmg * 10) / 10), color: '#ff5b4a', size: 17, bold: false, life: 0.72, max: 0.72 });
+          const kv = player.torso.getLinearVelocity();
+          player.torso.setLinearVelocity(Vec2(kv.x + (bp.x - ev.x) / (bd || 1) * 6, kv.y + 3)); // 冲击波掀飞
+          if (pstate.hp <= 0) {
+            player.setRagdoll(true);
+            player.deathImpulse?.({ x: (bp.x - ev.x) / (bd || 1), y: 0.4 }, 'body'); // 被炸飞的方向
+            pstate.deadT = 2.5; resetStreak(); addTrauma(0.5); hitStop(0.12);
+          }
+        }
+      } else if (ev.type === 'killed') {
+        // 机械击杀结算:金币雨 + 连杀(机械不走血肉管线,没有顿帧/爆浆)
+        const coinN = Math.round(ev.coins * (1 + (player.coinGainPct || 0) / 100));
+        for (let ci = 0; ci < coinN; ci++) {
+          pickups.push({ type: 'coin', x: ev.x, y: ev.y, vx: (Math.random() - 0.5) * 11, vy: 4.5 + Math.random() * 6, t: Math.random() * 6 });
+        }
+        addStreak();
+        if (ev.big) addTrauma(0.3);
       } else if (ev.type === 'respawn') {
         beep(300, 600, 0.15, 'sine', 0.04);
       }
     }
     e.events.length = 0;
   }
-  // 清理已销毁刚体的敌人(波次模式的尸体 6 秒后回收)
+  // 清理已销毁刚体的敌人(波次模式的尸体 20 秒后回收)
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].destroyed) enemies.splice(i, 1);
   }
@@ -317,14 +398,14 @@ function step(dt) {
 // 角色面板已抽至 systems/hud.js(updateStatusPanel)
 // ---- 渲染 ----
 // 世界绘制(主视图与狙击放大镜共用,只差相机/画布/倍率)
-// 敌人小血条:头顶一条,活着才显示
+// 敌人小血条:头顶一条,活着才显示;空中单位可自定义宽度/高度偏移(无人机不画)
 function drawEnemyBars(c, enemies, w2sC, scale) {
   const k = scale / 52; // 随缩放/分辨率归一
   for (const e of enemies) {
-    if (!e.alive) continue;
+    if (!e.alive || e.noBar) continue;
     const ratio = Math.max(0, Math.min(1, e.hp / e.maxHp));
-    const [bx, by] = w2sC(e.x, e.y + 1.04);
-    const w = 46 * k, h = 5 * k;
+    const [bx, by] = w2sC(e.x, e.y + (e.barDy ?? 1.04));
+    const w = (e.barW || 46) * k, h = 5 * k;
     c.fillStyle = 'rgba(10, 10, 14, 0.55)';
     c.fillRect(bx - w / 2 - 1, by - h / 2 - 1, w + 2, h + 2);
     c.fillStyle = ratio > 0.5 ? '#7ac74f' : ratio > 0.25 ? '#ffd166' : '#ff5b4a';
@@ -355,6 +436,14 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
       c.strokeStyle = '#3d4454';
       c.lineWidth = 1;
       c.beginPath(); c.arc(0, 0, r * 1.6, 0, Math.PI * 2); c.stroke();
+    } else if (d.kind === 'scorch') { // 爆炸焦痕:黑芯 + 暗棕外晕
+      const r = Math.max(2, d.size * ppmZ);
+      c.globalAlpha = 0.6 * fade;
+      c.fillStyle = '#191512';
+      c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
+      c.globalAlpha = 0.35 * fade;
+      c.fillStyle = '#3a2c1e';
+      c.beginPath(); c.arc(0, 0, r * 1.6, 0, Math.PI * 2); c.fill();
     } else { // blood:size = 米(0.3~0.55)
       c.globalAlpha = 0.55 * fade;
       c.fillStyle = '#5d1812';
@@ -436,24 +525,61 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   for (const e of enemies) e.draw(c, w2sC, ppmZ, time);
   drawEnemyBars(c, enemies, w2sC, PPM * camO.zoom);
 
-  // 子弹曳光:沿速度反向的渐变拖尾,越快越长(主武器更粗更长)
+  // 可搜尸体标记:还有战利品没拿走的尸体,头顶一枚下沉闪烁的三角(不抢眼,找得到)
+  for (const e of enemies) {
+    if (e.alive || e.destroyed || e.airUnit || !e.loot) continue;
+    const left = ['gun', 'head', 'body'].filter((k) => e.loot[k] && !e.lootTaken[k]).length;
+    if (!left) continue;
+    const [mx, my] = w2sC(e.x, e.y + 1.35 + Math.sin(time * 3 + e.x) * 0.08);
+    const a = 0.55 + 0.35 * Math.sin(time * 4 + e.x);
+    c.fillStyle = `rgba(255, 210, 110, ${(a * 0.9).toFixed(2)})`;
+    c.beginPath();
+    c.moveTo(mx - 6 * zl, my - 8 * zl);
+    c.lineTo(mx + 6 * zl, my - 8 * zl);
+    c.lineTo(mx, my + 2 * zl);
+    c.closePath(); c.fill();
+    c.fillStyle = `rgba(255, 240, 200, ${(a * 0.5).toFixed(2)})`;
+    c.font = `bold ${Math.round(10 * zl)}px sans-serif`; c.textAlign = 'center';
+    c.fillText('Tab', mx, my + 14 * zl);
+    c.textAlign = 'left';
+  }
+
+  // 子弹曳光:沿速度反向的渐变拖尾,越快越长(主武器更粗更长;火箭弹粗橙尾焰)
   for (const b of bullets) {
     const sp = Math.hypot(b.vx, b.vy) || 1;
-    const len = Math.min(sp * 0.055, b.rifle ? 2.2 : 1.6);
+    const len = Math.min(sp * 0.055, b.rocket ? 2.6 : b.rifle ? 2.2 : 1.6);
     const [x1, y1] = w2sC(b.x - (b.vx / sp) * len, b.y - (b.vy / sp) * len);
     const [x2, y2] = w2sC(b.x, b.y);
     const g = c.createLinearGradient(x1, y1, x2, y2);
-    g.addColorStop(0, 'rgba(255, 200, 100, 0)');
-    g.addColorStop(0.65, 'rgba(255, 225, 150, 0.7)');
-    g.addColorStop(1, 'rgba(255, 255, 240, 1)');
+    if (b.rocket) {
+      g.addColorStop(0, 'rgba(255, 90, 30, 0)');
+      g.addColorStop(0.6, 'rgba(255, 140, 50, 0.75)');
+      g.addColorStop(1, 'rgba(255, 220, 130, 0.95)');
+    } else {
+      g.addColorStop(0, 'rgba(255, 200, 100, 0)');
+      g.addColorStop(0.65, 'rgba(255, 225, 150, 0.7)');
+      g.addColorStop(1, 'rgba(255, 255, 240, 1)');
+    }
     c.strokeStyle = g;
-    c.lineWidth = (b.rifle ? 4.5 : 3.5) * zl; c.lineCap = 'round';
+    c.lineWidth = (b.rocket ? 8 : b.rifle ? 4.5 : 3.5) * zl; c.lineCap = 'round';
     c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
     // 亮芯
     const [cx, cy] = w2sC(b.x - (b.vx / sp) * len * 0.3, b.y - (b.vy / sp) * len * 0.3);
     c.strokeStyle = 'rgba(255,255,255,0.9)';
-    c.lineWidth = (b.rifle ? 1.8 : 1.4) * zl;
+    c.lineWidth = (b.rocket ? 2.6 : b.rifle ? 1.8 : 1.4) * zl;
     c.beginPath(); c.moveTo(cx, cy); c.lineTo(x2, y2); c.stroke();
+  }
+
+  // 爆炸冲击波环:外环亮 + 内环淡,随扩张变粗后消散
+  for (const r of rings) {
+    const a = r.life / r.max;
+    const [rx, ry] = w2sC(r.x, r.y);
+    c.strokeStyle = `rgba(${r.color},${(a * 0.75).toFixed(2)})`;
+    c.lineWidth = (1.5 + 5 * a) * zl;
+    c.beginPath(); c.arc(rx, ry, r.r * ppmZ, 0, Math.PI * 2); c.stroke();
+    c.strokeStyle = `rgba(255,255,255,${(a * 0.35).toFixed(2)})`;
+    c.lineWidth = 1.2 * zl;
+    c.beginPath(); c.arc(rx, ry, r.r * 0.82 * ppmZ, 0, Math.PI * 2); c.stroke();
   }
 
   // 狙击 hitscan 光束:亮蓝白三层,快速衰减(很有动感的那种)
@@ -788,13 +914,13 @@ function frame(now) {
   if (fpsN % 5 === 0) updateStatusPanel(pstate, player);
 
   const heatBar = '▮'.repeat(Math.round(player.heat * 6)) + '▯'.repeat(6 - Math.round(player.heat * 6));
-  const stateTxt = player.ragdoll ? '布娃娃' : player.prone ? '趴下' : player.grounded ? (Math.abs(player.torso.getLinearVelocity().x) > 0.5 ? '奔跑' : '站立') : player.torso.getLinearVelocity().y > 1 ? '上升' : '下落';
+  const stateTxt = player.ragdoll ? '失控' : player.crouch ? '下蹲' : player.grounded ? (Math.abs(player.torso.getLinearVelocity().x) > 0.5 ? '奔跑' : '站立') : player.torso.getLinearVelocity().y > 1 ? '上升' : '下落';
   const defPct = Math.round(Math.min(0.8, player.defense) * 100);
   const ammo = player.ammoInfo();
   const ammoTxt = ammo.reloadT > 0 ? '换弹中…' : `弹药 ${ammo.ammo}/${ammo.mag}`;
   const hudTxt = `${stateTxt} · ${player.weapon === 'rifle' ? '主武器' : player.shield ? '手枪+盾' : '手枪'} · ${ammoTxt} · HP ${Math.ceil(pstate.hp)} · 盔 ${Math.ceil((invEquipped('head')?.dur) ?? 0)} · 甲 ${Math.ceil((invEquipped('body')?.dur) ?? 0)} · 熟练度 ${Math.round(player.skill * 100)}% · 防御 ${defPct}% · 后坐力 ${heatBar} · ${fps} FPS · B 调试视图`;
   if (hudTxt !== hud._last) { hud.state.textContent = hudTxt; hud._last = hudTxt; } // 脏检查,避免每帧 DOM 写入
-  hud.ragdoll.textContent = player.ragdoll ? '布娃娃模式(按 E 复位)' : '';
+  hud.ragdoll.textContent = player.ragdoll ? '失控倒地 · 按 E 起身' : '';
   hud.ragdoll.style.display = player.ragdoll ? 'block' : 'none';
 
   requestAnimationFrame(frame);

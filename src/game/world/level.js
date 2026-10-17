@@ -7,18 +7,91 @@ export const CAT = { GROUND: 0x1, PLAYER: 0x2, LIMB: 0x4 };
 export const LEVEL = {
   bounds: { left: -12, right: 78 },
   spawn: { x: 0, y: 0 },
-  rects: [
-    { x: 33, y: -1.5, w: 90, h: 3, type: 'ground', destructible: false },
-    { x: 26.5, y: 0.5, w: 3, h: 1, type: 'ground' },
-    { x: 30.2, y: 1.0, w: 3.4, h: 2, type: 'ground' },
+  rects: [],
+};
+
+// ---- 每关地形布局:主地表(90m)+ 各自的立体结构 ----
+const G = { x: 33, y: -1.5, w: 90, h: 3, type: 'ground', destructible: false }; // 共用主地表
+export const LAYOUTS = {
+  // 野外·月夜:开局制空台 + 中路台阶掩体 + 右缘投放场断崖
+  wild: [
+    G,
+    { x: 1.8, y: 2.1, w: 3.2, h: 0.5, type: 'plat' },
     { x: 7, y: 2.4, w: 3.6, h: 0.5, type: 'plat' },
     { x: 13.5, y: 3.8, w: 3.2, h: 0.5, type: 'plat' },
     { x: 20, y: 2.8, w: 3.6, h: 0.5, type: 'plat' },
+    { x: 26.5, y: 0.5, w: 3, h: 1, type: 'ground' },
+    { x: 30.2, y: 1.0, w: 3.4, h: 2, type: 'ground' },
+    { x: 36.5, y: 0.3, w: 2.2, h: 0.6, type: 'ground' },
     { x: 40, y: 2.6, w: 4, h: 0.5, type: 'plat' },
+    { x: 44.5, y: 0.35, w: 2.2, h: 0.7, type: 'ground' },
     { x: 47.5, y: 4.0, w: 3.4, h: 0.5, type: 'plat' },
     { x: 54, y: 2.4, w: 3.6, h: 0.5, type: 'plat' },
+    { x: 60.5, y: 0.4, w: 3, h: 0.8, type: 'ground' },
+    { x: 68.5, y: 0.9, w: 3, h: 1.6, type: 'ground' },
+  ],
+  // 屋顶·黎明:开阔长视线,双层高楼台塔(狙击对射),掩体极少 —— 走位就是命
+  roof: [
+    G,
+    { x: 4, y: 3.2, w: 5, h: 0.5, type: 'plat' },
+    { x: 12, y: 4.6, w: 4.4, h: 0.5, type: 'plat' },
+    { x: 19, y: 2.6, w: 3, h: 0.5, type: 'plat' },
+    { x: 26.5, y: 0.5, w: 3, h: 1, type: 'ground' },
+    { x: 35, y: 4.2, w: 5, h: 0.5, type: 'plat' },
+    { x: 43, y: 2.6, w: 3.4, h: 0.5, type: 'plat' },
+    { x: 50, y: 4.6, w: 4.4, h: 0.5, type: 'plat' },
+    { x: 58, y: 2.6, w: 3, h: 0.5, type: 'plat' },
+    { x: 66, y: 1.2, w: 4, h: 1.6, type: 'ground' },
+  ],
+  // 港区·仓库:巷战 —— 掩体群密布(矮墙卡视线),平台少而碎,中近距离遭遇
+  room: [
+    G,
+    { x: 6, y: 0.4, w: 2.4, h: 0.8, type: 'ground' },
+    { x: 11, y: 2.4, w: 3, h: 0.5, type: 'plat' },
+    { x: 16.5, y: 0.35, w: 2, h: 0.7, type: 'ground' },
+    { x: 22, y: 0.45, w: 2.4, h: 0.9, type: 'ground' },
+    { x: 27, y: 2.2, w: 3.4, h: 0.5, type: 'plat' },
+    { x: 26.5, y: 0.5, w: 3, h: 1, type: 'ground' },
+    { x: 33, y: 0.35, w: 2, h: 0.7, type: 'ground' },
+    { x: 38.5, y: 2.6, w: 3.6, h: 0.5, type: 'plat' },
+    { x: 44, y: 0.4, w: 2.4, h: 0.8, type: 'ground' },
+    { x: 49.5, y: 0.35, w: 2, h: 0.7, type: 'ground' },
+    { x: 55, y: 2.2, w: 3.4, h: 0.5, type: 'plat' },
+    { x: 61, y: 0.5, w: 2.4, h: 1, type: 'ground' },
+    { x: 67, y: 0.4, w: 3, h: 0.8, type: 'ground' },
+  ],
+  // 沙丘·正午:起伏沙脊(宽矮坡)+ 稀疏高岩 —— 人海冲锋,几乎无遮蔽
+  desert: [
+    G,
+    { x: 8, y: 1.1, w: 6, h: 1.2, type: 'ground' },
+    { x: 18, y: 2.2, w: 5, h: 1.4, type: 'ground' },
+    { x: 28, y: 0.8, w: 4, h: 0.8, type: 'ground' },
+    { x: 36, y: 2.6, w: 3.6, h: 0.5, type: 'plat' },
+    { x: 45, y: 1.4, w: 6, h: 1.2, type: 'ground' },
+    { x: 55, y: 2.4, w: 4, h: 0.5, type: 'plat' },
+    { x: 63, y: 1.2, w: 5, h: 1.1, type: 'ground' },
+    { x: 70, y: 2.3, w: 3.4, h: 0.5, type: 'plat' },
+  ],
+  // 海岛·澜:棕榈跳台 + 浅滩石 —— 跳跃节奏关,平台间要跳
+  tropic: [
+    G,
+    { x: 5.5, y: 1.9, w: 2.6, h: 0.5, type: 'plat' },
+    { x: 10.5, y: 3.1, w: 2.4, h: 0.5, type: 'plat' },
+    { x: 15.5, y: 2.2, w: 2.6, h: 0.5, type: 'plat' },
+    { x: 21, y: 0.5, w: 3, h: 1, type: 'ground' },
+    { x: 26.5, y: 3.2, w: 2.4, h: 0.5, type: 'plat' },
+    { x: 31.5, y: 2.1, w: 2.6, h: 0.5, type: 'plat' },
+    { x: 37, y: 0.4, w: 2.6, h: 0.8, type: 'ground' },
+    { x: 43.5, y: 3.0, w: 2.4, h: 0.5, type: 'plat' },
+    { x: 49, y: 1.9, w: 2.6, h: 0.5, type: 'plat' },
+    { x: 55, y: 0.45, w: 2.6, h: 0.9, type: 'ground' },
+    { x: 61, y: 3.1, w: 2.4, h: 0.5, type: 'plat' },
+    { x: 66.5, y: 2.0, w: 2.8, h: 0.5, type: 'plat' },
   ],
 };
+// 场景 → 布局(custom 关卡由 loadCustomLevel 接管)
+const savedScene = localStorage.getItem('contra-scene') || 'wild';
+LEVEL.rects = (LAYOUTS[savedScene] || LAYOUTS.wild).slice();
 
 // 块耐久:按面积算(平台 3.6x0.5 ≈ 72HP,步枪 3~4 发打穿);主地表不可破坏
 export function ensureRectHp(r) {
@@ -116,20 +189,91 @@ export function groundYAt(x, belowY = Infinity) {
 }
 
 // ---- 素材背景(CC0: ansimuz "Mountain at Dusk" 视差包,public/bg/) ----
+// ---- 场景主题:同一套山峦素材,不同调色板 + 染色滤镜(离屏缓存,切主题零成本)----
+// sky = 天空渐变三档;filter = 对素材层的 canvas 滤镜;dusk = 压暗色/强度
+export const THEMES = {
+  wild: {
+    label: '月夜',
+    sky: ['#1c2a4d', '#3d5480', '#c97a4a'],
+    filter: 'none',
+    duskColor: 'rgba(16,24,52,0.34)',
+  },
+  roof: {
+    label: '黎明',
+    sky: ['#2a1830', '#8a4350', '#f0a05e'],
+    filter: 'brightness(1.02) saturate(1.3) hue-rotate(-14deg)',
+    duskColor: 'rgba(70,30,40,0.16)',
+  },
+  room: {
+    label: '仓库',
+    sky: ['#161032', '#5a3860', '#c97a4a'],
+    filter: 'saturate(1.05)',
+    duskColor: 'rgba(30,15,40,0.22)',
+  },
+  desert: {
+    label: '正午',
+    sky: ['#7ea4d8', '#d8c9a8', '#f0dcb0'],
+    filter: 'none',
+    duskColor: 'rgba(200, 160, 90, 0.10)',
+  },
+  tropic: {
+    label: '澜',
+    sky: ['#9cc4e0', '#5a90c0', '#2a5a8a'],
+    filter: 'brightness(0.92) saturate(0.95)',
+    duskColor: 'rgba(20, 50, 90, 0.14)',
+  },
+};
+let themeId = (() => {
+  const t = localStorage.getItem('contra-scene');
+  return (t && THEMES[t]) ? t : 'wild';
+})();
+export function currentTheme() { return THEMES[themeId] || THEMES.wild; }
+export function setSceneTheme(id) {
+  if (!THEMES[id]) return;
+  themeId = id;
+  SKY = null;          // 天空离屏缓存按主题重建
+  tintCache = {};      // 图层染色缓存重建
+  localStorage.setItem('contra-scene', id);
+}
+
 const bgImgs = {};
-for (const [k, f] of Object.entries({
-  sky: 'bg/mountains-bg.png', far: 'bg/mountains-far.png',
-  near: 'bg/mountains-near.png', trees: 'bg/trees.png', fore: 'bg/foreground-trees.png',
-})) {
+// 每关一套图层:dir(公共目录)+ 各槽文件名 + layerScale(素材层高 → 全屏的放大倍数;
+// 160px 层 = 4.5,360px 层 = 2.0,324px 层 = 2.22)
+const BG_SETS = {
+  wild: { dir: 'bg', scale: 4.5, files: { sky: 'mountains-bg.png', far: 'mountains-far.png', near: 'mountains-near.png', trees: 'trees.png', fore: 'foreground-trees.png' } },
+  roof: { dir: 'bg', scale: 4.5, files: { sky: 'mountains-bg.png', far: 'mountains-far.png', near: 'mountains-near.png', trees: 'trees.png', fore: 'foreground-trees.png' } },
+  room: { dir: 'bg/city', scale: 2.22, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png', fore: 'fore.png' } },
+  desert: { dir: 'bg/desert', scale: 2.0, files: { sky: 'clouds.png', far: 'far.png', near: 'dunes.png', trees: 'bush.png', fore: 'bush.png' } },
+  tropic: { dir: 'bg/tropic', scale: 2.0, files: { sky: 'sky.png', far: 'ridge.png', near: 'palms.png', trees: 'grass.png', fore: 'grass.png' } },
+};
+const curSet = BG_SETS[savedScene] || BG_SETS.wild;
+for (const [k, f] of Object.entries(curSet.files)) {
   const im = new Image();
-  im.src = f;
+  im.src = `${curSet.dir}/${f}`;
   bgImgs[k] = im;
 }
-const BG_SCALE = 4.5; // 160px 高的像素图层放大到全屏(720/160)
-// 横向平铺绘制(带视差偏移)
-function drawTiled(c, img, W, H, offset, alpha = 1) {
-  if (!img.complete || !img.naturalWidth) return;
-  const w = img.width * BG_SCALE;
+const BG_SCALE = curSet.scale; // 素材层放大倍数(随关卡素材分辨率不同)
+// 染色缓存:素材层 × 主题 → 离屏 canvas(滤镜只跑一次,平铺时零开销)
+let tintCache = {};
+function tinted(key) {
+  const img = bgImgs[key];
+  if (!img.complete || !img.naturalWidth) return null;
+  const id = themeId + ':' + key;
+  if (tintCache[id]) return tintCache[id];
+  const cv = document.createElement('canvas');
+  cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+  const cc = cv.getContext('2d');
+  cc.filter = currentTheme().filter;
+  cc.drawImage(img, 0, 0);
+  cc.filter = 'none';
+  tintCache[id] = cv;
+  return cv;
+}
+// 横向平铺绘制(带视差偏移;sky 层不染色,其余走主题染色)
+function drawTiled(c, key, W, H, offset, alpha = 1) {
+  const img = key === 'sky' ? bgImgs.sky : tinted(key);
+  if (!img) return;
+  const w = (img.width || img.naturalWidth) * BG_SCALE;
   let sx = ((offset % w) + w) % w;
   c.globalAlpha = alpha;
   for (let x = -sx; x < W; x += w) c.drawImage(img, x, 0, w, H);
@@ -152,19 +296,20 @@ const RIDGE_NEAR = ridge(80, 7654321);
 // 天空是静态的:预渲染到离屏画布,每帧只 drawImage(每帧新建渐变对象会积累 GC 卡顿)
 let SKY = null;
 export function drawSky(ctx, W, H, camX = 0) {
-  if (!SKY || SKY.width !== W || SKY.height !== H) {
+  const th = currentTheme();
+  if (!SKY || SKY.width !== W || SKY.height !== H || SKY._theme !== themeId) {
     SKY = document.createElement('canvas');
-    SKY.width = W; SKY.height = H;
+    SKY.width = W; SKY.height = H; SKY._theme = themeId;
     const c = SKY.getContext('2d');
     const g = c.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#1c2a4d');
-    g.addColorStop(0.55, '#3d5480');
-    g.addColorStop(1, '#c97a4a');
+    g.addColorStop(0, th.sky[0]);
+    g.addColorStop(0.55, th.sky[1]);
+    g.addColorStop(1, th.sky[2]);
     c.fillStyle = g;
     c.fillRect(0, 0, W, H);
   }
   ctx.drawImage(SKY, 0, 0);
-  drawTiled(ctx, bgImgs.sky, W, H, camX * 4, 1); // 素材天空层(星星/云)
+  drawTiled(ctx, 'sky', W, H, camX * 4, 1); // 素材天空层(星星/云)
 }
 
 function drawRidge(ctx, W, H, heights, segW, baseY, amp, color, shift) {
@@ -184,17 +329,17 @@ function drawRidge(ctx, W, H, heights, segW, baseY, amp, color, shift) {
 }
 
 export function drawParallax(ctx, W, H, camX, ppm) {
-  drawTiled(ctx, bgImgs.far, W, H, camX * ppm * 0.06, 0.95);   // 远山
-  drawTiled(ctx, bgImgs.near, W, H, camX * ppm * 0.18, 1);     // 近山
-  drawTiled(ctx, bgImgs.trees, W, H, camX * ppm * 0.34, 1);    // 树林
-  // 夜色压暗(素材是黄昏色调,压成夜晚氛围)
-  ctx.fillStyle = 'rgba(16,24,52,0.34)';
+  drawTiled(ctx, 'far', W, H, camX * ppm * 0.06, 0.95);   // 远山
+  drawTiled(ctx, 'near', W, H, camX * ppm * 0.18, 1);     // 近山
+  drawTiled(ctx, 'trees', W, H, camX * ppm * 0.34, 1);    // 树林
+  // 氛围压暗(颜色/强度随主题:月夜冷蓝 / 黎明暖 / 仓库深青)
+  ctx.fillStyle = currentTheme().duskColor;
   ctx.fillRect(0, 0, W, H);
 }
 
 // 前景树剪影(世界绘制完成后调用,增加纵深)
 export function drawForeground(ctx, W, H, camX) {
-  drawTiled(ctx, bgImgs.fore, W, H, camX * PPM_FG, 0.85);
+  drawTiled(ctx, 'fore', W, H, camX * PPM_FG, 0.85);
 }
 const PPM_FG = 52 * 1.15;
 

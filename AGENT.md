@@ -11,6 +11,7 @@
 
 当前状态:主角完成且手感验证过(走/跳/趴/双武器/鼠标瞄准/镜像/布娃娃测试),
 **波次生存玩法已上线**:敌人右缘按波刷新(15 波,无甲→全金装),真实伤害 + 部位倍率 + 小血条 + 受击闪白 + 金币/装备掉落(品质光柱)。
+**空中部队已上线**:第 4 波起每 4 波(+终波)一架武装直升机母体机(骨骼关节机体,机炮+火箭+持续放无人机),无人机接近→俯冲自爆,一发即碎。
 
 ## 技术栈与运行
 
@@ -29,12 +30,59 @@
   - game.js          装配根:world/player/waves 组装、依赖包 C、step/frame 编排、调试句柄、渲染
   - core/config.js   分辨率与物理常量
   - domain/          纯数据+纯函数:gunPresets / affixes(词缀) / inventory(经济) / waves(波次)
-  - entities/        player(布娃娃主角) / enemies(Dummy=AI 驱动的 Player)
+  - entities/        player(布娃娃主角) / enemies(Dummy=AI 驱动的 Player) / airunit(Gunship 母体机 + Drone 无人机)
   - systems/         audio / input / camera / feel(手感状态机) / fx / combat / hud
   - ui/              wheel(轮盘) / backpack(背包) / menu(主菜单)
   - world/level.js   地形数据与绘制
 - src/designer/      editor.js / studio.js(设计器页面专用)
 - 依赖方向与各模块职责详见 ARCHITECTURE.md
+
+## UI 设计系统 v2(2026-10-17 · 战术指挥风)
+
+**全部 UI 样式集中在 game.html 的 <style> 里**(menu.js/backpack.js/corpse.js 只注入结构与
+class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --amber #ffb14a 琥珀主色 /
+--steel #7fb2ff / --line rgba(148,178,214,.2) 冷钢描线;显示字体 ZCOOL QingKe HuangYou,
+正文 Noto Sans SC。**语言:直角面板(2px 圆角)+ 战术角标(.tac 类,面板四角琥珀 L 亮线)+
+大字距 + 左侧品质色条**,不用大圆角和 emoji 图标(菜单链接的 🎨🗺🧍 已换成 ▸ 前缀纯文字)。
+
+- **文案纪律:面向玩家的文案不出现"布娃娃"**——状态叫"失控"、提示叫"失控倒地 · 按 E 起身"、
+  标题是 "HERO — 突击行动"、副标 "TACTICAL STRIKE · 突击行动"。设计器入口更名:
+  枪械设计器→军械工坊 / 关卡设计器→战场编辑器 / 皮肤工坊→干员外观(链接 href 不变)。
+- 主菜单(2026-10-17 v3.1:**黄金比例斜切门**):双门用 clip-path 斜切 —— 左门 polygon(0 0,
+  62% 0, 53% 100%, 0 100%),右门补齐(≈61.8% 黄金比例,斜差 9%);#menuSeam = **斜切边光影条**
+  (left calc(53%-17px) + rotate(9.1°) + 双渐变:琥珀亮线在切边、深影晕向右侧 = 立体感),
+  菜单常开时常亮。**⚠️ 斜切安全区:左舷内容必须住在 .menu-col(width min(600px, 45vw))里**
+  —— 斜线在底部只到 53vw,内容超宽会被 clip-path 裁掉(按钮被切,用户实测毙过)。
+  **开门动画 = 先 morph 后开门**:点进入战场 → #menu.opening 使 clip-path 过渡回竖直
+  (0.24s,门板不动)→ 原版三段式竖缝辉光动画(#menuGlow,menu.js t0 延后 T_M=0.22s);
+  合门结束后移除 .opening morph 回斜切。斜切门直接横移会错乱,别省掉 morph。
+  场景选择 = 2×2 任务卡网格(大编号水印 sc-num、锁定斜纹遮罩、选中琥珀左条)。
+  HUD 资源条 = 斜切段状(brow 行:左 btag 标签 + 斜角 bar + 右 bval 读数,
+  ::after repeating-linear-gradient 做分段刻度)。
+- **场景主题系统(level.js)**:THEMES 调色板(天空渐变 + 素材层 canvas 滤镜染色,离屏缓存
+  tintCache)+ 氛围压暗色。**素材也是每关一套(BG_SETS)**:wild/roof 用 ansimuz 山峦(层高
+  160px,scale 4.5)/ room 用 craftpix 都市暮色 576×324(scale 2.22)/ desert+ tropic 用
+  Multilayer 山峦 640×360(scale 2.0),全部在 public/bg/<scene>/,来源与许可见 public/bg/CREDITS.md。
+  每关地形布局 LAYOUTS[scene](主地表共享,其余结构各异);场景切换 = 存档 + 重载
+  (刚体按布局在创建时生成)。
+- **每关玩法规则(waves.js SCENE_RULES)**:gunshipEvery(母体机节奏)/ batch(每架投兵数)/
+  qualityRush(品质提速波数,港区精锐提前)/ cap+swarm(沙丘人海,出怪上限 13)。
+  五关:野外标准(4 波/机 4 人)/ 屋顶制空(3 波/机 3 人)/ 港区巷战(6 波/机 2 人,精锐+2 波)/
+  沙丘人海(4 波/机 4 人,上限 13)/ 海岛跳跃(5 波/机 5 人,上限 9)。
+- **开场守军按关卡布防(game.js GARRISONS)**:哨兵/巡逻/掩体位各不相同,守军不清完不开波。
+- **运输机绳索投兵(airunit.js TransportHeli)**:波次小兵不再凭空刷 —— 运输机(纯脚本实体,
+  无刚体、不可攻击)从右缘飞入 → 悬停 → 每 0.5s 放一个士兵沿绳滑降(Dummy roped:钉绳匀速
+  下滑 + 双手举头抓绳姿态 player.roping,接地转正常 AI)→ 卸完离场;waves.js 一架一批(≤4 人),
+  运输机 alive 期间阻塞清波判定。
+- **关卡布局 + 开场守军**:level.rects 新增左区制空台 / 中区双掩体 / 右区两级断崖(投放场
+  前的天然工事);game.js 开场布 4 人守军(高台哨兵/平台巡逻/台阶/掩体,respawn:false),
+  **守军不清完波次不启动**(waves 的 aliveN 条件天然实现)。
+- 右舷 = 场景名 + **战术情报面板**(.menu-intel:敌军攻势/制空威胁/撤离条件/战利品,是真实
+  配置)+ 版本号。
+- **改样式别动 DOM 钩子**:JS 依赖的 id/class 清单见过一遍(menu-left/right、menuSeam、
+  menuScenes、scene-card.sel/.locked、pnl*、streak*、loot-card、bp-tabs button.on、
+  eq-slot.drop-hot、ic-card.dragging、cp-*、help.show、box-lid.crack/.fly、prize.pop 等)。
+  换皮时保持这些名字,JS 零改动。
 
 ## 游戏架构(改代码前必读)
 
@@ -214,7 +262,9 @@
   紫之前 90% 升 10% 败,紫→金 10/80/10(BT_RATE)。词条按"逐属性取三件最大值"继承。
 - **分解(替代丢弃)**:♻ 两步确认,按品质+词条数折金币(DECOMPOSE_VALUE),不再产生地面物品。
 - **敌人只爆金币**;装备走**搜尸**:站尸上(1.35m 内)按 Tab 开敌人装备栏,逐件拿走
-  武器词条/头盔/护甲(品质=敌人波次品质,词条死亡时掷好)。尸体保留 12s 供搜索。
+  武器词条/头盔/护甲(品质=敌人波次品质,词条死亡时掷好)。尸体保留 **20s** 供搜索
+  (enemies.js deadT;曾 12s 被用户嫌太快来不及搜),还有剩料的尸体头顶有金色 Tab 下沉箭头
+  标记(game.js drawWorld)。
   ⚠️ Tab 路由(input.js):尸体在旁→搜尸,否则→轮盘;搜尸面板 Esc/Tab 关,走远自动关,时间走 0.08。
 - **容量 BP_CAP=24**(已穿戴不占格):invIsFull/invUsedCount。
 - 开箱不变(inventory.js BOXES/invOpenBox);背包的枪槽是展示位(bpSetGunInfo)。
@@ -262,10 +312,28 @@
   子弹(伤害归一 1),并按 stats.sfx 播放枪声(音量×0.6)。
   ⚠️ **敌人枪池排除 hitscan(AWP)**:敌人事件循环不处理 hitscanShot(会哑火),且狙击站桩会让敌人
   永久定在原地;敌人也不吃玩家主武器槽位词缀(spawnEnemy 里 gunMods 清空)。
-- 受击反馈:闪白/抖动/持续受击 3 连击晕眩 0.8s;死亡 = setRagdoll(true) + 最后一击方向力道
+- 受击反馈:闪白/抖动/持续受击 3 连击晕眩 0.8s;死亡 = setRagdoll(true) + deathImpulse(dir, zone)
   → 关节布娃娃倒地;**尸体受击继续受力**;活着时子弹不推人。
-- **死亡受力**:最后一击的子弹方向作用在布娃娃上(不同方向=不同倒地动作);
-  活着时子弹不推人;**尸体受击继续受力**(布娃娃残响)。
+- **死亡动作部位化(2026-10-17)**:电机一关,关节全摆到限位 → 以前每具尸体都折叠成同款坐姿。
+  现在 die() 后调 `player.deathImpulse(dir, zone)`(player.js):**爆头** = 头猛甩 + 双臂上扬 +
+  身体后仰折;**腿部** = 下盘被扫飞 + 上身前扑/后仰随机;**躯干** = 双臂乱甩就地软倒;
+  再叠加躯干随机翻转(1/4 概率反向滚)和全腿随机抖 → 没有两具尸体姿势相同。
+  玩家被击倒/炸倒也走同一管线(combat.js / game.js blast)。⚠️ 只能在 setRagdoll(true) 之后调
+  (电机已关、肢体已开地面碰撞)。
+- **断肢(player.dismember,deathImpulse 开头自动调用)**:destroyJoint 撕关节,零件作为自由
+  刚体飞出 —— 仍在 allBodies,绘制/落地/回收(destroy)全自动,零渲染改动;膝/肘关节保留,
+  甩出去的是带关节的两截。规则:爆头必断头(+50% 断臂)、腿部断 1~2 条腿、躯干 45% 断臂 +
+  22% 断腿;断口飙血粒子 + 地面血渍;断肢额外甩出速度 + 随机旋转。⚠️ 撕掉的关节从 this.j 删除
+  (setRagdoll 遍历 j、update 伺服 j,悬空引用会炸)。
+- **飙血(combat.onEnemyDied)**:击杀时地面泼 3 摊血渍(fx.addDecal 'blood',FIFO 上限内)+
+  16 粒溅血;普通命中本就有血雾 —— 血量反馈三档:命中血雾 < 死亡溅血泼地 < 断肢喷泉。
+- **下蹲 = 骑士跪(S 键,2026-10-17 替换趴下;用户手绘示意图定稿)**:`player.crouch =
+  input.down && grounded`,边沿触发 `applyCrouch(on)` **换躯干碰撞体**(全身高胶囊 half 0.62 ↔
+  跪姿矮胶囊 0.34):蹲下 = 换矮胶囊自然下坠 0.28m;起身 = **先把全身整体上移 0.28 再换高胶囊**
+  (只挪躯干会被关节拽飞、不抬高会插地弹飞)。跪姿伺服(用户指定只改腿,手臂照常持枪瞄准):
+  支撑腿 hipF 1.5 / kneeF -1.45(大腿抬平、小腿竖直踩地),跪腿 hipB -0.5 / kneeB -2.25
+  (膝跪地、小腿反折贴地)—— 古代骑士单膝跪姿;蹲行 1.6 速,蹲下不能跳;受击判定盒随躯干
+  整体下移,天然低姿态。
 - **掉落经济**:死亡爆金币 3~8(磁吸拾取,2.2m 吸引/0.45m 入包);
   穿甲敌人死亡各 50% 掉 0 耐久同品质装备 → 入背包 → 背包 UI(G 键)修复/升级/合成(3 同品质)/锻造。
   金币与装备持久化 'contra-inv'。玩家出厂自带普通头盔+背心(已装备)。
@@ -286,6 +354,51 @@
 - ⚠️ 模块级 TDZ:enemies 数组声明在"子弹/粒子"区,别在使用点之前 new Dummy。
 - 敌人注册表 enemies[] 约定接口:{x, y, radius, alive, zoneAt(px,py), hit(zone,dmg)→{broke,absorbed},
   hurt(dmg), knockback(vx,vy), draw(...)} —— AWP 穿透/近战/盾撞都走这套。
+
+### 空中部队(entities/airunit.js)—— 武装直升机母体机 Gunship + 自杀无人机 Drone
+
+- **母体机 = 骨骼关节机体**(布娃娃思路的飞行版):5 刚体 = 机身(主碰撞体)/尾梁+垂尾/起落橇/
+  主旋翼/尾旋翼,4 个 RevoluteJoint 挂接(尾梁 ±0.1、橇 ±0.08 限位 → 飞行甩动;双旋翼是电机
+  关节常转, purely 视觉)。飞行 = 机身 gravityScale 0 + 每步 setLinearVelocity(P 控制器追悬停
+  锚点:玩家侧向 6.2m / 头顶 4m,随 groundYAt 起伏)+ 俯仰用角速度 PD(朝速度方向点头)。
+  **被击落**:全体部件 gravityScale 置 1、旋翼电机减速、翻滚坠地,触地 → blast(范围伤害吃玩家
+  防御+冲击波掀飞)+ 金币 + 碎片 → destroy() 刚体再置 destroyed(回收防泄漏,同 Dummy 教训)。
+- **碰撞层 AIR=0x8**(airunit.js 本地常量):全部件只与 GROUND 碰撞(坠机要落地),groupIndex -7
+  部件互不碰撞;主/尾旋翼 maskBits 0 不参与任何碰撞。
+- **弹丸契约**:zoneAt = 机身(0.95×0.4)/尾梁(0.75×0.15)判 'body'(金属:无部位倍率无护甲),
+  旋翼不判定 = 子弹从桨缝穿过(手感好);hit() 的击退不能直接 setLinearVelocity(速度控制每帧
+  覆盖),走 pushX/pushY 偏移积累 + 每帧 ×(1-6dt) 衰减。
+- **命中反馈分叉**(combat.js):`e.airUnit` → airHitFeedback(火花+金属叮+橙金数字+吸血照常),
+  否则血肉管线 hitFeedback。弹丸命中端与 AWP hitscan 端都要分叉。
+- **武器**:机炮点射 7~10 发/0.085s(伤害 7.5,敌方统一 ×0.35 → 2.6/发,armorDmgMul 1.4 磨甲),
+  火箭齐射 2 发/5.5s(stats.rocket:true → spawnBullet 携带 rocket 标志:粗橙尾焰+拖烟,砸地形
+  开坑),都要求 slab LOS(同 Dummy.hasLOS)。开火事件复用 'shot' 类型(game.js 通用敌方处理)。
+- **无人机 = 纯算法实体(无刚体)**:接近(悬停玩家上前方 ±1.7,+3.1,入态缓 1s)→ 4.4m 内俯冲
+  (直线 11m/s + 啸声 + 红拖尾)→ 撞玩家 blast 7 伤 / 撞地碎裂 / 冲过头(dist>6.5 且速度背离)
+  爬升绕回再来。**一发即碎**:任意伤害 hit() → debris 碎片 + 火花,金币 1。母体机阵亡 →
+  麾下无人机 enraged = 跳过接近直接扑(10m 内即俯冲)。
+- **波次接入**(waves.js):第 4 波起每 4 波(+MAX_WAVE 终波)一架,hp = 130+wave×14,地面队列
+  相应减小(2+wave 上限 8);**空中单位不占地面 10 名额**(capN 过滤 airUnit),但算清波条件
+  (aliveN 含它们 → 不击落母体机不清波)。⚠️ `start(enemies)` 必须从 update 传注册表 ——
+  曾漏传导致开波 ReferenceError 被帧循环 try/catch 吞掉,表现为"母体机波永远不出怪"。
+- **新事件**(game.js 敌方事件循环):'blast'(无人机自爆/母体机坠地:火球+范围伤害吃防御+
+  掀飞)、'killed'(机械击杀:金币雨+连杀,不走 onEnemyDied 的顿帧/爆浆血肉管线)。
+- **机头永远面向玩家**(face: 1 右 / -1 左,0.4m 死区防抖):绘制 = 整机画在"机身局部空间"
+  (translate 到机身 → **scale(1,-1) y 翻转** → rotate(fa) → scale(face,1) 镜像 → scale(ppm),
+  之后是"米 + 世界 y 向上"的局部系)。⚠️ 那次 scale(1,-1) 漏了整机会**上下颠倒**(旧版逐点
+  w2s 自带 y 翻转,集中到框架后必须补回),部件相对角随之用世界符号 rotate(+a);
+  机炮口/火箭巢/投放口经 localToWorld(内乘 face);**zoneAt 也在 sprite 空间判定(局部 x 乘
+  face)—— 尾梁画在哪边,判定就落在哪边**;俯仰公式 tilt = -v.x·k 对两个朝向都成立
+  (镜像自动翻转旋转的视觉方向),别再乘 face。
+- **主旋翼侧视 = 扁椭圆**:桨盘 ellipse(rx 1.25, ry 0.26)画在机身系(不随桨轴自转);桨叶
+  方位角随电机转,但**桨尖坐标永远压进扁椭圆 (cosθ·1.18, sinθ·0.26) 且直接画在机身系** ——
+  曾把桨叶画进"随桨轴自转的坐标系",扁椭圆跟着桨叶转歪(斜穿机身)。尾旋翼是竖直平面旋翼,
+  侧视近整圆,维持圆盘画法。无人机独眼 scale(±1,1) 翻向飞行方向。
+- 血条:drawEnemyBars 支持 e.noBar(无人机不画)/ e.barW(母体机 120 宽)/ e.barDy(悬在旋翼上)。
+- 调试:`window.__spawnGunship(hp=260)`。
+- ⚠️ **__frameN 前台污染**:每次手动 frame() 都会 requestAnimationFrame 再注册一个回调,
+  前台页面这些回调会在后续真实帧成批执行(+acc 残账)→ 游戏时间莫名漂移。前台验证用真实
+  时间等待;只有后台标签页(rAF 暂停,回调永不执行)才能用 __frameN 确定性推帧。
 
 ### 装备工坊(asset-studio.html + studio.js)—— ⚠️ 已暂缓,入口已移除
 > 用户上传 PNG 自动抠图换贴图的工坊:技术管线(自动去底/渐变扩散/自动裁边/标准框适配)都已
@@ -405,7 +518,44 @@
     "按键没反应"先查 __pageErrors 再怀疑逻辑(搜尸 Tab 失灵排查了半小时才看到这条)。
 13. **瞬移布娃娃/尸体必须整体平移所有刚体**(坑 5 的尸体版):只 setPosition 躯干,肢体关节还
     在原地,关节求解器一帧内把躯体弹飞十几米 —— `for (const b of p.allBodies) b.setPosition(同
-    delta)` 且速度清零。
+    delta)` 且速度清零。⚠️ planck 里 getPosition() 返回内部向量引用但每步从 sweep 重算覆盖,
+    直接改 p.x 无效,必须 `b.setTransform(getTransform() 改过的完整 xf)`。
+14. **全身胶囊只属于站姿**:躺倒后它是一根 1.24m 的横棍,把四肢从包络里往外挤、再顶地面,
+    求解器两头打架 = 尸体在地上抖来抖去(用户实测毙过)。死亡/布娃娃必须换"死亡小盒"
+    (setRagdoll → swapTorsoCapsule(0),只包躯干本体 0.30×0.52,四肢交给自己的地面碰撞)。
+15. **给 enemies 注册表加新单位时,弹丸尸体分支的契约是 zoneAt+corpseHit 成对**:坠落中的
+    Gunship 曾只挡 zoneAt 不给 corpseHit → 每颗子弹 TypeError 整帧被 try/catch 吞。
+    现已双保险:死亡态 zoneAt 返回 null + stepBullets 用 `e.corpseHit?.()`。
+16. **卡地保险丝必须用"正下方 ray",不能用 groundYAt(x, p.y+0.5)**:后者返回"低于头顶 0.8m 内
+    的最高表面顶",会把身旁台阶/平台顶误当地表 —— 玩家从矮台阶旁走过(x≈26 顶面 1.0 的地块)
+    被判沉地,0.5s 后莫名传送回重生点(用户实测毙过)。现行:updateCommon 从躯干中心向下 ray
+    0.5m,命中距离 < 0.1 才算真卡地(站立 0.77 / 跪 0.49 / 躺 0.15 都不会误触发)。
+17. **断肢必须级联撕掉下游关节(肩→肘、髋→膝)**:两截连着飞时,膝/肘限位(强制弯曲)与
+    "躺平"的静止构型永远冲突,求解器每步互打 = 残肢在地上永久微抖(用户实测毙过);
+    撕成独立单盒后躺平即静止。断头/断肢滚出地图边界会一路坠落(120m/s),属自然物理,
+    随尸体 20s 回收,不用管。
+18. **尸体/残肢的终极静止 = setActive(false),且敌我参数必须一致**:残肢落在平台 0.25m
+    tile 接缝上会被相邻静态块夹住永抖(级联撕关节解决不了接缝)。休眠参数(速度阈值
+    0.3m/s / 静置 0.45s / 兜底 1.4s)敌我必须同一组 —— 曾给敌人 0.2/0.7/5s,用户立刻
+    观察到"主角尸体不抖而敌人抖"(差异全在参数)。位置:敌人 enemies.js 死亡分支 /
+    玩家 player.js updateCommon(ragdoll+deadCorpse)。已休眠尸体的 corpseHit 直接跳过
+    (防止任何 kick 把休眠刚体卷回求解器)。respawn 模式要在 spawnEnemy 复位 settled/restT。
+    **运输机 TransportHeli 的绘制同样要 scale(1,-1) y 翻转**(Gunship 教训的复犯,坐标
+    风格一致就一起错),且悬停高度 7.6m(8.6 会飘出画面上缘,只见绳索不见机身)。
+19. **特效三件套(fx.js)**:`explosion(x,y,big)` = 冲击波环 rings + 火球(负重力上飘)+
+    火花 + 烟柱 + 地面焦痕 decal('scorch',渲染层有专门分支);`bloodJet(body,lx,ly,dx,dy)`
+    = 挂在刚体断口上的喷血发射器(心跳脉冲压强,跟随尸体姿态,dismember 自动挂);
+    击杀锥形喷血在 combat.onEnemyDied(沿弹道方向)。火箭弹命中地形会起爆:explosion +
+    对玩家 1.9m 范围冲击 + 地形伤害 ×2.4(stepBullets 的 rect 命中分支)。
+20. **尸体休眠是双端的**:敌人(enemies.js 死亡分支)和玩家(player.js updateCommon 的
+    ragdoll+deadCorpse 分支,deathImpulse 置位;R 键测试布娃娃不置位不受影响)都要做
+    静置 setActive(false) —— 用户实测玩家尸体的残肢一样会在接缝上抖。断肢额外加阻尼
+    (linear 1.4 / angular 1.8)吃掉微振动。主角阵亡有 hitStop(0.12) 顿帧(和敌人击杀同款,
+    用户点名要一致)。
+21. **UI 音效 = Kenney UI Pack 采样**(public/ui/kenney/*.ogg,CC0,License 同目录):
+    audio.js uiSfx(kind, vol) 懒加载解码,失败静默返回 0 → 调用侧 `if (!uiSfx('click-a'))
+    beep(...)` 合成音兜底。已接:菜单三按钮/场景卡(switch-a)/搜尸拿取(switch-b)/
+    背包部分动作。首次点击无声(加载异步),第二次起有声,属预期。
 
 ## 设计器数据格式
 

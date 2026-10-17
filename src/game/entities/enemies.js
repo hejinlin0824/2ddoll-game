@@ -6,7 +6,7 @@ import { Player } from './player.js';
 import { Vec2 } from 'planck';
 import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes } from '../domain/affixes.js';
-import { LEVEL } from '../world/level.js';
+import { LEVEL, groundYAt } from '../world/level.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -48,6 +48,7 @@ export class Dummy {
     this.staggerT = 0;   // 踉跄剩余时间:站不稳、开不了枪
     this.freezeT = 0;    // 个体顿帧剩余时间:只冻这一个,世界照常跑(见 freezeHit/pinFrozen)
     this.frozen = null;  // 冻结瞬间的全身刚体位姿快照
+    this.roped = !!opts.roped;   // 运输机绳降:沿绳匀速下滑,落地转正常 AI
     this.ai = { left: false, right: false, down: false, fire: false, jumpPressed: false, aim: null };
     this.spawnEnemy();
   }
@@ -75,6 +76,8 @@ export class Dummy {
     this.respawnT = 0;
     this.freezeT = 0;    // 重生不许继承旧尸的冻结(位姿快照对新刚体是传送门)
     this.frozen = null;
+    this.settled = false; // 静置锁定标记(旧尸的休眠状态不带到新身体)
+    this.restT = 0;
     this.loot = null;    // 旧尸战利品作废
     this.lootTaken = {};
     this.resetArmor();
@@ -185,8 +188,7 @@ export class Dummy {
     this.alive = false;
     this.respawnT = this.respawn ? 3.5 : 0;
     this.p.setRagdoll(true);
-    const v = this.p.torso.getLinearVelocity();
-    this.p.torso.setLinearVelocity(Vec2(dir.x * 3 + v.x, dir.y * 1.5 + 2.5));
+    this.p.deathImpulse(dir, zone); // 部位化死亡动作:不同部位中弹倒地姿势不同
     this.loot = {
       gun: { name: this.gunName, quality: this.quality, affixes: rollAffixes('gun', this.quality) },
       head: { quality: this.quality, affixes: rollAffixes('head', this.quality) },
@@ -197,9 +199,10 @@ export class Dummy {
     this.events.push({ type: 'died', x: this.x, y: this.y, zone, dir, coins: 3 + Math.floor(Math.random() * 6) });
   }
 
-  // 尸体受击:子弹继续推动布娃娃
+  // 尸体受击:子弹继续推动布娃娃(已静置休眠的尸体不再受力 —— setActive(false) 后
+  // 任何 kick 都可能把它重新卷进求解器,残肢接缝微抖就回来了)
   corpseHit(dir, power = 2.2) {
-    if (this.alive) return;
+    if (this.alive || this.settled) return;
     const v = this.p.torso.getLinearVelocity();
     this.p.torso.setLinearVelocity(Vec2(v.x + dir.x * power, v.y + dir.y * power + 0.5));
   }
@@ -257,6 +260,26 @@ export class Dummy {
         this.p.torso.setLinearVelocity(Vec2(clamp(v.x, -2, 2), v.y));
       }
     }
+    // 绳降中:钉在绳上匀速下滑(水平速度清零),姿态=双手举过头抓绳;
+    // 接地(躯干低于地表 1.05m)转为正常 AI 并警觉
+    if (this.roped) {
+      this.ai.left = this.ai.right = this.ai.down = this.ai.fire = false;
+      this.ai.jumpPressed = false;
+      this.ai.aim = null;
+      this.p.roping = true;
+      this.p.update(dt, this.ai);
+      const tpR = this.p.torso.getPosition();
+      const vR = this.p.torso.getLinearVelocity();
+      this.p.torso.setLinearVelocity(Vec2(0, Math.min(vR.y, -3.2)));
+      if (tpR.y <= groundYAt(tpR.x, tpR.y) + 1.05) {
+        this.roped = false;
+        this.p.roping = false;
+        this.alert = true;
+        this.p.torso.setLinearVelocity(Vec2(0, -2));
+      }
+      for (const ev of this.p.events) this.events.push(ev);
+      return;
+    }
     if (!this.alive) {
       if (this.respawn) {
         this.respawnT -= dt;
@@ -272,9 +295,28 @@ export class Dummy {
         }
         return;
       }
-      // 波次模式:尸体保留 12 秒供搜索(站尸上 Tab),之后销毁刚体并标记,由 main 移出注册表
+      // 波次模式:尸体保留 20 秒供搜索(站尸上 Tab),之后销毁刚体并标记,由 main 移出注册表
       this.deadT = (this.deadT || 0) + dt;
-      if (this.deadT > 12 && !this.destroyed) {
+      // 静置锁定:全身速度持续 0.7s ≈ 0(或死后 5s 硬性兜底)→ 全部刚体 setActive(false)
+      // 永久定格。残肢落在平台 tile 接缝上会被相邻静态块夹住永抖,Box2D 自带休眠压不住,
+      // 显式停用才是根治;锁定后 zoneAt 照常(子弹仍会被尸体挡下),只是不再受力位移
+      if (!this.settled) {
+        let still = true;
+        for (const b of this.p.allBodies) {
+          const v = b.getLinearVelocity();
+          if (v.x * v.x + v.y * v.y > 0.09 || Math.abs(b.getAngularVelocity()) > 0.35) { still = false; break; }
+        }
+        this.restT = still ? (this.restT || 0) + dt : 0;
+        if (this.restT > 0.45 || this.deadT > 1.4) {
+          this.settled = true;
+          for (const b of this.p.allBodies) {
+            b.setLinearVelocity(Vec2(0, 0));
+            b.setAngularVelocity(0);
+            b.setActive(false);
+          }
+        }
+      }
+      if (this.deadT > 20 && !this.destroyed) {
         this.destroyed = true;
         this.p.destroy();
       }

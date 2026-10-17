@@ -1,11 +1,12 @@
 // 主动式布娃娃主角(Active Ragdoll):
 // 躯干是主碰撞体,直接做速度控制(平台跳跃手感);
 // 四肢通过带限位的旋转关节挂在躯干上,每帧用关节电机做 PD 伺服
-// 追踪"姿态目标角"—— 跑步循环/跳跃/下落/趴下都是一组目标角,
+// 追踪"姿态目标角"—— 跑步循环/跳跃/下落/下蹲都是一组目标角,
 // 物理引擎负责所有中间过渡、惯性甩动和落地时的物理抖动。
 // 按 R 关掉全部电机 = 纯布娃娃(瘫倒),E 复位。
 import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from '../world/level.js';
+import { particles, addDecal, bloodJet } from '../systems/fx.js';
 import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
 import { skinImg, skinXf, skinFitScale, SKIN_END_ANCHORED, SKIN_BOX } from '../domain/skin.js';
@@ -72,7 +73,7 @@ export class Player {
     // 躯干:主碰撞体 = 覆盖全身的竖胶囊(方盒 + 上下圆),
     // 包络从脚底(-0.78)到头顶(+0.78)。
     // 这样角色永远"站在碰撞体上":不会双腿插进地里、
-    // 圆顶圆底跳跃撞平台边角会顺滑滑开、趴下/跑动也不会被直角卡住。
+    // 圆顶圆底跳跃撞平台边角会顺滑滑开、蹲姿/跑动也不会被直角卡住。
     this.torso = w.createBody({ type: 'dynamic', position: c(0, 0), angularDamping: 0.1 });
     const torsoFixtureDef = {
       density: 5, friction: 0.02, restitution: 0,
@@ -142,7 +143,10 @@ export class Player {
     this.facing = 1;
     this.grounded = false;
     this.wasGrounded = false;
-    this.prone = false;
+    this.crouch = false;   // S 按住:下蹲(低姿态)
+    this.crouched = false; // 当前碰撞体状态(true = 矮胶囊已换上)
+    this.roping = false;   // 绳降中(敌人专用):双手举过头抓绳
+    this.deadCorpse = false; // 真死了(区别 R 键测试布娃娃):残肢需要静置休眠
     this.ragdoll = false;
     this.phase = 0;          // 跑步循环相位
     this.coyote = 0;         // 离地宽限
@@ -261,6 +265,10 @@ export class Player {
       }
     }
     if (on) {
+      // ★ 换"死亡小盒"碰撞体:全身胶囊是给站姿设计的(四肢全在包络里),
+      // 躺倒后它变成一根 1.24m 的横棍,把四肢从包络里往外挤、再顶着地面 ——
+      // 求解器两头打架,就是尸体在地上抖来抖去的根因。死时只留包躯干本体的小盒。
+      this.swapTorsoCapsule(0);
       // 挨了一枪的感觉:给一记冲量+角速度,让布娃娃真的瘫倒
       this.grounded = false;
       this.torso.applyLinearImpulse(
@@ -268,8 +276,151 @@ export class Player {
         this.torso.getPosition());
       this.torso.setAngularVelocity(-this.facing * (3 + Math.random() * 3));
     } else {
+      // 复位:恢复到当前姿态对应的胶囊高度(蹲着复活也是跪姿高度)
+      this.swapTorsoCapsule(this.crouched ? 0.34 : 0.62);
       // 电机重新接上时压制角速度,避免从地上"弹射起身"
       this.torso.setAngularVelocity(clamp(this.torso.getAngularVelocity(), -2.5, 2.5));
+    }
+  }
+
+  // 换躯干碰撞体:H>0 = 竖胶囊(半高 H,带上下圆帽,包络到脚/头);
+  // H=0 = "死亡小盒"(只包躯干本体 0.30×0.52,四肢交给自己的地面碰撞)
+  swapTorsoCapsule(H) {
+    const t = this.torso;
+    for (let f = t.getFixtureList(); f;) {
+      const next = f.getNext();
+      t.destroyFixture(f);
+      f = next;
+    }
+    const def = {
+      density: 5, friction: 0.02, restitution: 0,
+      filterCategoryBits: CAT.PLAYER, filterMaskBits: CAT.GROUND,
+    };
+    if (H > 0) {
+      t.createFixture(new Box(D.torso.w / 2, H), def);
+      t.createFixture(new Circle(Vec2(0, H), D.torso.w / 2), def);
+      t.createFixture(new Circle(Vec2(0, -H), D.torso.w / 2), def);
+    } else {
+      t.createFixture(new Box(D.torso.w / 2, D.torso.h / 2), def);
+    }
+  }
+
+  // 下蹲(骑士跪)↔ 站立:换躯干碰撞体(全身高胶囊 half 0.62 ↔ 跪姿矮胶囊 0.34)。
+  // 蹲下 = 换矮胶囊后自然下坠 0.28m 坐进跪姿;起身 = 先把全身整体上移 0.28 再换高胶囊
+  // (坑 13:必须整体平移,只挪躯干会被关节拽飞;不先抬高则高胶囊插地被求解器弹飞)
+  applyCrouch(on) {
+    this.crouched = on;
+    if (!on && this.grounded) {
+      for (const b of this.allBodies) {
+        const p = b.getPosition();
+        b.setTransform(Vec2(p.x, p.y + 0.28), b.getAngle());
+      }
+    }
+    this.swapTorsoCapsule(on ? 0.34 : 0.62);
+  }
+
+  // ---- 死亡动作:按受击部位给不同肢体群冲量 + 随机量 ----
+  // 电机全关后关节都会摆到限位(所以以前每次都折叠成一样的坐姿),
+  // 死亡瞬间给各肢体差异化的初速度,限位停的位置就每次都不一样了。
+  // 必须在 setRagdoll(true) 之后调用(电机已关、肢体已开地面碰撞)
+  // ---- 断肢:击杀时撕掉关节,部件作为自由刚体飞出去 ----
+  // 零件仍在 allBodies 且肢体层已开地面碰撞(见 setRagdoll),绘制/落地弹跳全自动;
+  // 只能在 setRagdoll(true) 之后调用。按部位决定撕哪里 + 概率,同一部位多次触发也不会重复
+  dismember(dir, zone) {
+    const parts = new Set();
+    if (zone === 'head') {
+      parts.add('neck'); // 爆头必断头
+      if (Math.random() < 0.5) parts.add(Math.random() < 0.5 ? 'shF' : 'shB');
+    } else if (zone === 'legs') {
+      parts.add(Math.random() < 0.5 ? 'hipF' : 'hipB');
+      if (Math.random() < 0.3) parts.add(Math.random() < 0.5 ? 'hipF' : 'hipB');
+    } else {
+      if (Math.random() < 0.45) parts.add(Math.random() < 0.5 ? 'shF' : 'shB');
+      if (Math.random() < 0.22) parts.add(Math.random() < 0.5 ? 'hipF' : 'hipB');
+    }
+    for (const jn of parts) {
+      const j = this.j[jn];
+      if (!j) continue;
+      const a = j.getAnchorA(); // 断口(世界坐标)
+      this.world.destroyJoint(j);
+      delete this.j[jn];
+      // 级联撕掉下游关节(肩→肘、髋→膝):两截连着飞的话,膝/肘限位(必须保持弯曲)
+      // 和"躺平"的静止构型永远打架,求解器每步都打 —— 就是残肢在地上抖的根因;
+      // 撕成独立单盒后躺平即静止
+      const distal = { shF: 'elF', shB: 'elB', hipF: 'kneeF', hipB: 'kneeB' }[jn];
+      if (distal && this.j[distal]) {
+        this.world.destroyJoint(this.j[distal]);
+        delete this.j[distal];
+      }
+      // 断口大喷溅 + 颈动脉式持续喷血(发射器挂躯干上,尸体翻滚断口跟着走)
+      for (let i = 0; i < 22; i++) {
+        particles.push({
+          x: a.x, y: a.y,
+          vx: dir.x * (1.5 + Math.random() * 5.5) + (Math.random() - 0.5) * 2.8,
+          vy: 1.5 + Math.random() * 4.8,
+          life: 0.5 + Math.random() * 0.55, size: 2.2 + Math.random() * 2.6,
+          color: Math.random() < 0.7 ? '#c41e12' : '#e8382a', grav: 1.25,
+        });
+      }
+      // 断口局部坐标(关节锚在躯干局部系):颈 (0,0.30) / 肩 (0,0.20) / 髋 (0,-0.24)
+      const local = jn === 'neck' ? { x: 0, y: 0.30 }
+        : (jn === 'hipF' || jn === 'hipB') ? { x: 0, y: -0.24 } : { x: 0, y: 0.20 };
+      bloodJet(this.torso, local.x, local.y, dir.x || this.facing, 0.5, jn === 'neck' ? 1.3 : 1.0);
+      const gy = groundYAt(a.x, a.y);
+      if (gy > -50) addDecal('blood', a.x + (Math.random() - 0.5) * 0.6, gy - 0.02, 0, 0.28 + Math.random() * 0.2);
+      // 断肢甩出 + 旋转(级联撕关节后是独立单盒,躺平即静止)
+      const piece = jn === 'neck' ? this.head
+        : jn === 'hipF' ? this.legUF : jn === 'hipB' ? this.legUB
+        : jn === 'shF' ? this.armUF : this.armUB;
+      const v = piece.getLinearVelocity();
+      piece.setLinearVelocity(Vec2(v.x + dir.x * (2 + Math.random() * 3), v.y + 2.5 + Math.random() * 2.5));
+      piece.setAngularVelocity((Math.random() - 0.5) * 14);
+      // 阻尼:飞行前段不受影响,落地弹两下就停 —— tile 接缝的微振动被阻尼吃掉
+      piece.setLinearDamping(1.4);
+      piece.setAngularDamping(1.8);
+    }
+  }
+
+  deathImpulse(dir, zone) {
+    this.deadCorpse = true; // 标记真死(R 键测试布娃娃不置位):updateCommon 走静置休眠
+    this.dismember(dir, zone); // 先断肢(断口坐标按死亡瞬间的关节位置取)
+    const d = dir || { x: this.facing, y: 0.2 };
+    const kick = (b, ix, iy) => {
+      if (!b) return;
+      const v = b.getLinearVelocity();
+      b.setLinearVelocity(Vec2(v.x + ix, v.y + iy));
+    };
+    const R = (a, b) => a + Math.random() * (b - a);
+    // 躯干:沿弹道倒 + 随机翻转(幅度/方向每尸体不同,1/4 概率反向滚)
+    const tv = this.torso.getLinearVelocity();
+    this.torso.setLinearVelocity(Vec2(tv.x + d.x * R(1.5, 3), tv.y + R(1.5, 2.6)));
+    this.torso.setAngularVelocity((d.x >= 0 ? -1 : 1) * R(2.5, 6) * (Math.random() < 0.25 ? -0.5 : 1));
+    if (zone === 'head') {
+      // 爆头:头猛地后甩,双臂张开上扬,身体后仰折
+      kick(this.head, d.x * R(4, 7), R(2, 3.6));
+      kick(this.armUF, d.x * R(2.5, 5), R(2, 4));
+      kick(this.armUB, d.x * R(2.5, 5), R(2, 4));
+      kick(this.armLF, d.x * R(1, 3), R(1, 3));
+      kick(this.armLB, d.x * R(1, 3), R(1, 3));
+    } else if (zone === 'legs') {
+      // 腿部中弹:下盘被扫飞,上身前扑或后仰(随机),头滞后甩
+      kick(this.legUF, d.x * R(3, 6), R(-0.5, 1.5));
+      kick(this.legLF, d.x * R(4, 7), R(0, 2));
+      kick(this.legUB, d.x * R(3, 6), R(-0.5, 1.5));
+      kick(this.legLB, d.x * R(4, 7), R(0, 2));
+      kick(this.head, d.x * R(0.5, 2), R(0.5, 2));
+      if (Math.random() < 0.5) this.torso.setAngularVelocity(-this.torso.getAngularVelocity());
+    } else {
+      // 躯干中弹:双臂乱甩,头一歪,就地软倒
+      kick(this.armUF, d.x * R(2, 4.5), R(1.5, 3.5));
+      kick(this.armUB, -d.x * R(2, 4.5), R(1, 3));
+      kick(this.armLF, d.x * R(1.5, 3.5), R(1, 2.5));
+      kick(this.armLB, -d.x * R(1.5, 3.5), R(1, 2.5));
+      kick(this.head, d.x * R(1.5, 3.5), R(0.8, 2.2));
+    }
+    // 腿部再加一层全随机:谁也别想摆出同款坐姿
+    for (const b of [this.legUF, this.legLF, this.legUB, this.legLB]) {
+      kick(b, R(-1.6, 1.6), R(0, 2));
     }
   }
 
@@ -421,13 +572,20 @@ export class Player {
     };
     const ph = this.phase;
 
-    if (this.prone) {
-      t.torso = -1.32; t.neck = 0.7;
-      const wig = Math.sin(this.t * 7) * 0.07 * (speed > 0.2 ? 1 : 0);
-      t.hipF = -0.22 + wig; t.kneeF = -0.06;
-      t.hipB = -0.38 - wig; t.kneeB = -0.06;
-      t.shF = 2.85; t.elF = 0.05;
-      t.shB = 2.3; t.elB = 0.4;
+    if (this.roping) {
+      // 绳降:双手举过头抓绳,双腿微屈绷紧(敌人滑降专用,主角不会进这个态)
+      t.torso = 0; t.neck = 0.08;
+      t.shF = 2.9;  t.elF = 0.06;
+      t.shB = 2.75; t.elB = 0.12;
+      t.hipF = 0.35; t.kneeF = -0.75;
+      t.hipB = -0.2; t.kneeB = -0.55;
+    } else if (this.crouch) {
+      // 骑士跪:前腿踩地支撑(大腿抬平、小腿竖直),后腿膝跪地、小腿反折贴地;
+      // 手臂不覆盖 —— 照常持枪/瞄准(用户指定:只改腿部)
+      const br = Math.sin(this.t * 2.2) * 0.02;
+      t.torso = -0.04 + br; t.neck = 0.1;
+      t.hipF = 1.5;  t.kneeF = -1.45;
+      t.hipB = -0.5; t.kneeB = -2.25;
     } else if (!this.grounded) {
       if (this.fallVy > 0.5) { // 上升:收腿举臂
         t.hipF = 0.55; t.kneeF = -1.15;
@@ -454,7 +612,7 @@ export class Player {
     }
 
     // 空中开火同样举枪瞄准
-    if (input.fire && !this.prone && this.grounded === false) { t.shF = 1.48; t.elF = 0.1; }
+    if (input.fire && !this.crouch && this.grounded === false) { t.shF = 1.48; t.elF = 0.1; }
 
     // 举盾:副手(远臂)前举托盾
     if (this.shield) { t.shB = 1.15; t.elB = 0.3; }
@@ -491,7 +649,8 @@ export class Player {
     this.coyote = this.grounded ? 0.1 : Math.max(0, this.coyote - dt);
     this.jumpBuf = input.jumpPressed ? 0.12 : Math.max(0, this.jumpBuf - dt);
 
-    this.prone = input.down && this.grounded;
+    this.crouch = input.down && this.grounded;
+    if (this.crouch !== this.crouched) this.applyCrouch(this.crouch);
     const sniper = this.weapon === 'rifle' && this.gunDef.stats?.mode === 'hitscan';
     this.sniperStance = sniper;
     let dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -530,7 +689,7 @@ export class Player {
       this.gunAnchor = { x: hand.x, y: hand.y };
     }
 
-    const speed = (this.prone ? 1.9 : 4.6) * (1 + (this.moveSpeedPct || 0) / 100);
+    const speed = (this.crouch ? 1.6 : 4.6) * (1 + (this.moveSpeedPct || 0) / 100);
     let targetVx = dir * speed;
     // 移动方向上有墙就不再硬塞速度,否则会和碰撞求解器打架,把角色弹飞
     if (dir !== 0) {
@@ -559,7 +718,7 @@ export class Player {
     }
     if (this.grounded) this.fallVy = 0; else this.fallVy = Math.min(this.fallVy, vy);
 
-    if (this.jumpBuf > 0 && this.coyote > 0 && !this.prone && !sniper) {
+    if (this.jumpBuf > 0 && this.coyote > 0 && !this.crouch && !sniper) {
       // 全身一起起跳(四肢通过关节拖拽会偷走躯干动量,单给躯干加速度跳不高)
       for (const b of this.allBodies) b.setLinearVelocity(Vec2(b.getLinearVelocity().x, 13));
       this.jumpBuf = 0; this.coyote = 0; this.grounded = false;
@@ -568,7 +727,7 @@ export class Player {
 
     // 跑步相位推进 + 脚步尘土
     const sp = Math.abs(torso.getLinearVelocity().x);
-    if (this.grounded && !this.prone && sp > 0.5) {
+    if (this.grounded && !this.crouch && sp > 0.5) {
       const prev = this.phase;
       this.phase += dt * (sp * 3.0 + 2.0);
       if (Math.floor(prev / Math.PI) !== Math.floor(this.phase / Math.PI)) {
@@ -691,7 +850,7 @@ export class Player {
     this.servo(this.j.hipB, fc * cur.hipB, kp + 4, maxW);
     this.servo(this.j.kneeB, fc * cur.kneeB, kp, maxW);
 
-    // 躯干直立 PD(趴下时目标角为躺倒角)。
+    // 躯干直立 PD(下蹲时目标角带一点前倾)。
     // 全身胶囊的转动惯量比小方块大一个量级,参数相应加大
     const errA = fc * cur.torso - torso.getAngle();
     const w = torso.getAngularVelocity();
@@ -703,14 +862,40 @@ export class Player {
   updateCommon(dt) {
     const p = this.torso.getPosition();
     if (p.y < -8) { this.events.push({ type: 'fell' }); return; }
-    // 保险丝:躯干中心正常最低也躺在地表 0.15m 之上,
-    // 若贴近/低于地表,说明卡进了地形里,持续 0.5s 自动复位
-    const surf = groundYAt(p.x, p.y + 0.5);
-    if (p.y < surf + 0.04) {
+    // 卡地保险丝:从躯干中心正下方 ray 0.5m,命中距离 < 0.1 = 真卡进地形,0.5s 复位。
+    // 旧实现 groundYAt(x, p.y+0.5) 会把"头顶 0.8m 内的台阶/平台顶"误当地表 ——
+    // 从矮台阶旁走过(x≈26 顶面 1.0 的地块)就被判沉地,0.5s 后莫名传送回重生点(用户实测毙过)
+    let hitD = Infinity;
+    const self = this.selfSet || (this.selfSet = new Set(this.allBodies));
+    this.world.rayCast(p, Vec2(p.x, p.y - 0.5), (fixture, _pt, _n, fr) => {
+      if (self.has(fixture.getBody())) return -1;
+      hitD = Math.min(hitD, fr * 0.5);
+      return fr;
+    });
+    if (hitD < 0.1) {
       this.sunkT = (this.sunkT || 0) + dt;
       if (this.sunkT > 0.5) { this.sunkT = 0; this.events.push({ type: 'fell' }); }
     } else {
       this.sunkT = 0;
+    }
+    // 阵亡尸体静置休眠:残肢在 tile 接缝上会被静态块夹住永抖,速度近零持续 0.45s
+    // (或死亡后 1.4s 兜底)→ 全身 setActive(false) 定格;R 键测试布娃娃不受影响
+    if (this.ragdoll && this.deadCorpse && !this.settled) {
+      this.deadT = (this.deadT || 0) + dt;
+      let still = true;
+      for (const b of this.allBodies) {
+        const v = b.getLinearVelocity();
+        if (v.x * v.x + v.y * v.y > 0.09 || Math.abs(b.getAngularVelocity()) > 0.35) { still = false; break; }
+      }
+      this.restT = still ? (this.restT || 0) + dt : 0;
+      if (this.restT > 0.45 || (this.deadT || 0) > 1.4) {
+        this.settled = true;
+        for (const b of this.allBodies) {
+          b.setLinearVelocity(Vec2(0, 0));
+          b.setAngularVelocity(0);
+          b.setActive(false);
+        }
+      }
     }
   }
 
