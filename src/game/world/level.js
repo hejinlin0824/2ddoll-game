@@ -245,10 +245,10 @@ const bgImgs = {};
 const BG_SETS = {
   wild: { dir: 'bg', scale: 4.5, files: { sky: 'mountains-bg.png', far: 'mountains-far.png', near: 'mountains-near.png', trees: 'trees.png', fore: 'foreground-trees.png' } },
   roof: { dir: 'bg', scale: 4.5, files: { sky: 'mountains-bg.png', far: 'mountains-far.png', near: 'mountains-near.png', trees: 'trees.png', fore: 'foreground-trees.png' } },
-  // 港区(city 包):fore 槽绝不能用 fore.png —— 那是一张整屏不透明的完整背景图
-  // (天空+城市全占满,逐 band alpha 全 255),画在玩家后面当墙纸、画在玩家前面
-  // 就是把玩家和敌人整个盖死("看不到玩家"的图层 bug 根因);前景剪影用 front.png
-  room: { dir: 'bg/city', scale: 2.22, foreAlpha: 0.5, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png', fore: 'front.png' } },
+  // 港区(city 包):不设 fore 槽 —— 任何画在玩家之后的前景素材都会糊到人身上
+  // (用户两次实测毙掉:整屏的 fore.png 直接盖死全场;换底部剪影 front.png 半透明仍挡腿)。
+  // front.png 只走 trees 槽(画在玩家后面),港区等于没有前景层 —— 宁缺毋滥
+  room: { dir: 'bg/city', scale: 2.22, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png' } },
   desert: { dir: 'bg/desert', scale: 2.0, files: { sky: 'clouds.png', far: 'far.png', near: 'dunes.png', trees: 'bush.png', fore: 'bush.png' } },
   tropic: { dir: 'bg/tropic', scale: 2.0, files: { sky: 'sky.png', far: 'ridge.png', near: 'palms.png', trees: 'grass.png', fore: 'grass.png' } },
 };

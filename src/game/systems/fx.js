@@ -114,7 +114,7 @@ export function explosion(x, y, big = false) {
       color: i % 3 ? '#3a3a42' : '#54545e', grav: -0.5,
     });
   }
-  addDecal('scorch', x, groundYAt(x, y) + 0.02, 0, R * 0.55, 4.5);
+  // 地面焦痕(scorch decal)按用户要求彻底移除:短寿命版仍被感知为"赖着不走的黑圈"
 }
 
 // ---- 断口喷血发射器:挂在刚体局部点上,随尸体姿态/位移实时喷 ----
