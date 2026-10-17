@@ -108,11 +108,15 @@ const GARRISONS = {
   ],
 };
 const _scene = localStorage.getItem('contra-scene') || 'wild';
-for (const g of (GARRISONS[_scene] || GARRISONS.wild)) {
-  enemies.push(new Dummy(world, { x: g.x, y: g.y }, {
-    behavior: g.behavior, min: g.min, max: g.max,
-    quality: 'normal', armorMul: 0, respawn: false,
-  }));
+// custom 自建关卡不布守军:守军坐标是按五张内置地形逐点校的,回退 wild 坐标会把
+// 假人空投到自定义地图的空中/墙里;自建关从第一波运兵机开始打,节奏更干净
+if (_scene !== 'custom') {
+  for (const g of (GARRISONS[_scene] || GARRISONS.wild)) {
+    enemies.push(new Dummy(world, { x: g.x, y: g.y }, {
+      behavior: g.behavior, min: g.min, max: g.max,
+      quality: 'normal', armorMul: 0, respawn: false,
+    }));
+  }
 }
 const waves = new WaveDirector(world, {
   onEvent: (ev) => {

@@ -8,6 +8,7 @@
 import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { LEVEL, groundYAt, CAT } from '../world/level.js';
 import { burst, debris, particles } from '../systems/fx.js';
+import { hasLOS } from '../systems/combat.js';
 import { Dummy } from './enemies.js';
 import { beep, noiseBurst } from '../systems/audio.js';
 
@@ -28,27 +29,7 @@ const GUNSHIP_ROCKET = {
   sfx: { f0: 110, f1: 35, dur: 0.3, vol: 0.12, noise: 0.18, cutoff: 480 },
 };
 
-// 视线检测(slab 法,与 Dummy.hasLOS 同款):无视线不开火,不往山体糊火箭
-function hasLOS(x0, y0, x1, y1) {
-  const dx = x1 - x0, dy = y1 - y0;
-  for (const r of LEVEL.rects) {
-    let tmin = 0, tmax = Infinity, blocked = true;
-    const axes = [[x0, dx, r.x, r.w / 2], [y0, dy, r.y, r.h / 2]];
-    for (const [o, d, cc, h] of axes) {
-      if (Math.abs(d) < 1e-9) {
-        if (Math.abs(o - cc) > h) { blocked = false; break; }
-      } else {
-        let t1 = (cc - h - o) / d, t2 = (cc + h - o) / d;
-        if (t1 > t2) { const tt = t1; t1 = t2; t2 = tt; }
-        tmin = Math.max(tmin, t1);
-        tmax = Math.min(tmax, t2);
-        if (tmin > tmax) { blocked = false; break; }
-      }
-    }
-    if (blocked && tmin > 0.02 && tmin < 1) return false;
-  }
-  return true;
-}
+// 视线检测统一引 combat.js 的 hasLOS(全项目唯一实现,别再拷贝第三份)
 
 export class Gunship {
   // opts: { enemies(注册表引用,放无人机用), hp }
@@ -75,6 +56,7 @@ export class Gunship {
     this.droneT = 3.5;        // 入场 3.5s 后开始放无人机
     this.thunkT = 0;          // 旋翼拍击声节拍
     this.smokeT = 0;
+    this.crashStillT = 0;     // 坠落中近静止计时(橇着地撑住机身的兜底爆)
     this.rotorSpd = -26;
     this.face = -1;           // 机头朝向:1 = 右,-1 = 左(从右缘入场,先朝玩家)
     this.pushX = 0; this.pushY = 0; // 子弹击退的速度偏移(速度控制会覆盖,单独积累衰减)
@@ -223,14 +205,21 @@ export class Gunship {
         if (Math.random() < 0.5) particles.push({ x: ex, y: ey, vx: (Math.random() - 0.5) * 2, vy: 1.5, life: 0.3, size: 3, color: '#ff8030', grav: 0 });
       }
       const gy = groundYAt(fp.x, fp.y);
-      if (fp.y - 0.45 <= gy) {
+      // 近静止兜底:起落橇(+0.14 支柱)先着地会把机身撑在 gy+0.91m,
+      // "机身离地 0.45m"条件永远不满足 —— 残骸停在橇上,旋翼电机一直转、
+      // 机身被反扭矩顶着永抖(P1 实测复现)。坠落中连续 0.5s 速度≈0 视为坠地,照爆
+      const fv = f.getLinearVelocity();
+      this.crashStillT = Math.hypot(fv.x, fv.y) < 0.6 ? this.crashStillT + dt : 0;
+      if (fp.y - 0.45 <= gy || this.crashStillT > 0.5) {
         // 坠地爆炸:大 blast(范围伤害)+ 烧痕 + 残骸飞溅,然后销毁刚体(防泄漏)
-        this.events.push({ type: 'blast', x: fp.x, y: gy + 0.4, dmg: 13, r: 3.6, big: true });
+        // 爆心贴机身(橇停时机身悬在 gy+0.91,不能还按 gy+0.4 埋进地里炸)
+        const by = Math.max(gy + 0.45, Math.min(fp.y, gy + 0.8));
+        this.events.push({ type: 'blast', x: fp.x, y: by, dmg: 13, r: 3.6, big: true });
         for (let i = 0; i < 10; i++) {
           debris.push({
             type: 'shard', color: i % 3 ? '#3c4430' : '#5a6446',
             w: 3 + Math.random() * 5, h: 2 + Math.random() * 4,
-            x: fp.x, y: gy + 0.3, vx: (Math.random() - 0.5) * 10, vy: 3 + Math.random() * 6,
+            x: fp.x, y: by - 0.1, vx: (Math.random() - 0.5) * 10, vy: 3 + Math.random() * 6,
             va: (Math.random() - 0.5) * 18, angle: Math.random() * 3, life: 1.4, max: 1.4,
           });
         }
@@ -541,13 +530,12 @@ export class TransportHeli {
         });
         this.enemies.push(d);
       }
-      // 货卸完且绳上没人了 → 收绳离场
-      const sliding = this.enemies.some((e) => e.roped);
+      // 货卸完且绳上没有活人(死尸已脱绳坠地,不算占绳)→ 收绳离场
+      const sliding = this.enemies.some((e) => e.roped && !e.destroyed);
       if (this.deployed >= this.payload && !sliding && this.dropT <= -0.6) {
         this.state = 'out';
         this.face = 1;
       }
-      if (this.dropT > -10) this.dropT -= 0; // 保持数值有限
     } else {
       this.x += 16 * dt;
       this.y += 1.2 * dt;

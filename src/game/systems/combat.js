@@ -100,6 +100,18 @@ export function castRay(x, y, dx, dy, range) {
   return Math.max(0, best);
 }
 
+// 视线检测:线段是否被任意地形块挡住(slab 法复用 rayAABB)。
+// 全项目唯一一份实现 —— enemies.js 的方法版 / airunit.js 的函数版都改引这里,
+// 三份拷贝改一处忘两处的教训已经吃过(坑册:同逻辑多处拷贝)
+export function hasLOS(x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  for (const r of LEVEL.rects) {
+    const t = rayAABB(x0, y0, dx, dy, r);
+    if (t > 0.02 && t < 1) return false; // 交点落在线段内 = 被挡
+  }
+  return true;
+}
+
 // 惊动范围内的敌人(枪声/惨叫传唤):打远处的兵,他一队的都会动起来
 export function alertEnemiesNear(enemies, pos, r) {
   for (const e of enemies) {
@@ -120,7 +132,8 @@ function airHitFeedback(C, res, x, y, dir, dmg) {
 
 // 命中反馈(弹丸与狙击 hitscan 共用一条管线):
 // 材质分化特效 + 受击飘字 + 碎甲飞 debris + 吸血结算。dmg = 已乘部位倍率的最终伤害
-function hitFeedback(C, e, zone, res, x, y, dir, dmg) {  const player = C.player, pstate = C.pstate;
+function hitFeedback(C, e, zone, res, x, y, dir, dmg) {
+  const player = C.player, pstate = C.pstate;
   // 命中分化:甲上火花+金属叮(闷),肉上血雾(脆)—— 反馈通道按材质分层
   if (res.absorbed) {
     burst(x, y, 5, '#ffe9a8', 3.6);
@@ -237,20 +250,26 @@ export function stepBullets(dt, C) {
       }
       if (blocked) { bullets.splice(i, 1); continue; }
     }
-    // 尸体阻挡:双方子弹都会被尸体拦下并推动尸体(直到自然消失)
-    for (const e of enemies) {
-      if (e.alive) continue;
-      const dz = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
-      if (dz) {
-        e.corpseHit?.({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }, b.faction === 'player' ? 2.2 : 1.2);
-        burst(b.x, b.y, 3, '#c9563c', 2.5);
-        bullets.splice(i, 1); consumed = true; break;
-      }
-    }
-    if (consumed) continue;
-    if (b.faction === 'player') {
-      // 玩家子弹 vs 敌人部位(手臂不判定,子弹穿过)
+    // 尸体阻挡:只挡敌方子弹(尸体=玩家的战术掩体,趣味保留);
+    // 玩家子弹直接穿过 —— 躺地的尸体看着扁,但判定盒仍占 1m+,挡自己子弹
+    // 就是"明明没有东西却打中了什么"的空气墙(用户实测毙过)
+    if (b.faction !== 'player') {
       for (const e of enemies) {
+        if (e.alive) continue;
+        const dz = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
+        if (dz) {
+          e.corpseHit?.({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }, 1.2);
+          burst(b.x, b.y, 3, '#c9563c', 2.5);
+          bullets.splice(i, 1); consumed = true; break;
+        }
+      }
+      if (consumed) continue;
+    }
+    if (b.faction === 'player') {
+      // 玩家子弹 vs 敌人部位(手臂不判定,子弹穿过;尸体也不判定 —— 否则 hit 返回
+      // null 却照样消耗子弹+出假飘字,还是空气墙)
+      for (const e of enemies) {
+        if (!e.alive) continue;
         const zone = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
         if (!zone) continue;
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;
@@ -261,8 +280,8 @@ export function stepBullets(dt, C) {
         else hitFeedback(C, e, zone, res, b.x, b.y, bdir, dmg);     // 反馈与狙击共用一条管线
         bullets.splice(i, 1); consumed = true; break;
       }
-    } else {
-      // 敌方子弹 vs 玩家(有护甲先扣耐久,归零击飞/碎裂+白闪重影;无甲按部位倍率扣血)
+    } else if (!player.ragdoll) {
+      // 敌方子弹 vs 玩家(已倒地的尸体不挡子弹,穿过打身后;有护甲先扣耐久,归零击飞/碎裂+白闪重影;无甲按部位倍率扣血)
       const zone = playerZoneAt(player, b.x, b.y) || playerZoneAt(player, midX, midY);
       if (zone) {
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;

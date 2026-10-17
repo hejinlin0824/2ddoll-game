@@ -11,11 +11,12 @@ export const LEVEL = {
 };
 
 // ---- 每关地形布局:主地表(90m)+ 各自的立体结构 ----
-const G = { x: 33, y: -1.5, w: 90, h: 3, type: 'ground', destructible: false }; // 共用主地表
+// 每关的 G 各自展开成独立对象(共享同一引用的话,一处原地改字段五关全被污染)
+const ground90 = () => ({ x: 33, y: -1.5, w: 90, h: 3, type: 'ground', destructible: false }); // 共用主地表
 export const LAYOUTS = {
   // 野外·月夜:开局制空台 + 中路台阶掩体 + 右缘投放场断崖
   wild: [
-    G,
+    ground90(),
     { x: 1.8, y: 2.1, w: 3.2, h: 0.5, type: 'plat' },
     { x: 7, y: 2.4, w: 3.6, h: 0.5, type: 'plat' },
     { x: 13.5, y: 3.8, w: 3.2, h: 0.5, type: 'plat' },
@@ -32,7 +33,7 @@ export const LAYOUTS = {
   ],
   // 屋顶·黎明:开阔长视线,双层高楼台塔(狙击对射),掩体极少 —— 走位就是命
   roof: [
-    G,
+    ground90(),
     { x: 4, y: 3.2, w: 5, h: 0.5, type: 'plat' },
     { x: 12, y: 4.6, w: 4.4, h: 0.5, type: 'plat' },
     { x: 19, y: 2.6, w: 3, h: 0.5, type: 'plat' },
@@ -45,7 +46,7 @@ export const LAYOUTS = {
   ],
   // 港区·仓库:巷战 —— 掩体群密布(矮墙卡视线),平台少而碎,中近距离遭遇
   room: [
-    G,
+    ground90(),
     { x: 6, y: 0.4, w: 2.4, h: 0.8, type: 'ground' },
     { x: 11, y: 2.4, w: 3, h: 0.5, type: 'plat' },
     { x: 16.5, y: 0.35, w: 2, h: 0.7, type: 'ground' },
@@ -62,7 +63,7 @@ export const LAYOUTS = {
   ],
   // 沙丘·正午:起伏沙脊(宽矮坡)+ 稀疏高岩 —— 人海冲锋,几乎无遮蔽
   desert: [
-    G,
+    ground90(),
     { x: 8, y: 1.1, w: 6, h: 1.2, type: 'ground' },
     { x: 18, y: 2.2, w: 5, h: 1.4, type: 'ground' },
     { x: 28, y: 0.8, w: 4, h: 0.8, type: 'ground' },
@@ -74,7 +75,7 @@ export const LAYOUTS = {
   ],
   // 海岛·澜:棕榈跳台 + 浅滩石 —— 跳跃节奏关,平台间要跳
   tropic: [
-    G,
+    ground90(),
     { x: 5.5, y: 1.9, w: 2.6, h: 0.5, type: 'plat' },
     { x: 10.5, y: 3.1, w: 2.4, h: 0.5, type: 'plat' },
     { x: 15.5, y: 2.2, w: 2.6, h: 0.5, type: 'plat' },
@@ -239,10 +240,15 @@ export function setSceneTheme(id) {
 const bgImgs = {};
 // 每关一套图层:dir(公共目录)+ 各槽文件名 + layerScale(素材层高 → 全屏的放大倍数;
 // 160px 层 = 4.5,360px 层 = 2.0,324px 层 = 2.22)
+// foreAlpha = 前景剪影层透明度:前景画在玩家之后,素材内容越"重"就要越透 ——
+// city 的 front.png 内容密(底部 30% 高度都是建筑街景),0.85 会糊住玩家膝盖以下
 const BG_SETS = {
   wild: { dir: 'bg', scale: 4.5, files: { sky: 'mountains-bg.png', far: 'mountains-far.png', near: 'mountains-near.png', trees: 'trees.png', fore: 'foreground-trees.png' } },
   roof: { dir: 'bg', scale: 4.5, files: { sky: 'mountains-bg.png', far: 'mountains-far.png', near: 'mountains-near.png', trees: 'trees.png', fore: 'foreground-trees.png' } },
-  room: { dir: 'bg/city', scale: 2.22, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png', fore: 'fore.png' } },
+  // 港区(city 包):fore 槽绝不能用 fore.png —— 那是一张整屏不透明的完整背景图
+  // (天空+城市全占满,逐 band alpha 全 255),画在玩家后面当墙纸、画在玩家前面
+  // 就是把玩家和敌人整个盖死("看不到玩家"的图层 bug 根因);前景剪影用 front.png
+  room: { dir: 'bg/city', scale: 2.22, foreAlpha: 0.5, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png', fore: 'front.png' } },
   desert: { dir: 'bg/desert', scale: 2.0, files: { sky: 'clouds.png', far: 'far.png', near: 'dunes.png', trees: 'bush.png', fore: 'bush.png' } },
   tropic: { dir: 'bg/tropic', scale: 2.0, files: { sky: 'sky.png', far: 'ridge.png', near: 'palms.png', trees: 'grass.png', fore: 'grass.png' } },
 };
@@ -337,9 +343,9 @@ export function drawParallax(ctx, W, H, camX, ppm) {
   ctx.fillRect(0, 0, W, H);
 }
 
-// 前景树剪影(世界绘制完成后调用,增加纵深)
+// 前景树剪影(世界绘制完成后调用,增加纵深);透明度随素材"重量"每关可调(BG_SETS.foreAlpha)
 export function drawForeground(ctx, W, H, camX) {
-  drawTiled(ctx, 'fore', W, H, camX * PPM_FG, 0.85);
+  drawTiled(ctx, 'fore', W, H, camX * PPM_FG, curSet.foreAlpha ?? 0.85);
 }
 const PPM_FG = 52 * 1.15;
 

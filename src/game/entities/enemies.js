@@ -7,6 +7,7 @@ import { Vec2 } from 'planck';
 import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes } from '../domain/affixes.js';
 import { LEVEL, groundYAt } from '../world/level.js';
+import { hasLOS as segHasLOS } from '../systems/combat.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -96,6 +97,9 @@ export class Dummy {
   get radius() { return 0.4; }
 
   zoneAt(px, py) {
+    // 已销毁(刚体回收):立刻放行 —— planck 销毁后 getPosition 仍返回旧坐标,
+    // 不挡的话尸体消失后那里还立着一堵看不见的判定盒
+    if (this.destroyed) return null;
     const t = this.p.torso.getPosition();
     // 世界 → 躯干局部坐标(随躯干旋转):布娃娃倾斜/倒地时部位判定跟着转,不再硬套固定盒
     const a = this.p.torso.getAngle();
@@ -109,26 +113,9 @@ export class Dummy {
     return null;
   }
 
-  // 视线检测(slab 法射线 vs 地形盒):无视线不开枪 —— 以前会朝着山体傻射
+  // 视线检测统一引 combat.js 的共享实现(全项目唯一一份)
   hasLOS(x0, y0, x1, y1) {
-    const dx = x1 - x0, dy = y1 - y0;
-    for (const r of LEVEL.rects) {
-      let tmin = 0, tmax = Infinity, blocked = true;
-      const axes = [[x0, dx, r.x, r.w / 2], [y0, dy, r.y, r.h / 2]];
-      for (const [o, d, cc, h] of axes) {
-        if (Math.abs(d) < 1e-9) {
-          if (Math.abs(o - cc) > h) { blocked = false; break; }
-        } else {
-          let t1 = (cc - h - o) / d, t2 = (cc + h - o) / d;
-          if (t1 > t2) { const tt = t1; t1 = t2; t2 = tt; }
-          tmin = Math.max(tmin, t1);
-          tmax = Math.min(tmax, t2);
-          if (tmin > tmax) { blocked = false; break; }
-        }
-      }
-      if (blocked && tmin > 0.02 && tmin < 1) return false; // 交点落在线段内 = 被挡
-    }
-    return true;
+    return segHasLOS(x0, y0, x1, y1);
   }
 
   // 击中部位:有甲先扣耐久(承伤=伤害×破甲倍率),归零报碎;无甲扣血。dir = 子弹方向(死亡布娃娃受力)
@@ -186,7 +173,11 @@ export class Dummy {
   // (武器词条/头盔/护甲,品质=敌人波次品质) —— 对标暗黑的"搜尸体"战利品交互
   die(dir, zone) {
     this.alive = false;
+    // 绳降中被击毙:立刻脱绳(布娃娃自由坠地)—— 否则死尸被绳钉着匀速下滑,
+    // 姿势还是活人抓绳姿势,且运输机的"绳上还有人"判定被死尸永久占住
+    this.roped = false;
     this.respawnT = this.respawn ? 3.5 : 0;
+    this.p.roping = false;
     this.p.setRagdoll(true);
     this.p.deathImpulse(dir, zone); // 部位化死亡动作:不同部位中弹倒地姿势不同
     this.loot = {
@@ -260,26 +251,7 @@ export class Dummy {
         this.p.torso.setLinearVelocity(Vec2(clamp(v.x, -2, 2), v.y));
       }
     }
-    // 绳降中:钉在绳上匀速下滑(水平速度清零),姿态=双手举过头抓绳;
-    // 接地(躯干低于地表 1.05m)转为正常 AI 并警觉
-    if (this.roped) {
-      this.ai.left = this.ai.right = this.ai.down = this.ai.fire = false;
-      this.ai.jumpPressed = false;
-      this.ai.aim = null;
-      this.p.roping = true;
-      this.p.update(dt, this.ai);
-      const tpR = this.p.torso.getPosition();
-      const vR = this.p.torso.getLinearVelocity();
-      this.p.torso.setLinearVelocity(Vec2(0, Math.min(vR.y, -3.2)));
-      if (tpR.y <= groundYAt(tpR.x, tpR.y) + 1.05) {
-        this.roped = false;
-        this.p.roping = false;
-        this.alert = true;
-        this.p.torso.setLinearVelocity(Vec2(0, -2));
-      }
-      for (const ev of this.p.events) this.events.push(ev);
-      return;
-    }
+    // 死亡优先于一切:死尸不进绳降/不进 AI(die() 已清 roped,这里只是防御顺序)
     if (!this.alive) {
       if (this.respawn) {
         this.respawnT -= dt;
@@ -297,9 +269,9 @@ export class Dummy {
       }
       // 波次模式:尸体保留 20 秒供搜索(站尸上 Tab),之后销毁刚体并标记,由 main 移出注册表
       this.deadT = (this.deadT || 0) + dt;
-      // 静置锁定:全身速度持续 0.7s ≈ 0(或死后 5s 硬性兜底)→ 全部刚体 setActive(false)
+      // 静置锁定:全身速度持续 0.45s ≈ 0(或死后 1.4s 硬性兜底)→ 全部刚体 setActive(false)
       // 永久定格。残肢落在平台 tile 接缝上会被相邻静态块夹住永抖,Box2D 自带休眠压不住,
-      // 显式停用才是根治;锁定后 zoneAt 照常(子弹仍会被尸体挡下),只是不再受力位移
+      // 显式停用才是根治;锁定后只剩敌方子弹还会被尸体挡下(玩家掩体),不再受力位移
       if (!this.settled) {
         let still = true;
         for (const b of this.p.allBodies) {
@@ -323,6 +295,26 @@ export class Dummy {
       return;
     }
     const ai = this.ai;
+    // 绳降中(活人):钉在绳上匀速下滑(水平速度清零),姿态=双手举过头抓绳;
+    // 接地(躯干低于地表 1.05m)转为正常 AI 并警觉
+    if (this.roped) {
+      ai.left = ai.right = ai.down = ai.fire = false;
+      ai.jumpPressed = false;
+      ai.aim = null;
+      this.p.roping = true;
+      this.p.update(dt, ai);
+      const tpR = this.p.torso.getPosition();
+      const vR = this.p.torso.getLinearVelocity();
+      this.p.torso.setLinearVelocity(Vec2(0, Math.min(vR.y, -3.2)));
+      if (tpR.y <= groundYAt(tpR.x, tpR.y) + 1.05) {
+        this.roped = false;
+        this.p.roping = false;
+        this.alert = true;
+        this.p.torso.setLinearVelocity(Vec2(0, -2));
+      }
+      for (const ev of this.p.events) this.events.push(ev);
+      return;
+    }
     ai.left = ai.right = ai.down = ai.fire = false;
     ai.jumpPressed = false;
     this.flashT = Math.max(0, (this.flashT || 0) - dt);

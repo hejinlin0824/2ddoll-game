@@ -307,10 +307,13 @@ export class Player {
 
   // 下蹲(骑士跪)↔ 站立:换躯干碰撞体(全身高胶囊 half 0.62 ↔ 跪姿矮胶囊 0.34)。
   // 蹲下 = 换矮胶囊后自然下坠 0.28m 坐进跪姿;起身 = 先把全身整体上移 0.28 再换高胶囊
-  // (坑 13:必须整体平移,只挪躯干会被关节拽飞;不先抬高则高胶囊插地被求解器弹飞)
+  // (坑 13:必须整体平移,只挪躯干会被关节拽飞;不先抬高则高胶囊插地被求解器弹飞)。
+  // 空中同样成立:蹲姿起跳/被击退离地后 crouch 自动变 false,起身必须照抬 ——
+  // 原来带 grounded 条件,空中起身高胶囊下半截插进地里,落地瞬间被弹飞
   applyCrouch(on) {
+    if (this.crouched === on) return;
     this.crouched = on;
-    if (!on && this.grounded) {
+    if (!on) {
       for (const b of this.allBodies) {
         const p = b.getPosition();
         b.setTransform(Vec2(p.x, p.y + 0.28), b.getAngle());

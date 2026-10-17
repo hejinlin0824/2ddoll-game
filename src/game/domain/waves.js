@@ -36,6 +36,9 @@ export class WaveDirector {
     this.spawnT = 0;
     this.restT = 1.6;   // 开局短暂休整后进第一波
     this.done = false;  // 15 波打完
+    // 关卡规则构造时读一次(场景切换必走 location.reload,不存在换关不重读的问题;
+    // 以前 update/start 每帧读 localStorage,同步 IO 白扫 60 次/秒)
+    this.rule = SCENE_RULES[localStorage.getItem('contra-scene') || 'wild'] || SCENE_RULES.wild;
   }
 
   // 每帧:出怪队列 + 波次推进(enemies = 主注册表,死人由清理逻辑移除)
@@ -45,7 +48,7 @@ export class WaveDirector {
     const capN = enemies.filter((e) => e.alive && !e.airUnit).length; // 出怪上限:空中单位不占地面名额
 
     if (this.heli && this.heli.destroyed) this.heli = null;
-    const rule = SCENE_RULES[localStorage.getItem('contra-scene') || 'wild'] || SCENE_RULES.wild;
+    const rule = this.rule;
 
     if (this.queue > 0) {
       // 出怪 = 运输直升机投送:一架一批,飞入 → 放绳滑降 → 离场后下一批。
@@ -84,7 +87,8 @@ export class WaveDirector {
       return;
     }
     // 母体机波:节奏随关卡(wild/沙丘 4 波 / 屋顶 3 波 / 港区 6 波)+ 终波必来
-    const every = (SCENE_RULES[localStorage.getItem('contra-scene') || 'wild'] || SCENE_RULES.wild).gunshipEvery;
+    const rule = this.rule;
+    const every = rule.gunshipEvery;
     if (this.wave >= every && this.wave % every === 0 || this.wave === MAX_WAVE) {
       enemies.push(new Gunship(this.world, { x: SPAWN_X + 9, y: 9 }, {
         enemies,
@@ -94,7 +98,6 @@ export class WaveDirector {
       this.spawnT = 2.0; // 让母体机先入场,地面兵随后
       this.onEvent({ type: 'gunship', wave: this.wave });
     } else {
-      const rule = SCENE_RULES[localStorage.getItem('contra-scene') || 'wild'] || SCENE_RULES.wild;
       this.queue = Math.min(rule.cap || 10, 4 + this.wave);
       this.spawnT = 0.4;
     }
