@@ -25,6 +25,8 @@ const BT_DESC = {
 
 let open = false;
 let tab = 'equip';          // 'equip' | 'shop'
+let inventoryFilter = 'all'; // 'all' | 'head' | 'body' | 'gun'
+let inventorySort = 'quality'; // 'quality' | 'name' | 'durability'
 let sel = new Set();        // 突破选择
 let combineMode = false;
 let shopSelId = null;       // 工坊选中物品
@@ -37,7 +39,12 @@ export function bpIsOpen() { return open; }
 
 export function bpToggle() {
   open = !open;
-  if (open) { tab = 'equip'; combineMode = false; sel.clear(); }
+  if (open) {
+    tab = 'equip'; combineMode = false; sel.clear();
+    inventoryFilter = 'all'; inventorySort = 'quality';
+    const search = document.getElementById('bpSearch'); if (search) search.value = '';
+    const sort = document.getElementById('bpSort'); if (sort) sort.value = 'quality';
+  }
   render();
 }
 export function bpClose() { if (open) { open = false; combineMode = false; sel.clear(); render(); } }
@@ -45,14 +52,23 @@ export function bpClose() { if (open) { open = false; combineMode = false; sel.c
 const q = (it) => QUALITY[it.quality] || { color: '#aab0b8', label: it.quality };
 const durPct = (it) => Math.max(0, Math.min(1, it.maxDur ? it.dur / it.maxDur : 0));
 
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[ch]);
+}
+
 function affixLines(it) {
   return (it.affixes || []).map((a) => {
     const def = AFFIX_BY_ID[a.id];
-    return def ? `<div class="iaff">${def.label} · ${def.fmt(a.v)}</div>` : '';
+    return def
+      ? `<div class="iaff">${escapeHTML(def.label)} · ${escapeHTML(def.fmt(a.v))}</div>`
+      : '';
   }).join('');
 }
 
-// 物品卡内容(equip 页与工坊列表共用);枪词条材料无耐久概念
+// 物品卡内容(equip 页与工坊列表共用);枪词条材料无耐久概念。
+// 主信息单独包裹，操作栏由 .ic-card 放在下一行，避免按钮挤占词条文本宽度。
 function cardHtml(it) {
   const qc = q(it);
   const isGun = it.slot === 'gun';
@@ -60,17 +76,25 @@ function cardHtml(it) {
   const name = isGun
     ? `${it.gunName || '武器'}词条`
     : itemTitle(it.affixes || [], SLABEL[it.slot] || it.slot);
+  const icon = isGun
+    ? '<div class="ic-gun-shape"></div>'
+    : it.slot === 'head'
+      ? '<div class="ic-helm-shape"></div>'
+      : '<div class="ic-vest-shape"></div>';
+  const type = isGun ? 'WEAPON AFFIX' : it.slot === 'head' ? 'HEADGEAR' : 'BODY ARMOR';
+  const sub = isGun
+    ? '材料 · 吸取进主武器'
+    : `${QLABEL[it.quality] || it.quality} · 耐久 ${Math.ceil(it.dur)}/${Math.ceil(it.maxDur)}`;
   return `
-    <div class="ic-icon ${it.slot === 'head' ? 'ic-helm' : 'ic-vest'}" style="border-color:${qc.color}66">
-      ${it.slot === 'head'
-        ? `<div class="ic-helm-shape" style="background:${qc.color}"></div>`
-        : `<div class="ic-vest-shape" style="background:${qc.color}"></div>`}
-    </div>
-    <div class="ic-info">
-      <div class="ic-name" style="color:${qc.color}">${name}</div>
-      ${isGun ? '' : `<div class="ic-dur"><div style="width:${pct * 100}%;background:${pct > 0.3 ? '#7ec97e' : '#e0713c'}"></div></div>`}
-      <div class="ic-sub">${isGun ? '材料 · 吸取进主武器' : `${QLABEL[it.quality]} · 耐久 ${Math.ceil(it.dur)}/${Math.ceil(it.maxDur)}`}${it.equipped ? ' · <span style="color:#ffb84d">已装备</span>' : ''}</div>
-      ${affixLines(it)}
+    <div class="ic-main">
+      <div class="ic-icon ${isGun ? 'ic-gun' : it.slot === 'head' ? 'ic-helm' : 'ic-vest'}" style="--qc:${qc.color};border-color:${qc.color}66">${icon}</div>
+      <div class="ic-info">
+        <div class="ic-type">${type}</div>
+        <div class="ic-name" title="${escapeHTML(name)}" style="color:${qc.color}">${escapeHTML(name)}</div>
+        ${isGun ? '' : `<div class="ic-dur"><div style="width:${pct * 100}%;background:${pct > 0.3 ? '#7ec97e' : '#e0713c'}"></div></div>`}
+        <div class="ic-sub">${escapeHTML(sub)}${it.equipped ? ' · <span class="ic-state">已装备</span>' : ''}</div>
+        ${affixLines(it)}
+      </div>
     </div>`;
 }
 
@@ -84,6 +108,8 @@ function render() {
   document.getElementById('bpCount').textContent = `${invUsedCount()}/${BP_CAP}`;
   document.getElementById('tabEquip').classList.toggle('on', tab === 'equip');
   document.getElementById('tabShop').classList.toggle('on', tab === 'shop');
+  document.getElementById('tabEquip').setAttribute('aria-selected', String(tab === 'equip'));
+  document.getElementById('tabShop').setAttribute('aria-selected', String(tab === 'shop'));
   document.getElementById('pageEquip').style.display = tab === 'equip' ? '' : 'none';
   document.getElementById('pageShop').style.display = tab === 'shop' ? '' : 'none';
   if (tab === 'equip') renderEquip(inv); else renderShop(inv);
@@ -92,7 +118,7 @@ function render() {
 // ---- 装备页 ----
 function renderEquip(inv) {
   const gi = gunInfo();
-  document.getElementById('eqGun1').innerHTML = `<span class="eq-k ${gi.weapon === 'rifle' ? 'on' : ''}">${gi.main}</span><span class="eq-t">主武器</span>`;
+  document.getElementById('eqGun1').innerHTML = `<span class="eq-k ${gi.weapon === 'rifle' ? 'on' : ''}">${escapeHTML(gi.main)}</span><span class="eq-t">主武器</span>`;
   document.getElementById('eqGun2').innerHTML = `<span class="eq-k ${gi.weapon === 'pistol' ? 'on' : ''}">手枪</span><span class="eq-t">副武器</span>`;
 
   for (const slot of ['head', 'body']) {
@@ -117,62 +143,153 @@ function renderEquip(inv) {
     }
   }
 
-  const grids = { head: document.getElementById('bagHead'), body: document.getElementById('bagBody'), gun: document.getElementById('bagGun') };
-  for (const g of Object.values(grids)) g.innerHTML = '';
+  const grids = {
+    head: document.getElementById('bagHead'),
+    body: document.getElementById('bagBody'),
+    gun: document.getElementById('bagGun'),
+  };
+  for (const grid of Object.values(grids)) grid.innerHTML = '';
+
   const bag = inv.items.filter((it) => !it.equipped);
-  let shown = 0;
-  for (const it of bag) {
-    const card = document.createElement('div');
-    card.className = 'ic-card';
-    card.style.setProperty('--qc', q(it).color);
-    card.style.borderColor = q(it).color + '77';
-    // 快捷操作行:穿/吸/分解 —— 拖拽保留,但不再是唯一路径(用户反馈"看不明白"的主因)
-    const canWear = it.slot !== 'gun';
-    const canSuck = !!(it.affixes || []).length && (it.slot === 'gun' || invEquipped(it.slot));
-    card.innerHTML = cardHtml(it) + `
-      <div class="ic-ops">
-        ${canWear ? '<button class="op-wear" title="换上这件,原装备自动回背包">穿</button>' : ''}
-        <button class="op-suck" ${canSuck ? '' : 'disabled'} title="把这件的词条合并进你装备中的${it.slot === 'gun' ? '主武器' : SLABEL[it.slot]},然后这件消失">吸</button>
-        <button class="op-cut" title="分解成金币">♻</button>
-      </div>`;
-    card.querySelector('.op-wear')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      invSetEquipped(it.id, true);
-      toast(`已换上${SLABEL[it.slot] || '装备'},原装备回背包`);
-      onChanged && onChanged();
-      render();
-    });
-    card.querySelector('.op-suck')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const r = invAbsorb(it.id);
-      toast(r.msg);
-      if (r.ok) onChanged && onChanged();
-      render();
-    });
-    const cutBtn = card.querySelector('.op-cut');
-    cutBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      twoStepConfirm(cutBtn, () => {
-        const r = invDecompose(it.id);
-        toast(r.msg);
+  const categoryCounts = {
+    head: bag.filter((it) => it.slot === 'head').length,
+    body: bag.filter((it) => it.slot === 'body').length,
+    gun: bag.filter((it) => it.slot === 'gun').length,
+  };
+  const filterCounts = {
+    all: bag.length,
+    head: categoryCounts.head,
+    body: categoryCounts.body,
+    gun: categoryCounts.gun,
+  };
+  for (const [key, id] of Object.entries({
+    all: 'bpFilterAllCount', head: 'bpFilterHeadCount',
+    body: 'bpFilterBodyCount', gun: 'bpFilterGunCount',
+  })) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = filterCounts[key];
+  }
+  const resultCount = document.getElementById('bpResultCount');
+  const searchInput = document.getElementById('bpSearch');
+  const query = (searchInput?.value || '').trim().toLocaleLowerCase('zh-CN');
+  const qualityRank = { broken: 0, normal: 1, fine: 2, rare: 3, epic: 4, legendary: 5 };
+  const itemName = (it) => it.slot === 'gun'
+    ? `${it.gunName || '武器'}词条`
+    : itemTitle(it.affixes || [], SLABEL[it.slot] || it.slot);
+  const searchableText = (it) => [
+    itemName(it), it.gunName || '', QLABEL[it.quality] || it.quality || '',
+    SLABEL[it.slot] || it.slot || '',
+    ...(it.affixes || []).flatMap((a) => {
+      const def = AFFIX_BY_ID[a.id];
+      return def ? [def.label, def.fmt(a.v)] : [a.id, String(a.v)];
+    }),
+  ].join(' ').toLocaleLowerCase('zh-CN');
+
+  let visibleItems = bag.filter((it) => {
+    const typeMatches = inventoryFilter === 'all' || it.slot === inventoryFilter;
+    const textMatches = !query || searchableText(it).includes(query);
+    return typeMatches && textMatches;
+  });
+  visibleItems.sort((a, b) => {
+    if (inventorySort === 'name') {
+      return itemName(a).localeCompare(itemName(b), 'zh-CN');
+    }
+    if (inventorySort === 'durability') {
+      // 装备耐久从低到高，方便优先找到需要维修的物品；武器词条材料放在最后。
+      if (a.slot === 'gun' && b.slot !== 'gun') return 1;
+      if (b.slot === 'gun' && a.slot !== 'gun') return -1;
+      return durPct(a) - durPct(b);
+    }
+    return (qualityRank[b.quality] ?? -1) - (qualityRank[a.quality] ?? -1)
+      || itemName(a).localeCompare(itemName(b), 'zh-CN');
+  });
+  if (resultCount) resultCount.textContent = String(visibleItems.length);
+
+  document.querySelectorAll('[data-bp-filter]').forEach((button) => {
+    const active = button.dataset.bpFilter === inventoryFilter;
+    button.classList.toggle('on', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  // 只展示确实有匹配物品的分类；搜索结果为空时展示统一空状态，
+  // 避免库存中其他分类残留“该分类暂无符合条件的物资”的占位卡。
+  const visibleBySlot = Object.fromEntries(
+    ['head', 'body', 'gun'].map((slot) => [
+      slot,
+      visibleItems.filter((it) => it.slot === slot),
+    ]),
+  );
+  document.querySelectorAll('.bp-cat-section').forEach((section) => {
+    const category = section.dataset.category;
+    section.hidden = !(visibleBySlot[category]?.length);
+  });
+
+  const emptyResult = document.getElementById('bpNoResults');
+  if (emptyResult) {
+    emptyResult.hidden = visibleItems.length > 0;
+    emptyResult.textContent = bag.length === 0
+      ? '物资仓库暂无库存。搜刮敌人尸体，或前往改装工坊开启补给箱。'
+      : '没有找到符合条件的物资。请尝试其他关键词或筛选条件。';
+  }
+
+  // 分类标题中的数字始终显示该分类的实际库存数，不随搜索结果变化。
+  document.querySelectorAll('#pageEquip .bp-cat').forEach((el, i) => {
+    const key = ['head', 'body', 'gun'][i];
+    const label = ['头盔', '防弹衣', '武器词条'][i];
+    if (key) el.innerHTML = `${label}<span class="bp-cat-count">${categoryCounts[key]}</span>`;
+  });
+
+  for (const slot of ['head', 'body', 'gun']) {
+    const categoryItems = visibleBySlot[slot];
+    if (!categoryItems.length) continue;
+    for (const it of categoryItems) {
+      const card = document.createElement('div');
+      card.className = 'ic-card';
+      card.style.setProperty('--qc', q(it).color);
+      card.style.borderColor = q(it).color + '77';
+      // 快捷操作：穿戴/吸取/分解；拖拽作为另一条操作路径保留。
+      const canWear = it.slot !== 'gun';
+      const canSuck = !!(it.affixes || []).length && (it.slot === 'gun' || invEquipped(it.slot));
+      card.innerHTML = cardHtml(it) + `
+        <div class="ic-ops">
+          ${canWear ? '<button class="op-wear" title="换上这件，原装备自动回背包">穿戴</button>' : ''}
+          <button class="op-suck" ${canSuck ? '' : 'disabled'} title="把这件的词条合并进你装备中的${it.slot === 'gun' ? '主武器' : SLABEL[it.slot]}，然后这件消失">吸取</button>
+          <button class="op-cut" title="分解成金币">分解</button>
+        </div>`;
+      card.querySelector('.op-wear')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        invSetEquipped(it.id, true);
+        toast(`已换上${SLABEL[it.slot] || '装备'}，原装备回背包`);
         onChanged && onChanged();
         render();
       });
-    });
-    // 纯点击(未拖动、没点在按钮上)= 带着这件去工坊精修
-    card.addEventListener('click', (e) => {
-      if (!lastClickWasPlain) return;
-      if (e.target.closest('.ic-ops') || e.target.closest('.ic-drop')) return;
-      tab = 'shop';
-      shopSelId = it.id;
-      render();
-    });
-    wireDrag(card, it, 'bag', () => render());
-    grids[it.slot].appendChild(card);
-    shown++;
-  }
-  if (!shown) {
-    grids.head.innerHTML = '<span class="bag-empty">背包空空 —— 杀敌后站尸上按 Tab 搜刮,或去工坊开箱</span>';
+      card.querySelector('.op-suck')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const r = invAbsorb(it.id);
+        toast(r.msg);
+        if (r.ok) onChanged && onChanged();
+        render();
+      });
+      const cutBtn = card.querySelector('.op-cut');
+      cutBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        twoStepConfirm(cutBtn, () => {
+          const r = invDecompose(it.id);
+          toast(r.msg);
+          onChanged && onChanged();
+          render();
+        });
+      });
+      // 普通点击进入工坊查看详情；快捷按钮操作不会触发跳转。
+      card.addEventListener('click', (e) => {
+        if (!lastClickWasPlain) return;
+        if (e.target.closest('.ic-ops') || e.target.closest('.ic-drop')) return;
+        tab = 'shop';
+        shopSelId = it.id;
+        render();
+      });
+      wireDrag(card, it, 'bag', () => render());
+      grids[slot].appendChild(card);
+    }
   }
 }
 
@@ -424,6 +541,17 @@ export function bpWire() {
   document.getElementById('tabEquip').onclick = () => { tab = 'equip'; render(); };
   document.getElementById('tabShop').onclick = () => { tab = 'shop'; render(); };
   document.getElementById('bpCloseBtn').onclick = () => bpClose();
+  document.getElementById('bpSearch')?.addEventListener('input', () => render());
+  document.getElementById('bpSort')?.addEventListener('change', (e) => {
+    inventorySort = e.target.value || 'quality';
+    render();
+  });
+  document.querySelectorAll('[data-bp-filter]').forEach((button) => {
+    button.addEventListener('click', () => {
+      inventoryFilter = button.dataset.bpFilter || 'all';
+      render();
+    });
+  });
   // Esc 归背包自己处理:本监听器先于 input.js 的暂停键注册,必须拦断,
   // 否则"关背包"之后 input.js 又看到背包已关、把同一次 Esc 当暂停键弹主菜单(双触发)
   window.addEventListener('keydown', (e) => {
@@ -501,3 +629,5 @@ function playBoxAnim(item, box) {
     root.remove();
   };
 }
+
+

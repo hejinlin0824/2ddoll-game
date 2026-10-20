@@ -1,8 +1,9 @@
 // 魂斗罗风格 2D 布娃娃射击 —— 主循环
 import { World, Vec2 } from 'planck';
+import { W, H, PPM, STEP } from './core/config.js';
 import { LEVEL, buildLevel, groundYAt, drawSky, drawParallax, drawTerrain, drawForeground } from './world/level.js';
 import { Player } from './entities/player.js';
-import { loadSavedGun, EQUIP_PRESETS, QUALITY } from './domain/gunPresets.js';
+import { loadSavedGun, loadEquip, QUALITY } from './domain/gunPresets.js';
 import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID, loadGunAffixes } from './domain/affixes.js';
 import { WeaponWheel } from './ui/wheel.js';
 import { Dummy } from './entities/enemies.js';
@@ -27,9 +28,6 @@ if (document.fonts?.load) {
     .forEach((f) => document.fonts.load(f).catch(() => {}));
 }
 
-const W = 1280, H = 720;
-const PPM = 52;          // 像素/米
-const STEP = 1 / 60;
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -123,7 +121,10 @@ const waves = new WaveDirector(world, {
   onEvent: (ev) => {
     const p = player.torso.getPosition();
     if (ev.type === 'wave') {
-      floaters.push({ x: p.x, y: p.y + 2.1, vy: 1.1, age: 0, text: `—— 第 ${ev.wave} 波 · ${ev.count} 人 ——`, color: '#ffb14a', size: 24, bold: true, font: 'hy', life: 1.6, max: 1.6 });
+      const phaseLabel = ev.phase === 'air-assault' ? '空地联合攻势'
+        : ev.phase === 'surge' ? '增援潮'
+          : '标准推进';
+      floaters.push({ x: p.x, y: p.y + 2.1, vy: 1.1, age: 0, text: `—— 第 ${ev.wave} 波 · ${phaseLabel} · ${ev.count} 人 ——`, color: ev.phase === 'surge' ? '#ff9152' : '#ffb14a', size: 24, bold: true, font: 'hy', life: 1.8, max: 1.8 });
       beep(330, 660, 0.18, 'square', 0.07);
     } else if (ev.type === 'gunship') {
       floaters.push({ x: p.x, y: p.y + 2.6, vy: 0.9, age: 0, text: '⚠ 武装直升机来袭 ⚠', color: '#ff5b4a', size: 30, bold: true, font: 'hy', life: 2.4, max: 2.4 });
@@ -139,24 +140,38 @@ const waves = new WaveDirector(world, {
 function resetPlayer() {
   player.destroy();
   player = new Player(world, Vec2(LEVEL.spawn.x, LEVEL.spawn.y));
-  Object.assign(pstate, freshPstate()); // 复位血量与护甲耐久
+  Object.assign(pstate, freshPstate()); // 复位基础状态
   syncArmorFromInventory(); // 重生必须重绑装备:否则词缀(HP上限/防御/吸血…)全部静默失效
+  pstate.hp = pstate.maxHp; // 装备属性同步完成后再满血复活,包含生命上限词条
   resetStreak(); // 死亡清空连杀
 }
 
 // 玩家装备视觉/耐久绑定到背包里的"已装备"实例;防具词缀聚合为玩家属性
-const VISUAL = () => ({ head: EQUIP_PRESETS.helmet_military, body: EQUIP_PRESETS.vest_light });
 function syncArmorFromInventory() {
   const h = invEquipped('head'), b = invEquipped('body');
   pstate.armorHead = h;
   pstate.armorBody = b;
-  player.loadout.head = h ? VISUAL().head : null;
-  player.loadout.torso = b ? VISUAL().body : null;
+
+  // 外观从设计器存档加载;背包槽位决定是否穿戴。
+  // 设计器的 defense 是比例值(0~0.8),防具词条的 defenseFlat 是百分数(如 +5)。
+  // 在这里统一转换成百分数百分点,供 Player.defense 汇总,避免两种单位直接相加。
+  const headVisual = h ? loadEquip('head') : null;
+  const torsoVisual = b ? loadEquip('torso') : null;
+  player.loadout.head = headVisual;
+  player.loadout.torso = torsoVisual;
+  const baseDefenseRatio = (eq) => {
+    const value = Number(eq?.defense);
+    return Number.isFinite(value) ? Math.max(0, Math.min(0.8, value)) : 0;
+  };
+  player.armorBaseDefensePct = Math.round(
+    (baseDefenseRatio(headVisual) + baseDefenseRatio(torsoVisual)) * 1000
+  ) / 10;
+
   player.armorQuality = { head: h?.quality ?? null, body: b?.quality ?? null };
   const mh = h ? computeArmorMods('head', h.affixes || []) : null;
   const mb = b ? computeArmorMods('body', b.affixes || []) : null;
   player.armorMods = { head: mh, body: mb };
-  player.armorDefensePct = (mh?.defenseFlat || 0) + (mb?.defenseFlat || 0); // 铁壁:百分比减伤(player.defense)
+  player.armorDefensePct = (mh?.defenseFlat || 0) + (mb?.defenseFlat || 0); // 铁壁词条:百分数百分点
   player.armorLifestealPct = (mh?.lifesteal || 0) + (mb?.lifesteal || 0);
   player.meleeLsPct = (mb?.meleeLifesteal || 0); // 汲血:近战命中回血(仅 body)
   player.healOnKill = (mh?.healOnKill || 0) + (mb?.healOnKill || 0);
@@ -195,7 +210,8 @@ window.addEventListener('storage', (e) => {
     player.gunMods = computeGunMods(affixes);
   }
   if (e.key === 'contra-equip-head' || e.key === 'contra-equip-torso') {
-    player.reloadLoadout();
+    // 通过统一同步入口刷新:保留背包是否穿戴的约束,同时读取设计器保存的最新外观。
+    syncArmorFromInventory();
   }
 });
 // 弹丸/特效/痕迹已抽至 systems/combat.js 与 systems/fx.js
@@ -937,7 +953,7 @@ function frame(now) {
     while (acc >= STEP && n < 4) { step(STEP); acc -= STEP; n++; }
     if (pstate.deadT > 0) {
       pstate.deadT -= dt;
-      if (pstate.deadT <= 0) { resetPlayer(); Object.assign(pstate, freshPstate()); }
+      if (pstate.deadT <= 0) resetPlayer();
     }
     wheel.update(dt); // 「菜单拥有自己的时钟」:UI 永远实时,世界慢动作
     updateCamera(dt, player, input, W, H, PPM);
@@ -971,3 +987,6 @@ requestAnimationFrame(frame);
 window.__frame = frame; // 调试:后台标签页 rAF 会整体暂停(AGENT.md 坑 7),可手动推帧
 // 调试:确定性批量推帧(后台标签页验证用)——__frame(0) 的 dt 恒为 0 不会推进,用这个
 window.__frameN = (n) => { for (let i = 0; i < n; i++) frame(last + (1000 / 60) * (i + 1)); };
+
+
+

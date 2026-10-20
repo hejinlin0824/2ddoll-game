@@ -475,13 +475,14 @@ export class Gunship {
 // 波次投兵的"自然刷新":从右缘飞入 → 悬停在投放点 → 放绳,士兵一个个从绳上滑降到地面
 // → 卸完货掉头飞走。不可被攻击(纯运载工具,高空中),绳索画到每个仍在滑降的士兵手上。
 export class TransportHeli {
-  // opts: { enemies, count, spec(波次品质/护甲参数), excludeGun, dropX }
+  // opts: { enemies, count, roles(本波兵种队列), spec(品质/护甲), excludeGun, dropX }
   constructor(world, opts = {}) {
     this.world = world;
     this.enemies = opts.enemies || [];
     this.spec = opts.spec || {};
     this.excludeGun = opts.excludeGun || null;
     this.payload = opts.count || 4;
+    this.roles = Array.isArray(opts.roles) ? opts.roles.slice() : [];
     this.deployed = 0;
     this.dropX = opts.dropX ?? (LEVEL.bounds.right - 6 - Math.random() * 3);
     this.alt = 7.6;
@@ -517,15 +518,17 @@ export class TransportHeli {
       this.y = this.alt + Math.sin(this.t * 1.6) * 0.18; // 悬停微浮沉
       this.dropT -= dt;
       if (this.dropT <= 0 && this.deployed < this.payload) {
+        const role = this.roles[this.deployed] || 'rifleman';
         this.deployed++;
         this.dropT = 0.5;
-        // 放一个士兵:从机腹挂绳滑降(roped 标志让 Dummy 钉在绳上下滑)
+        // 放一个士兵:从机腹挂绳滑降；本波角色队列随运输机逐个落地。
         const d = new Dummy(this.world, {
           x: this.x + (Math.random() - 0.5) * 0.9,
           y: this.y - 0.6,
         }, {
           behavior: 'patrol', min: -66, max: 3,
           quality: this.spec.quality, armorMul: this.spec.armorMul,
+          role,
           respawn: false, excludeGun: this.excludeGun, roped: true,
         });
         this.enemies.push(d);
@@ -765,3 +768,4 @@ export class Drone {
     c.restore();
   }
 }
+

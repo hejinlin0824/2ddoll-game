@@ -5,7 +5,7 @@
 import { Player } from './player.js';
 import { Vec2 } from 'planck';
 import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from '../domain/gunPresets.js';
-import { computeGunMods, rollAffixes } from '../domain/affixes.js';
+import { rollAffixes } from '../domain/affixes.js';
 import { LEVEL, groundYAt } from '../world/level.js';
 import { hasLOS as segHasLOS } from '../systems/combat.js';
 
@@ -29,7 +29,9 @@ export class Dummy {
     this.min = opts.min ?? -5;
     this.max = opts.max ?? 5;
     this.quality = opts.quality || 'normal';
-    this.maxHp = 10; // 普通小兵脆一点,玩家打起来爽
+    this.role = opts.role || 'rifleman'; // rifleman | rusher | support | veteran
+    // 职能用行为和耐久区分，而不是单纯给所有敌人加血。
+    this.maxHp = this.role === 'veteran' ? 15 : this.role === 'support' ? 11 : this.role === 'rusher' ? 9 : 10;
     this.respawn = opts.respawn !== false; // 波次模式 false:死亡后由波次管理器清理
     this.armorMul = opts.armorMul ?? 1;
     this.excludeGun = opts.excludeGun || null; // 不与玩家撞枪
@@ -58,22 +60,39 @@ export class Dummy {
     // 必须销毁旧实例的刚体,否则每次死亡重生都泄漏 10 体+9 关节,越玩越卡
     if (this.p) this.p.destroy();
     const at = pos || Vec2(this.spawn.x, this.spawn.y);
-    this.p = new Player(this.world, at, {
-      palette: ENEMY_PALETTE,
-      // 固定穿预设原画装备(不读 localStorage,和玩家自定义装备解耦)
-      loadout: { head: EQUIP_PRESETS.helmet_military, torso: EQUIP_PRESETS.vest_light },
-    });
+
     // 随机一把枪:不再和玩家用同一把(内置预设池里抽)。
     // hitscan(AWP)必须排除:敌人事件循环不处理 hitscanShot(无伤害无音效的哑火),
     // 且狙击站桩会让敌人永久定在原地 —— 两种都是"假人"
-    const pool = Object.keys(GUN_PRESETS).filter((n) => n !== this.excludeGun && GUN_PRESETS[n].stats?.mode !== 'hitscan');
+    const eligible = Object.keys(GUN_PRESETS).filter((n) => n !== this.excludeGun && GUN_PRESETS[n].stats?.mode !== 'hitscan');
+    const preferred = this.role === 'rusher'
+      ? ['MP5', '霰弹枪']
+      : this.role === 'support'
+        ? ['AK-47', 'M4A1']
+        : this.role === 'veteran'
+          ? ['M4A1', 'AK-47', '霰弹枪']
+          : eligible;
+    // 先按职能选合适枪型；玩家若恰好持有这些枪，回退到完整合法池，绝不产生空池。
+    const rolePool = preferred.filter((name) => eligible.includes(name));
+    const pool = rolePool.length ? rolePool : eligible;
     this.gunName = pool[Math.floor(Math.random() * pool.length)];
-    this.p.gunDef = { ...GUN_PRESETS[this.gunName] };
-    this.p.gunMods = computeGunMods([]); // 敌人不吃玩家主武器槽位词缀(build 默认会带上)
-    this.p.ammo = this.p.gunDef.stats.mag;
+    const gunDef = GUN_PRESETS[this.gunName];
+
+    this.p = new Player(this.world, at, {
+      persistPlayerData: false, // NPC 禁止读取/写入玩家熟练度、盾牌、枪械词条、装备和素材存档
+      palette: ENEMY_PALETTE,
+      gunDef, // 在构造前指定 NPC 的内置枪,避免先加载玩家自定义枪再覆盖
+      loadout: { head: EQUIP_PRESETS.helmet_military, torso: EQUIP_PRESETS.vest_light },
+    });
+    this.p.ammo = this.p.stats().mag; // 选定内置枪后同步对应弹匣容量
     this.hp = this.maxHp;
     this.stuckT = 0;
-    this.alive = true;   // ★ 之前漏了这行:重生后 alive 一直是 false,敌人永久脑死亡冻在原地
+    this.fireT = this.role === 'rusher' ? 0.55 + Math.random() * 0.35
+      : this.role === 'support' ? 1.6 + Math.random() * 0.6
+        : 0.9 + Math.random() * 0.8;
+    this.burstLeft = 0;
+    this.burstCd = 0;
+    this.alive = true;   // 重生必须恢复存活态，否则会永久冻结在尸体状态
     this.respawnT = 0;
     this.freezeT = 0;    // 重生不许继承旧尸的冻结(位姿快照对新刚体是传送门)
     this.frozen = null;
@@ -336,20 +355,36 @@ export class Dummy {
       ai.aim = { x: pp.x + (Math.random() - 0.5) * 0.7, y: pp.y + (Math.random() - 0.5) * 0.5 };
       const sf = this.strafeFlip || 1;
       const los = this.hasLOS(tp.x, tp.y + 0.45, pp.x, pp.y + 0.45); // 胸口高度对射视线
+      const role = this.role;
+      const engageRange = role === 'support' ? 14 : role === 'rusher' ? 9 : 12;
       if (this.staggerT > 0) {
         vx = -this.face * 0.5; // 踉跄:控制不住往后倒
-      } else if (dist > 12 || !los) {
-        vx = this.face * 2.4; // 冲锋:直奔 12m 交战线;失去视线也逼近(贴近了往往绕出障碍)
+      } else if (dist > engageRange || !los) {
+        // 冲锋兵更快贴近；其他兵以 12m 交战线推进，障碍会迫使其找角度。
+        vx = this.face * (role === 'rusher' ? 3.0 : 2.4);
+      } else if (role === 'rusher') {
+        if (dist > 6.2) vx = this.face * 1.9;
+        else if (dist < 2.5) vx = -this.face * 0.8;
+      } else if (role === 'support') {
+        // 支援兵保持较远射界，不会全体挤成一团。
+        if (dist > 11.5) vx = this.face * 1.0;
+        else if (dist < 7.5) vx = -this.face * 1.25 * sf;
       } else if (dist > 10) {
-        vx = this.face * 1.7 * sf; // 走位:保持 6~10m(卡墙换边时方向翻转)
+        vx = this.face * 1.7 * sf; // 标准兵保持中距离走位
       } else if (dist < 5) {
         vx = -this.face * 1.2 * sf;
       }
-      // 点射:1.5s 一轮,一轮 2~4 发;交战距离(≤12m)+ 有视线才开火,踉跄中打不了
+      // 不同职能使用不同点射节奏；视线被掩体切断会立即停火。
       this.fireT -= dt;
-      if (this.fireT <= 0 && this.staggerT <= 0 && dist <= 12 && los) {
-        this.burstLeft = 2 + Math.floor(Math.random() * 3);
-        this.fireT = 1.5 + Math.random();
+      if (this.fireT <= 0 && this.staggerT <= 0 && dist <= engageRange && los) {
+        this.burstLeft = role === 'rusher'
+          ? 3 + Math.floor(Math.random() * 3)
+          : role === 'support'
+            ? 2 + Math.floor(Math.random() * 2)
+            : 2 + Math.floor(Math.random() * 3);
+        this.fireT = role === 'rusher' ? 0.95 + Math.random() * 0.45
+          : role === 'support' ? 1.9 + Math.random() * 0.65
+            : 1.5 + Math.random();
       }
       if (this.burstLeft > 0) {
         if (!los) this.burstLeft = 0; // 射击中途视线断了:立即停手,不往墙上糊子弹
@@ -402,3 +437,6 @@ export class Dummy {
     }
   }
 }
+
+
+

@@ -30,6 +30,13 @@ export const LAYOUTS = {
     { x: 54, y: 2.4, w: 3.6, h: 0.5, type: 'plat' },
     { x: 60.5, y: 0.4, w: 3, h: 0.8, type: 'ground' },
     { x: 68.5, y: 0.9, w: 3, h: 1.6, type: 'ground' },
+    // 战术掩体带：矮掩体能蹲伏遮挡，箱体可打碎；保留原有高台和守军点。
+    { x: 4.8, y: 0.75, w: 2.6, h: 1.5, type: 'cover' },
+    { x: 10.5, y: 0.52, w: 1.8, h: 1.04, type: 'crate' },
+    { x: 23.6, y: 0.75, w: 2.2, h: 1.5, type: 'cover' },
+    { x: 39.0, y: 0.75, w: 1.5, h: 1.5, type: 'steel' },
+    { x: 51.3, y: 0.54, w: 2.8, h: 1.08, type: 'crate' },
+    { x: 64.0, y: 0.75, w: 2.4, h: 1.5, type: 'cover' },
   ],
   // 屋顶·黎明:开阔长视线,双层高楼台塔(狙击对射),掩体极少 —— 走位就是命
   roof: [
@@ -42,36 +49,52 @@ export const LAYOUTS = {
     { x: 43, y: 2.6, w: 3.4, h: 0.5, type: 'plat' },
     { x: 50, y: 4.6, w: 4.4, h: 0.5, type: 'plat' },
     { x: 58, y: 2.6, w: 3, h: 0.5, type: 'plat' },
-    { x: 66, y: 1.2, w: 4, h: 1.6, type: 'ground' },
+    { x: 66, y: 1.2, w: 4, h: 1.6, type: 'concrete' },
+    // 屋顶不是全程裸奔：掩体错列放置，形成短冲刺线和可争夺的高位射界。
+    { x: 8.8, y: 0.78, w: 2.0, h: 1.56, type: 'steel' },
+    { x: 23.4, y: 0.75, w: 2.4, h: 1.5, type: 'cover' },
+    { x: 31.0, y: 0.52, w: 1.8, h: 1.04, type: 'crate' },
+    { x: 46.8, y: 0.75, w: 2.5, h: 1.5, type: 'concrete' },
+    { x: 61.0, y: 0.52, w: 1.8, h: 1.04, type: 'crate' },
   ],
   // 港区·仓库:巷战 —— 掩体群密布(矮墙卡视线),平台少而碎,中近距离遭遇
   room: [
     ground90(),
-    { x: 6, y: 0.4, w: 2.4, h: 0.8, type: 'ground' },
+    { x: 6, y: 0.4, w: 2.4, h: 0.8, type: 'concrete' },
     { x: 11, y: 2.4, w: 3, h: 0.5, type: 'plat' },
-    { x: 16.5, y: 0.35, w: 2, h: 0.7, type: 'ground' },
-    { x: 22, y: 0.45, w: 2.4, h: 0.9, type: 'ground' },
+    { x: 16.5, y: 0.35, w: 2, h: 0.7, type: 'steel' },
+    { x: 22, y: 0.45, w: 2.4, h: 0.9, type: 'crate' },
     { x: 27, y: 2.2, w: 3.4, h: 0.5, type: 'plat' },
-    { x: 26.5, y: 0.5, w: 3, h: 1, type: 'ground' },
-    { x: 33, y: 0.35, w: 2, h: 0.7, type: 'ground' },
+    { x: 26.5, y: 0.5, w: 3, h: 1, type: 'concrete' },
+    { x: 33, y: 0.35, w: 2, h: 0.7, type: 'steel' },
     { x: 38.5, y: 2.6, w: 3.6, h: 0.5, type: 'plat' },
-    { x: 44, y: 0.4, w: 2.4, h: 0.8, type: 'ground' },
-    { x: 49.5, y: 0.35, w: 2, h: 0.7, type: 'ground' },
+    { x: 44, y: 0.4, w: 2.4, h: 0.8, type: 'concrete' },
+    { x: 49.5, y: 0.35, w: 2, h: 0.7, type: 'steel' },
     { x: 55, y: 2.2, w: 3.4, h: 0.5, type: 'plat' },
-    { x: 61, y: 0.5, w: 2.4, h: 1, type: 'ground' },
-    { x: 67, y: 0.4, w: 3, h: 0.8, type: 'ground' },
+    { x: 61, y: 0.5, w: 2.4, h: 1, type: 'crate' },
+    { x: 67, y: 0.4, w: 3, h: 0.8, type: 'concrete' },
+    // 港区仓库：将原有障碍视觉区分为混凝土柱/货箱，并补上近身掩体。
+    { x: 3.6, y: 0.75, w: 1.7, h: 1.5, type: 'crate' },
+    { x: 14.3, y: 0.56, w: 1.6, h: 1.12, type: 'steel' },
+    { x: 35.4, y: 0.75, w: 1.8, h: 1.5, type: 'cover' },
+    { x: 52.6, y: 0.75, w: 2.0, h: 1.5, type: 'crate' },
+    { x: 64.0, y: 0.75, w: 1.7, h: 1.5, type: 'steel' },
   ],
   // 沙丘·正午:起伏沙脊(宽矮坡)+ 稀疏高岩 —— 人海冲锋,几乎无遮蔽
   desert: [
     ground90(),
-    { x: 8, y: 1.1, w: 6, h: 1.2, type: 'ground' },
-    { x: 18, y: 2.2, w: 5, h: 1.4, type: 'ground' },
-    { x: 28, y: 0.8, w: 4, h: 0.8, type: 'ground' },
+    { x: 8, y: 1.1, w: 6, h: 1.2, type: 'rock' },
+    { x: 18, y: 2.2, w: 5, h: 1.4, type: 'rock' },
+    { x: 28, y: 0.8, w: 4, h: 0.8, type: 'rock' },
     { x: 36, y: 2.6, w: 3.6, h: 0.5, type: 'plat' },
-    { x: 45, y: 1.4, w: 6, h: 1.2, type: 'ground' },
+    { x: 45, y: 1.4, w: 6, h: 1.2, type: 'rock' },
     { x: 55, y: 2.4, w: 4, h: 0.5, type: 'plat' },
-    { x: 63, y: 1.2, w: 5, h: 1.1, type: 'ground' },
+    { x: 63, y: 1.2, w: 5, h: 1.1, type: 'rock' },
     { x: 70, y: 2.3, w: 3.4, h: 0.5, type: 'plat' },
+    // 沙丘：自然沙脊作为高差，散布低矮沙袋提供临时防线，但不会把战场封死。
+    { x: 3.8, y: 0.75, w: 2.3, h: 1.5, type: 'cover' },
+    { x: 34.0, y: 0.54, w: 2.2, h: 1.08, type: 'crate' },
+    { x: 57.6, y: 0.75, w: 2.6, h: 1.5, type: 'cover' },
   ],
   // 海岛·澜:棕榈跳台 + 浅滩石 —— 跳跃节奏关,平台间要跳
   tropic: [
@@ -79,15 +102,20 @@ export const LAYOUTS = {
     { x: 5.5, y: 1.9, w: 2.6, h: 0.5, type: 'plat' },
     { x: 10.5, y: 3.1, w: 2.4, h: 0.5, type: 'plat' },
     { x: 15.5, y: 2.2, w: 2.6, h: 0.5, type: 'plat' },
-    { x: 21, y: 0.5, w: 3, h: 1, type: 'ground' },
+    { x: 21, y: 0.5, w: 3, h: 1, type: 'rock' },
     { x: 26.5, y: 3.2, w: 2.4, h: 0.5, type: 'plat' },
     { x: 31.5, y: 2.1, w: 2.6, h: 0.5, type: 'plat' },
-    { x: 37, y: 0.4, w: 2.6, h: 0.8, type: 'ground' },
+    { x: 37, y: 0.4, w: 2.6, h: 0.8, type: 'rock' },
     { x: 43.5, y: 3.0, w: 2.4, h: 0.5, type: 'plat' },
     { x: 49, y: 1.9, w: 2.6, h: 0.5, type: 'plat' },
-    { x: 55, y: 0.45, w: 2.6, h: 0.9, type: 'ground' },
+    { x: 55, y: 0.45, w: 2.6, h: 0.9, type: 'rock' },
     { x: 61, y: 3.1, w: 2.4, h: 0.5, type: 'plat' },
     { x: 66.5, y: 2.0, w: 2.8, h: 0.5, type: 'plat' },
+    // 海岛：岩石岛礁与漂流木箱交替，维持跳台节奏同时给地面战留出喘息位。
+    { x: 3.0, y: 0.52, w: 1.6, h: 1.04, type: 'rock' },
+    { x: 23.9, y: 0.75, w: 1.9, h: 1.5, type: 'crate' },
+    { x: 40.6, y: 0.52, w: 2.0, h: 1.04, type: 'rock' },
+    { x: 58.0, y: 0.54, w: 2.1, h: 1.08, type: 'crate' },
   ],
 };
 // 场景 → 布局(custom 关卡由 loadCustomLevel 接管)
@@ -108,7 +136,7 @@ const TILE = 0.25; // 可破坏块的细分粒度(米):碎块更小更密,弹坑
 
 export function buildLevel(world) {
   const bodies = [];
-  // 先把可破坏块替换成 0.5m tile 网格(tile 也是小 rect,所有遍历点零改动),
+  // 先把可破坏块替换成 0.25m tile 网格(tile 也是小 rect,所有遍历点零改动),
   // 子弹命中某 tile 只碎那一片 —— 局部弹坑,而不是整块消失
   for (let i = LEVEL.rects.length - 1; i >= 0; i--) {
     const r = LEVEL.rects[i];
@@ -369,20 +397,72 @@ export function drawTerrain(ctx, rects, w2s, ppm) {
       }
       ctx.stroke();
     }
+    // Material pass: same collision/HP model, stronger visual readability between cover, cargo and terrain.
+    // Destructible blocks are split into small tiles upstream, so effects stay local when shot apart.
     if (r.type === 'ground') {
       ctx.fillStyle = '#4a3524';
       ctx.fillRect(sx, sy, w, h);
       ctx.fillStyle = '#3e7a3c';
       ctx.fillRect(sx, sy, w, Math.min(10, h * 0.16));
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
-      ctx.fillRect(sx, sy + 10, w, 3);
-    } else {
-      ctx.fillStyle = '#5b4a33';
+      ctx.fillRect(sx, sy + Math.min(10, h * 0.16), w, Math.min(3, h * 0.08));
+    } else if (r.type === 'cover' || r.type === 'sandbag') {
+      ctx.fillStyle = '#4a5142';
       ctx.fillRect(sx, sy, w, h);
-      ctx.fillStyle = '#7a6446';
-      ctx.fillRect(sx, sy, w, 4);
+      ctx.fillStyle = '#68725a';
+      ctx.fillRect(sx, sy, w, Math.max(2, Math.min(4, h * 0.18)));
+      ctx.fillStyle = 'rgba(20,25,20,0.24)';
+      ctx.fillRect(sx, sy + h * 0.52, w, Math.max(1, h * 0.08));
+      ctx.strokeStyle = 'rgba(20,25,18,0.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(sx + w * 0.5, sy + h * 0.14); ctx.lineTo(sx + w * 0.5, sy + h * 0.48); ctx.stroke();
+    } else if (r.type === 'crate' || r.type === 'timber') {
+      ctx.fillStyle = '#68462c';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#9a7046';
+      ctx.fillRect(sx, sy, w, Math.max(2, Math.min(3, h * 0.16)));
+      ctx.strokeStyle = 'rgba(30,21,13,0.46)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx + 1, sy + 1, Math.max(0, w - 2), Math.max(0, h - 2));
+      if (w > 7 && h > 7) {
+        ctx.beginPath(); ctx.moveTo(sx + 2, sy + 2); ctx.lineTo(sx + w - 2, sy + h - 2);
+        ctx.moveTo(sx + w - 2, sy + 2); ctx.lineTo(sx + 2, sy + h - 2); ctx.stroke();
+      }
+    } else if (r.type === 'steel') {
+      ctx.fillStyle = '#3b4652';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#758596';
+      ctx.fillRect(sx, sy, w, Math.max(2, Math.min(3, h * 0.14)));
+      ctx.fillStyle = 'rgba(10,16,23,0.3)';
+      ctx.fillRect(sx + w * 0.78, sy, Math.max(1, w * 0.12), h);
+      if (w > 8 && h > 8) {
+        ctx.fillStyle = '#bcc7d2';
+        ctx.fillRect(sx + 2, sy + 2, 2, 2);
+      }
+    } else if (r.type === 'concrete') {
+      ctx.fillStyle = '#535b63';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#7b858c';
+      ctx.fillRect(sx, sy, w, Math.max(2, Math.min(3, h * 0.13)));
+      ctx.fillStyle = 'rgba(18,23,28,0.22)';
+      ctx.fillRect(sx, sy + h * 0.78, w, h * 0.22);
+    } else if (r.type === 'rock') {
+      ctx.fillStyle = '#665e52';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#82796a';
+      ctx.beginPath(); ctx.moveTo(sx, sy + Math.min(4, h * 0.22));
+      ctx.lineTo(sx + w * 0.34, sy); ctx.lineTo(sx + w, sy + Math.min(2, h * 0.12));
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(20,18,16,0.2)';
+      ctx.fillRect(sx, sy + h * 0.72, w, h * 0.28);
+    } else {
+      // Default platform: weathered timber/metal lip.
+      ctx.fillStyle = '#4f493d';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#94805e';
+      ctx.fillRect(sx, sy, w, Math.max(2, Math.min(4, h * 0.15)));
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(sx, sy + h - 3, w, 3);
+      ctx.fillRect(sx, sy + h - Math.max(2, Math.min(3, h * 0.12)), w, Math.max(2, Math.min(3, h * 0.12)));
     }
   }
 }

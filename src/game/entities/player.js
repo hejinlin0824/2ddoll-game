@@ -7,7 +7,7 @@
 import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from '../world/level.js';
 import { particles, addDecal, bloodJet } from '../systems/fx.js';
-import { loadSavedGun, loadEquip, loadAssets, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
+import { loadSavedGun, loadEquip, loadAssets, GUN_PRESETS, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
 import { skinImg, skinXf, skinFitScale, SKIN_END_ANCHORED, SKIN_BOX } from '../domain/skin.js';
 
@@ -42,13 +42,17 @@ const wrapPi = (x) => ((x + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.
 
 export class Player {
   // opts.palette: 覆盖配色(敌兵换绿头巾/深色裤,和主角区分)
-  // opts.loadout: 固定穿戴(敌兵穿预设原画,不读 localStorage —— 和玩家自定义装备解耦)
+  // opts.loadout: 固定穿戴(敌兵穿预设原画,和玩家自定义装备解耦)
+  // opts.gunDef: 指定枪械定义;NPC 在构造前选好内置枪,不读取玩家设计器存档。
+  // opts.persistPlayerData: 是否读取/写入玩家专属 localStorage 数据,默认 true。NPC 必须显式传 false。
   constructor(world, spawn, opts = {}) {
     this.world = world;
     this.spawn = { x: spawn.x, y: spawn.y };
     this.events = [];
     this.C = { ...COLOR, ...(opts.palette || {}) };
     this.loadoutOpt = opts.loadout || null;
+    this.gunDefOpt = opts.gunDef || null;
+    this.persistPlayerData = opts.persistPlayerData !== false;
     this.useSkin = !opts.palette; // 自绘皮肤只给主角:敌人带 palette 进来,跳过皮肤
     this.build();
   }
@@ -158,35 +162,69 @@ export class Player {
     this.fallVy = 0;
     this.t = 0;
 
-    // 熟练度系统:开枪成长;后坐力热量越高散布越大,熟练度越高压制越好
-    try { this.skill = clamp(parseFloat(localStorage.getItem('contra-skill')) || 0.15, 0.1, 1); } catch { this.skill = 0.15; }
+    // 熟练度属于玩家档案。NPC 使用独立默认值,绝不读取或覆盖玩家存档。
+    if (this.persistPlayerData) {
+      try {
+        this.skill = clamp(parseFloat(localStorage.getItem('contra-skill')) || 0.15, 0.1, 1);
+      } catch {
+        this.skill = 0.15;
+      }
+    } else {
+      this.skill = 0.15;
+    }
     this.heat = 0;
-    this.weapon = 'rifle'; // rifle=主武器(双手,用设计器里的枪) | pistol=副武器(单手手枪)
-    this.gunDef = loadSavedGun(); // 设计器数据
-    // 主武器槽位词缀:独立持久化(contra-gun-affixes),跟槽位走 ——
-    // 轮盘换枪/设计器重画/死亡重生都不重掷(以前写进枪数据里,死亡会给新枪随机重掷一遍)
-    this.gunDef.affixes = loadGunAffixes() || rollAffixes('gun', 'rare');
-    saveGunAffixes(this.gunDef.affixes);
+    this.weapon = 'rifle'; // rifle=主武器(双手) | pistol=副武器(单手手枪)
+
+    // 玩家使用设计器保存的枪;NPC 必须由创建方显式传入内置预设枪。
+    // persistPlayerData=false 时的兜底也只选内置预设,不触碰玩家自定义存档。
+    const firstPresetGun = Object.values(GUN_PRESETS)[0];
+    this.gunDef = this.gunDefOpt
+      ? { ...this.gunDefOpt }
+      : (this.persistPlayerData ? loadSavedGun() : { ...firstPresetGun });
+
+    // 主武器词条存档仅属于玩家。NPC 使用空词条,避免读写玩家主武器成长数据。
+    if (this.persistPlayerData) {
+      this.gunDef.affixes = loadGunAffixes() || rollAffixes('gun', 'rare');
+      saveGunAffixes(this.gunDef.affixes);
+    } else {
+      this.gunDef.affixes = [];
+    }
     this.gunMods = computeGunMods(this.gunDef.affixes);
     this.gunAngle = 0;            // 枪的世界指向角
     this._limbsMirrored = false;  // 面朝左时肘/膝限位要镜像
-    this.moveMul = 1;             // 移速加成(装备词缀)
-    this.loadout = this.loadoutOpt
-      ? { head: { ...this.loadoutOpt.head }, torso: { ...this.loadoutOpt.torso } }
-      : { head: loadEquip('head'), torso: loadEquip('torso') }; // 穿戴
+    this.moveMul = 1;             // 移速加成(装备词条)
+
+    // NPC 的固定 loadout 优先;NPC 没有 loadout 时不从玩家存档读取装备。
+    if (this.loadoutOpt) {
+      this.loadout = {
+        head: this.loadoutOpt.head ? { ...this.loadoutOpt.head } : null,
+        torso: this.loadoutOpt.torso ? { ...this.loadoutOpt.torso } : null,
+      };
+    } else if (this.persistPlayerData) {
+      this.loadout = { head: loadEquip('head'), torso: loadEquip('torso') };
+    } else {
+      this.loadout = { head: null, torso: null };
+    }
+
     // ---- 武器词条状态:弹药/换弹/盾牌/近战 ----
     this.ammo = this.stats().mag;
     this.reloadT = 0;
     this.meleeT = 0;
     this.shield = false;
-    try {
-      const hp = parseFloat(localStorage.getItem('contra-shield-hp'));
-      this.shieldHp = clamp(Number.isFinite(hp) ? hp : 100, 0, 100);
-      if (localStorage.getItem('contra-shield') === '1' && this.shieldHp > 0) {
-        this.shield = true;
-        this.weapon = 'pistol'; // 盾牌只能配手枪
+    this.shieldHp = 100;
+    if (this.persistPlayerData) {
+      try {
+        const hp = parseFloat(localStorage.getItem('contra-shield-hp'));
+        this.shieldHp = clamp(Number.isFinite(hp) ? hp : 100, 0, 100);
+        if (localStorage.getItem('contra-shield') === '1' && this.shieldHp > 0) {
+          this.shield = true;
+          this.weapon = 'pistol'; // 盾牌只能配手枪
+          this.ammo = this.stats().mag; // 装载存档盾牌后武器变为手枪,同步弹匣容量
+        }
+      } catch {
+        this.shieldHp = 100;
       }
-    } catch { this.shieldHp = 100; }
+    }
     this.pose = { torso: 0, neck: 0, shF: 0.15, elF: 0.55, shB: -0.2, elB: 0.5,
       hipF: 0.05, kneeF: -0.08, hipB: -0.05, kneeB: -0.12 };
   }
@@ -433,13 +471,19 @@ export class Player {
   get gunMirrored() { return Math.cos(this.gunAngle) < 0; }
 
   reloadLoadout() {
+    // 固定 loadout 的 NPC 不能被 storage 事件替换成玩家装备。
+    if (!this.persistPlayerData) return;
     this.loadout = { head: loadEquip('head'), torso: loadEquip('torso') };
   }
 
-  // 百分比减伤 = 防具"铁壁"词条聚合(syncArmorFromInventory 写入;结算端钳 0~0.8)。
-  // loadout 里是视觉预设,从来没有 defense 字段,别再读它
+  // 总减伤 = 已穿戴设计装备的基础防御 + 背包防具"铁壁"词条。
+  // armorBaseDefensePct / armorDefensePct 均以百分数百分点储存(如 35 + 5 = 40)。
+  // getter 返回 0~0.8 的比例值;入伤结算和 HUD 使用相同单位。
   get defense() {
-    return (this.armorDefensePct || 0) / 100;
+    const basePct = Number(this.armorBaseDefensePct) || 0;
+    const affixPct = Number(this.armorDefensePct) || 0;
+    const ratio = (basePct + affixPct) / 100;
+    return Math.max(0, Math.min(0.8, ratio));
   }
 
   // 受击闪白:整具布娃娃罩白色半透明(近战/枪击命中反馈用)
@@ -503,7 +547,9 @@ export class Player {
     if (on) {
       // 碎过的盾重新架起时修好(盾耐久存在档里,不重置的话该存档的盾永久是 0)
       this.shieldHp = 100;
-      try { localStorage.setItem('contra-shield-hp', String(this.shieldHp)); } catch { /* 忽略 */ }
+      if (this.persistPlayerData) {
+        try { localStorage.setItem('contra-shield-hp', String(this.shieldHp)); } catch { /* 忽略 */ }
+      }
     }
     if (on && this.weapon !== 'pistol') {
       this.weapon = 'pistol';
@@ -511,14 +557,18 @@ export class Player {
       this.ammo = this.stats().mag;
       this.reloadT = 0;
     }
-    try { localStorage.setItem('contra-shield', on ? '1' : '0'); } catch { /* 忽略 */ }
+    if (this.persistPlayerData) {
+      try { localStorage.setItem('contra-shield', on ? '1' : '0'); } catch { /* 忽略 */ }
+    }
     this.events.push({ type: 'shield', on });
   }
 
   damageShield(dmg) {
     if (!this.shield || this.shieldHp <= 0) return false;
     this.shieldHp = Math.max(0, this.shieldHp - dmg);
-    try { localStorage.setItem('contra-shield-hp', String(this.shieldHp)); } catch { /* 忽略 */ }
+    if (this.persistPlayerData) {
+      try { localStorage.setItem('contra-shield-hp', String(this.shieldHp)); } catch { /* 忽略 */ }
+    }
     if (this.shieldHp <= 0) this.setShield(false); // 碎了
     return true;
   }
@@ -829,7 +879,9 @@ export class Player {
           this.heat = Math.min(1, this.heat + 0.26 * st.recoil * (1.25 - 0.5 * this.skill) * (this.gunMods?.heatMul || 1));
           this.skill = Math.min(1, this.skill + 0.006);
           this._shotN = (this._shotN || 0) + 1;
-          if (this._shotN % 10 === 0) { try { localStorage.setItem('contra-skill', String(this.skill)); } catch { /* 忽略 */ } }
+          if (this.persistPlayerData && this._shotN % 10 === 0) {
+            try { localStorage.setItem('contra-skill', String(this.skill)); } catch { /* 忽略 */ }
+          }
           // 后坐力:熟练度高时对枪口上跳/推背的控制更好;词条 recoil 放大
           const kick = (rifle ? 1.15 : 0.7) * st.recoil * (1.25 - 0.5 * this.skill);
           torso.applyLinearImpulse(Vec2(-this.facing * kick, 0), torso.getPosition());
@@ -1029,7 +1081,8 @@ export class Player {
     const assetImgs = new Map(); // 素材图缓存(id -> HTMLImageElement)
     const assetImage = (id) => {
       if (assetImgs.has(id)) return assetImgs.get(id);
-      const src = loadAssets()[id];
+      // 装备素材库是玩家自定义数据;NPC 不读取它,避免外观被玩家工坊内容污染。
+      const src = this.persistPlayerData ? loadAssets()[id] : null;
       if (!src) { assetImgs.set(id, null); return null; }
       const im = new Image();
       im.src = src; // 异步解码,未就绪的帧先跳过,就绪后自然出现
@@ -1259,3 +1312,6 @@ export class Player {
     if (!hasSkin('foreArm')) hand(this.armLF);
   }
 }
+
+
+

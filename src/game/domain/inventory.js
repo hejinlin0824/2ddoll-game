@@ -193,7 +193,13 @@ export const BT_RATE = {
 };
 export function invBreakthrough(ids) {
   invLoad();
-  if (!ids || ids.length !== 3) return { ok: false, msg: '需要 3 件同槽位同品质' };
+  if (!Array.isArray(ids) || ids.length !== 3) {
+    return { ok: false, msg: '需要 3 件同槽位同品质的装备' };
+  }
+  // 领域层必须验证 ID 唯一,不能依赖 UI 阻止重复选择同一件装备。
+  if (new Set(ids).size !== 3) {
+    return { ok: false, msg: '不能重复选择同一件装备' };
+  }
   const its = ids.map((x) => invItem(x));
   if (its.some((it) => !it)) return { ok: false, msg: '素材不存在' };
   const [a, b, c] = its;
@@ -302,3 +308,6 @@ function itemTitleOf(it) {
   return `${QLABEL_OF[it.quality] ?? it.quality}${it.slot === 'head' ? '头盔' : '防弹衣'}`;
 }
 const QLABEL_OF = { broken: '破损', normal: '普通', fine: '优良', rare: '稀有', epic: '高级', legendary: '传说' };
+
+
+

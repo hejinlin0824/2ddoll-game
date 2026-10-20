@@ -10,6 +10,19 @@ import { lootToast } from './hud.js';
 
 export const bullets = [];
 
+// 连续检测弹丸本步走过的路径，避免只检查终点/中点时高速子弹穿过窄命中区。
+// 单步采样间距目标为 0.08m，最多 32 段以限制异常武器参数带来的开销。
+function sampleBulletPath(x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const n = Math.min(32, Math.max(1, Math.ceil(Math.hypot(dx, dy) / 0.08)));
+  const points = new Array(n + 1);
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    points[i] = { x: x0 + dx * t, y: y0 + dy * t };
+  }
+  return points;
+}
+
 // st = 武器词条;faction = 'player' | 'enemy'
 export function spawnBullet(x, y, dx, dy, st, damage, faction = 'player') {
   const maxSp = st.muzzleVel;
@@ -232,17 +245,25 @@ export function stepBullets(dt, C) {
     b.life -= dt;
     // ---- 命中判定(优先级:盾牌 > 尸体 > 部位 > 地形) ----
     let consumed = false;
-    const midX = (b.px + b.x) / 2, midY = (b.py + b.y) / 2;
-    // 盾牌阻挡:只有敌方子弹会被玩家盾牌挡
+    const path = sampleBulletPath(b.px, b.py, b.x, b.y);
+    // 先找本步最早的地形碰撞点；角色检测只看这个点之前的路径，避免隔墙命中。
+    let terrainHit = null;
+    for (let si = 1; si < path.length; si++) {
+      const q = path[si];
+      const rect = hitTerrainRect(q.x, q.y);
+      if (rect) { terrainHit = { rect, x: q.x, y: q.y, index: si }; break; }
+    }
+    const collisionPath = terrainHit ? path.slice(0, terrainHit.index + 1) : path;
+    // 盾牌阻挡:只有敌方子弹会被玩家盾牌挡。按弹道先后采样，避免高速子弹穿盾。
     if (b.faction !== 'player' && player.shield && player.shieldHp > 0) {
       const obb = player.shieldOBB();
       let blocked = false;
-      for (const [qx, qy] of [[b.x, b.y], [midX, midY]]) {
-        const rx = qx - obb.x, ry = qy - obb.y;
+      for (const q of collisionPath) {
+        const rx = q.x - obb.x, ry = q.y - obb.y;
         const depth = rx * obb.gx + ry * obb.gy;
         const across = -rx * obb.gy + ry * obb.gx;
         if (Math.abs(depth) < obb.ht && Math.abs(across) < obb.hw) {
-          burst(qx, qy, 6, '#bfd2e8', 3);
+          burst(q.x, q.y, 6, '#bfd2e8', 3);
           beep(720, 290, 0.06, 'square', 0.05);
           player.damageShield(b.damage ?? 10);
           blocked = true;
@@ -251,48 +272,60 @@ export function stepBullets(dt, C) {
       }
       if (blocked) { bullets.splice(i, 1); continue; }
     }
-    // 尸体阻挡:只挡敌方子弹(尸体=玩家的战术掩体,趣味保留);
-    // 玩家子弹直接穿过 —— 躺地的尸体看着扁,但判定盒仍占 1m+,挡自己子弹
-    // 就是"明明没有东西却打中了什么"的空气墙(用户实测毙过)
+    // 尸体阻挡:只挡敌方子弹；从弹道起点向终点扫描，先处理路径上最早遇到的尸体。
     if (b.faction !== 'player') {
-      for (const e of enemies) {
-        if (e.alive) continue;
-        const dz = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
-        if (dz) {
+      for (const q of collisionPath) {
+        for (const e of enemies) {
+          if (e.alive) continue;
+          if (!e.zoneAt(q.x, q.y)) continue;
           e.corpseHit?.({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }, 1.2);
-          burst(b.x, b.y, 3, '#c9563c', 2.5);
+          burst(q.x, q.y, 3, '#c9563c', 2.5);
           bullets.splice(i, 1); consumed = true; break;
         }
+        if (consumed) break;
       }
       if (consumed) continue;
     }
     if (b.faction === 'player') {
-      // 玩家子弹 vs 敌人部位(手臂不判定,子弹穿过;尸体也不判定 —— 否则 hit 返回
-      // null 却照样消耗子弹+出假飘字,还是空气墙)
-      for (const e of enemies) {
-        if (!e.alive) continue;
-        const zone = e.zoneAt(b.x, b.y) || e.zoneAt(midX, midY);
-        if (!zone) continue;
+      // 按弹道顺序找第一个命中对象，避免命中结果受 enemies 数组排列影响。
+      let contact = null;
+      for (const q of collisionPath) {
+        for (const e of enemies) {
+          if (!e.alive) continue;
+          const zone = e.zoneAt(q.x, q.y);
+          if (!zone) continue;
+          contact = { e, zone, x: q.x, y: q.y };
+          break;
+        }
+        if (contact) break;
+      }
+      if (contact) {
+        const { e, zone, x: hx, y: hy } = contact;
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;
         const bdir = { x: b.vx / (sp || 1), y: b.vy / (sp || 1) };
         const dmg = b.damage * mult;
         const res = e.hit(zone, dmg, bdir, b.armorMul ?? 1) ?? { broke: null, absorbed: false };
-        if (e.airUnit) airHitFeedback(C, res, b.x, b.y, bdir, dmg); // 机械:火花金属叮
-        else hitFeedback(C, e, zone, res, b.x, b.y, bdir, dmg);     // 反馈与狙击共用一条管线
-        bullets.splice(i, 1); consumed = true; break;
+        if (e.airUnit) airHitFeedback(C, res, hx, hy, bdir, dmg); // 机械:火花金属叮
+        else hitFeedback(C, e, zone, res, hx, hy, bdir, dmg);     // 反馈与狙击共用一条管线
+        bullets.splice(i, 1); consumed = true;
       }
     } else if (!player.ragdoll) {
-      // 敌方子弹 vs 玩家(已倒地的尸体不挡子弹,穿过打身后;有护甲先扣耐久,归零击飞/碎裂+白闪重影;无甲按部位倍率扣血)
-      const zone = playerZoneAt(player, b.x, b.y) || playerZoneAt(player, midX, midY);
-      if (zone) {
+      // 敌方子弹 vs 玩家：沿路径检查每个采样点，避免高速子弹越过角色命中区。
+      let contact = null;
+      for (const q of collisionPath) {
+        const zone = playerZoneAt(player, q.x, q.y);
+        if (zone) { contact = { zone, x: q.x, y: q.y }; break; }
+      }
+      if (contact) {
+        const { zone, x: hx, y: hy } = contact;
         const mult = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2;
         const dmg = b.damage * mult;
         const item = zone !== 'legs' ? invEquipped(zone) : null;
         if (item && item.dur > 0) {
           item.dur = Math.max(0, Math.round((item.dur - dmg) * 10) / 10);
-          burst(b.x, b.y, 4, '#9fb0c4', 3);
+          burst(hx, hy, 4, '#9fb0c4', 3);
           beep(720, 300, 0.06, 'square', 0.05);
-          floaters.push({ x: b.x + (Math.random() - 0.5) * 0.12, y: b.y, vy: 2 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 1.4, rot: (Math.random() - 0.5) * 0.3, age: 0, text: String(Math.round(dmg * 10) / 10), color: '#dfe6f2', size: 15, bold: false, life: 0.62, max: 0.62 });
+          floaters.push({ x: hx + (Math.random() - 0.5) * 0.12, y: hy, vy: 2 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 1.4, rot: (Math.random() - 0.5) * 0.3, age: 0, text: String(Math.round(dmg * 10) / 10), color: '#dfe6f2', size: 15, bold: false, life: 0.62, max: 0.62 });
           if (item.dur === 0) { // 护甲碎裂:白闪+重影,装备进背包等修复
             item.equipped = false;
             invSave();
@@ -311,8 +344,8 @@ export function stepBullets(dt, C) {
           pstate.hp = Math.max(0, pstate.hp - pdmg);
           C.setHitFlash(0.3);
           addTrauma(0.18);
-          floaters.push({ x: b.x + (Math.random() - 0.5) * 0.15, y: b.y, vy: 2.3 + Math.random() * 0.9, vx: (Math.random() - 0.5) * 1.6, rot: (Math.random() - 0.5) * 0.34, age: 0, text: String(Math.round(pdmg * 10) / 10), color: '#ff5b4a', size: 17, bold: false, life: 0.72, max: 0.72 });
-          burst(b.x, b.y, 5, '#c9563c', 3.5);
+          floaters.push({ x: hx + (Math.random() - 0.5) * 0.15, y: hy, vy: 2.3 + Math.random() * 0.9, vx: (Math.random() - 0.5) * 1.6, rot: (Math.random() - 0.5) * 0.34, age: 0, text: String(Math.round(pdmg * 10) / 10), color: '#ff5b4a', size: 17, bold: false, life: 0.72, max: 0.72 });
+          burst(hx, hy, 5, '#c9563c', 3.5);
           beep(180, 80, 0.12, 'sawtooth', 0.06);
           if (pstate.hp <= 0 && !player.ragdoll) {
             player.setRagdoll(true); // 倒地
@@ -320,7 +353,7 @@ export function stepBullets(dt, C) {
             pstate.deadT = 2.5;
             resetStreak();
             addTrauma(0.5);
-            hitStop(0.12); // 主角阵亡:和敌人击杀同款的顿帧(用户:敌人死有卡顿,主角死没有)
+            hitStop(0.12); // 主角阵亡:和敌人击杀同款的顿帧
             beep(120, 40, 0.5, 'sawtooth', 0.1);
           }
         }
@@ -328,15 +361,8 @@ export function stepBullets(dt, C) {
       }
     }
     if (consumed) continue;
-    let rect = hitTerrainRect(b.x, b.y);
-    if (!rect && sp > 14) {
-      // 小 tile(0.25m)防隧道:沿本步弹道按 ~0.12m 间隔密集采样,两采样点间距必须小于 tile 尺寸
-      const dx = b.x - b.px, dy = b.y - b.py;
-      const n = Math.min(8, Math.ceil(Math.hypot(dx, dy) / 0.12));
-      for (let k = 1; k < n && !rect; k++) rect = hitTerrainRect(b.px + (dx * k) / n, b.py + (dy * k) / n);
-    }
-    if (rect) {
-      const hx = (b.px + b.x) / 2, hy = (b.py + b.y) / 2;
+    if (terrainHit) {
+      const { rect, x: hx, y: hy } = terrainHit;
       burst(hx, hy, 5, '#ffd77a', 3.5);
       // 弹孔 + 扬尘:打进地形留下痕迹(FIFO 上限)
       C.addDecal('hole', hx, hy, Math.atan2(b.vy, b.vx), 0.05 + Math.random() * 0.03);
@@ -463,3 +489,4 @@ export function stepPickups(dt, C) {
     if (pk.x > C.bounds.right - 0.5) { pk.x = C.bounds.right - 0.5; pk.vx = -Math.abs(pk.vx) * 0.4; }
   }
 }
+
