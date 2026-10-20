@@ -16,6 +16,7 @@ export const SCENE_RULES = {
   room: { gunshipEvery: 6, batch: 2, qualityRush: 2, roleBias: 'breach' },             // 巷战：冲锋与精锐
   desert: { gunshipEvery: 4, batch: 4, swarm: true, cap: 13, roleBias: 'swarm' },     // 沙丘：高人数、高推进压力
   tropic: { gunshipEvery: 5, batch: 5, cap: 9, roleBias: 'skirmish' },                 // 海岛：大批次突入与快速接近
+  raid: { raid: true, gunshipEvery: 0, batch: 0, roleBias: 'stealth' },                  // 剿匪：只触发局部无线电支援，不走常规自动波次
 };
 
 // 波次 → 品质/护甲强度(rush = 品质提速波数,港区巷战用)
@@ -45,7 +46,7 @@ export class WaveDirector {
 
   // 每帧:出怪队列 + 波次推进(enemies = 主注册表,死人由清理逻辑移除)
   update(dt, enemies, player, playerAlive) {
-    if (this.done) return;
+    if (this.rule.raid || this.done) return;
     const aliveN = enemies.filter((e) => e.alive).length;             // 清波判定:含空中单位
     const capN = enemies.filter((e) => e.alive && !e.airUnit).length; // 出怪上限:空中单位不占地面名额
 

@@ -1,21 +1,38 @@
-// 主菜单:背景就是即将进入的游戏场景(canvas 实时渲染,世界 0.3× 慢速待机演示)。
-// 左半毛玻璃 = 标题 + 场景选择 + 按钮;右半毛玻璃 = 选中场景的名称与简介。
-// 点「进入战场」:以屏幕中线为界,左半向左、右半向右滑出 —— 像两扇门打开,露出战场。
-// 未来加场景 = 在 SCENES 加一条数据(等 level.js 支持多关卡生成后接 activated 钩子)。
+// 主菜单：NIGHTFALL 行动启动台。真实游戏 Canvas 作为动态背景，
+// 左侧承载 HERO 品牌与主要操作，右侧显示当前战区简报，底部选择战区。
+// 场景切换仍走 game.js 注入的原地重建回调；所有玩家存档键与玩法模块保持不变。
 import { bpToggle } from './backpack.js';
 import { uiSfx } from '../systems/audio.js';
 import { loadCustomLevel, isCustomActive, activateCustomLevel, setSceneTheme } from '../world/level.js';
 
-const hasCustom = !!loadCustomLevel();
+const customData = loadCustomLevel();
+const hasCustom = !!customData && Array.isArray(customData.rects);
 // 每关:独立素材包 + 独立地形布局 + 独立玩法规则(见 level.js LAYOUTS / waves.js SCENE_RULES)
 const SCENES = [
-  { id: 'wild', name: '野外 · 月夜', desc: '标准攻势 · 攻防兼备', ready: true },
-  { id: 'roof', name: '屋顶 · 黎明', desc: '制空压制 · 空袭频繁', ready: true },
-  { id: 'room', name: '港区 · 仓库', desc: '巷战 · 精锐提前到场', ready: true },
-  { id: 'desert', name: '沙丘 · 正午', desc: '人海冲锋 · 几乎无遮蔽', ready: true },
-  { id: 'tropic', name: '海岛 · 澜', desc: '跳跃节奏 · 滩头遭遇', ready: true },
-  { id: 'custom', name: '我的关卡', desc: hasCustom ? '自己画的战场' : '先去战场编辑器画一个', ready: hasCustom },
+  { id: 'wild', name: '野外 · 月夜', desc: '标准攻势 · 高低平台与掩体', ready: true },
+  { id: 'roof', name: '屋顶 · 黎明', desc: '制空压制 · 高位狙击对射', ready: true },
+  { id: 'room', name: '港区 · 仓库', desc: '近距离巷战 · 精锐提前出现', ready: true },
+  { id: 'desert', name: '沙丘 · 正午', desc: '人海冲锋 · 稀疏掩体与沙脊', ready: true },
+  { id: 'tropic', name: '海岛 · 澜', desc: '跳跃推进 · 滩头平台战', ready: true },
+  { id: 'raid', name: '剿匪行动 · 多层建筑', desc: '屋顶绳降 · 潜行清剿 · 局部增援', ready: true },
+  { id: 'custom', name: '我的关卡', desc: hasCustom ? '部署你的自定义战场' : '先去战场编辑器绘制地图', ready: hasCustom },
 ];
+
+const SCENE_ART = {
+  wild: './bg/mountains-far.png', roof: './bg/mountains-near.png',
+  room: './bg/city/mid.png', desert: './bg/desert/dunes.png',
+  tropic: './bg/tropic/ridge.png', raid: './bg/city/far.png', custom: null,
+};
+
+const BRIEFING = {
+  wild:   { code: 'OP-01 / WILDERNESS', number: '01', assault: '标准推进', air: '直升机 + 无人机', terrain: '平台 / 箱体掩护', loot: '15 波 · 品质递增' },
+  roof:   { code: 'OP-02 / ROOFTOP', number: '02', assault: '高位交火', air: '高频空袭', terrain: '高台 / 长射线', loot: '15 波 · 高风险' },
+  room:   { code: 'OP-03 / DOCKYARD', number: '03', assault: '精锐突入', air: '低频投放', terrain: '密集箱体 / 窄通道', loot: '精锐提前出现' },
+  desert: { code: 'OP-04 / DUNES', number: '04', assault: '人海冲锋', air: '运输机批次投放', terrain: '沙脊 / 开阔地', loot: '高密度战利品' },
+  tropic: { code: 'OP-05 / ISLAND', number: '05', assault: '滩头推进', air: '多兵批次投放', terrain: '岩台 / 连续跳台', loot: '机动路线优先' },
+  raid: { code: 'OP-06 / BUILDING RAID', number: '06', assault: '潜入后局部警报', air: '按敌方无线电呼叫响应', terrain: '四层建筑 / 可破坏墙门灯', loot: '逐层清剿 · 选择潜行或强攻' },
+  custom: { code: 'OP-X / USER THEATER', number: 'X', assault: '自定义遭遇', air: '按关卡配置', terrain: '玩家绘制布局', loot: '按波次递增' },
+};
 
 let open = true;
 const savedScene = localStorage.getItem('contra-scene');
@@ -23,11 +40,14 @@ let scene = SCENES.find((x) => x.id === savedScene && x.ready) || SCENES[0];
 activateCustomLevel(scene.id === 'custom'); // 选中态与激活 flag 对齐(防存档清了 flag 还开着)
 if (scene.id !== 'custom') setSceneTheme(scene.id); // 主题场景:调色板与存档对齐
 let leaveT = null;
+let sceneSwitchT = null;
+let sceneSwitchPending = false;
 let gearT = null;              // 「装备整备」的开背包定时器(1s 内回菜单要取消,见 start/menuShow)
-let sfx = () => {};            // main 注入 beep
+let sfx = () => {};            // main 注入 UI 音效兜底
 let boom = () => {};           // main 注入 noiseBurst(开门"哗"的气流声)
-let onSlam = () => {};         // main 注入:全开瞬间的震屏+闪光(真空门效果的一部分)
+let onSlam = () => {};         // main 注入：菜单离场瞬间的轻震屏与闪光
 let bootAudio = () => {};      // main 注入 initAudio:菜单按钮点击就是用户手势,在这里启动音频链
+let onSceneChange = null;      // main 注入:原地重建物理场景,不要硬刷新整页
 let started = false;           // false = 从未进过战场(开始);true = 战斗中回菜单(继续)
 
 export function menuIsOpen() { return open; }
@@ -42,106 +62,96 @@ export function menuInit(opts = {}) {
   boom = opts.noiseBurst || boom;
   onSlam = opts.onSlam || onSlam;
   bootAudio = opts.initAudio || bootAudio;
+  onSceneChange = opts.onSceneChange || onSceneChange;
   build();
 }
 
-// 回主菜单(M/Esc):两扇门从两侧合拢 —— 暂停时长得一模一样,只是"进入战场"变成"继续战斗"
+// 回作战台：内容分层入场，底下 Canvas 保持轻量实时演示。
 export function menuShow() {
   bootAudio();
   const m = document.getElementById('menu');
   if (!m || open) return;
   open = true;
-  clearTimeout(leaveT);
-  clearTimeout(gearT); gearT = null; // 还没弹的"装备整备"背包别再弹(玩家已经回菜单了)
-  const left = m.querySelector('.menu-left'), right = m.querySelector('.menu-right');
-  document.getElementById('menuSeam').style.opacity = '1'; // 斜切边光影:菜单常开时常亮
-  document.getElementById('menuStart').textContent = started ? '继 续 战 斗' : '进 入 战 场';
-  m.style.display = 'flex';
+  clearTimeout(leaveT); leaveT = null;
+  clearTimeout(gearT); gearT = null;
+  clearTimeout(slamT); slamT = null;
+  m.classList.remove('menu-departing', 'menu-entering');
+  m.style.display = 'grid';
+  m.style.pointerEvents = '';
+  const label = document.getElementById('menuStartLabel');
+  if (label) label.textContent = started ? '继续战斗' : '部署突击';
   document.body.classList.add('in-menu');
-  const t0 = performance.now(), D = 700;
-  const anim = (now) => {
-    if (!open) return;
-    const p = Math.min(1, (now - t0) / D);
-    const e = 1 - Math.pow(1 - p, 3); // easeOutCubic 合门
-    left.style.transform = `translateX(${(-103 + 103 * e).toFixed(2)}%)`;
-    right.style.transform = `translateX(${(103 - 103 * e).toFixed(2)}%)`;
-    if (p < 1) requestAnimationFrame(anim);
-    else {
-      // 门已合拢:竖直形态 morph 回黄金比例斜切,斜切光影淡入
-      document.getElementById('menu').classList.remove('opening');
-      document.getElementById('menuSeam').style.opacity = '1';
-    }
-  };
-  requestAnimationFrame(anim);
-  sfx(340, 520, 0.12, 'sine', 0.05);
+  void m.offsetWidth;
+  m.classList.add('menu-entering');
+  setTimeout(() => m.classList.remove('menu-entering'), 1100);
+  sfx(320, 560, 0.11, 'triangle', 0.035);
 }
 
+let slamT = null;
+
 function start(alsoGear) {
+  if (sceneSwitchPending) return;
   bootAudio();
   const m = document.getElementById('menu');
   if (!m || !open) return;
   open = false;
   started = true;
-  const left = m.querySelector('.menu-left'), right = m.querySelector('.menu-right');
-  const seam = document.getElementById('menuGlow'); // 开门辉光 = 竖缝(原版视觉)
-  // 第一段:斜切 morph 回竖直(clip-path 过渡,门板不动)—— 斜线直接横移会显得错乱,
-  // morph 完成后再跑原版的三段式竖直开门
-  m.classList.add('opening');
-  // 真空门三段式:先开一条缝(沉重)→ 停顿蓄力(门缝漏光)→ 哗一声朝两边彻底划开
-  const GAP = 6;        // 第一段只开 6%
-  const T_M = 0.22;                       // 斜切 → 竖直 morph 时长
-  const T_A = 0.34, T_B = 0.5, T_C = 0.86; // 秒:A 开缝 / B 停顿 / C 全开(均从 morph 结束起算)
-  const t0 = performance.now() + T_M * 1000; // 动画时钟延后一个 morph 期
-  sfx(75, 55, 0.32, 'sawtooth', 0.035); // 开缝:沉重的摩擦声
-  const anim = (now) => {
-    const t = (now - t0) / 1000;
-    if (t < 0) { requestAnimationFrame(anim); return; } // morph 中,门板保持合拢
-    if (t < T_A) {
-      // A:慢推开一条缝(easeOutSine,带一点卡顿抖动)
-      const p = 1 - Math.cos((t / T_A) * Math.PI / 2);
-      const jitter = Math.sin(t * 60) * 0.35 * (1 - p);
-      const off = GAP * p + jitter;
-      left.style.transform = `translateX(${(-off).toFixed(2)}%)`;
-      right.style.transform = `translateX(${off.toFixed(2)}%)`;
-      seam.style.opacity = '0.9';
-    } else if (t < T_B) {
-      // B:停顿蓄力 —— 门缝里光越来越亮,世界屏息
-      const p = (t - T_A) / (T_B - T_A);
-      left.style.transform = `translateX(${-GAP}%)`;
-      right.style.transform = `translateX(${GAP}%)`;
-      seam.style.opacity = (0.9 + p * 0.1).toFixed(2);
-      if (!anim.charged) { anim.charged = true; sfx(160, 430, 0.16, 'sine', 0.045); } // 蓄力上扬音
-    } else if (t < T_C) {
-      // C:哗!easeIn 慢起快走 —— 真空被撕开,门朝两边砸开
-      if (!anim.slammed) {
-        anim.slammed = true;
-        onSlam(); // 震屏 + 白光(main 侧)
-        boom(0.32, 0.15, 1000); // 气流爆音
-        seam.style.opacity = '0';
-      }
-      const p = (t - T_B) / (T_C - T_B);
-      const e = p * p * p; // easeInCubic:起步沉,收尾飞快
-      const off = GAP + (103 - GAP) * e;
-      left.style.transform = `translateX(${(-off).toFixed(2)}%)`;
-      right.style.transform = `translateX(${off.toFixed(2)}%)`;
-    } else {
-      m.style.display = 'none';
-      left.style.transform = right.style.transform = '';
-      seam.style.opacity = '0';
-      sfx(64, 30, 0.4, 'sine', 0.11); // 落锁闷响
-      return;
-    }
-    requestAnimationFrame(anim);
-  };
-  requestAnimationFrame(anim);
+  m.classList.remove('menu-entering');
+  m.classList.add('menu-departing');
+  m.style.pointerEvents = 'none';
+  // UI 内容先脱离视线，随后让真实战场完整露出；避免再驱动两扇全屏模糊门。
+  clearTimeout(slamT);
+  slamT = setTimeout(() => {
+    slamT = null;
+    if (open) return;
+    onSlam();
+    boom(0.22, 0.12, 900);
+  }, 205);
   clearTimeout(leaveT);
-  leaveT = setTimeout(() => document.body.classList.remove('in-menu'), Math.round(T_B * 1000) + 120); // 门划开的同时 HUD 淡入
+  leaveT = setTimeout(() => {
+    leaveT = null;
+    if (open) return;
+    m.style.display = 'none';
+    m.classList.remove('menu-departing');
+    m.style.pointerEvents = '';
+    document.body.classList.remove('in-menu');
+  }, 560);
   if (alsoGear) {
     clearTimeout(gearT);
     gearT = setTimeout(() => {
       gearT = null;
-      if (!open && !helpIsOpen()) bpToggle(); // 触发前再校验:玩家若已回菜单/开帮助就不弹
-    }, 1050); // 装备整备:进门后直接开背包
+      if (!open && !helpIsOpen()) bpToggle();
+    }, 1050);
+  }
+}
+
+function updateSceneBriefing(s) {
+  const data = BRIEFING[s?.id] || BRIEFING.wild;
+  const put = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  put('menuSceneName', s?.name || SCENES[0].name);
+  put('menuSceneDesc', s?.desc || SCENES[0].desc);
+  put('menuSceneCode', data.code);
+  put('menuSceneNumber', data.number);
+  put('menuIntelAssault', data.assault);
+  put('menuIntelAir', data.air);
+  put('menuIntelTerrain', data.terrain);
+  put('menuIntelLoot', data.loot);
+  put('menuStartLabel', started ? '继续战斗' : (s?.id === 'raid' ? '开始剿匪' : '部署突击'));
+  const menuRoot = document.getElementById('menu');
+  if (menuRoot) menuRoot.dataset.scene = s?.id || 'wild';
+  document.querySelectorAll('#menuScenes .scene-card').forEach((el) => {
+    const active = el.dataset.scene === s?.id;
+    el.classList.toggle('sel', active);
+    el.setAttribute('aria-pressed', active ? 'true' : 'false');
+    const mark = el.querySelector('.sc-select-mark');
+    if (mark && !el.classList.contains('locked')) mark.textContent = active ? '当前战区' : '选择战区';
+  });
+  const right = document.querySelector('.menu-right');
+  if (right) {
+    right.classList.remove('brief-update');
+    void right.offsetWidth;
+    right.classList.add('brief-update');
+    setTimeout(() => right.classList.remove('brief-update'), 520);
   }
 }
 
@@ -149,25 +159,86 @@ function build() {
   const wrap = document.getElementById('menuScenes');
   if (!wrap) return;
   wrap.innerHTML = '';
-  for (const s of SCENES) {
+  SCENES.forEach((s, index) => {
     const el = document.createElement('button');
-    el.className = 'scene-card' + (s === scene ? ' sel' : '') + (s.ready ? '' : ' locked');
-    const num = String(SCENES.indexOf(s) + 1).padStart(2, '0');
-    const desc = s.ready ? s.desc : '未解锁';
-    el.innerHTML = `<span class="sc-num">${num}</span><span class="sc-name">${s.name}</span><span class="sc-desc">${desc}</span>`;
+    el.type = 'button';
+    el.className = 'scene-card' + (s.id === scene.id ? ' sel' : '') + (s.ready ? '' : ' locked');
+    el.dataset.scene = s.id;
+    el.style.setProperty('--card-i', String(index));
+    el.setAttribute('aria-pressed', s.id === scene.id ? 'true' : 'false');
+    el.disabled = !s.ready;
+    el.setAttribute('aria-label', `${s.name}，${s.ready ? (s.id === scene.id ? '当前选中' : '选择战区') : '尚未创建自定义地图'}`);
+    const num = s.id === 'custom' ? 'X' : String(index + 1).padStart(2, '0');
+    const desc = s.ready ? s.desc : '先创建你的战场';
+    const art = document.createElement('span');
+    art.className = 'sc-art';
+    art.setAttribute('aria-hidden', 'true');
+    art.dataset.scene = s.id;
+    const image = SCENE_ART[s.id];
+    if (image) art.style.backgroundImage = `linear-gradient(180deg,rgba(5,9,16,.04),rgba(5,9,16,.2)),url("${image}")`;
+    const number = document.createElement('span');
+    number.className = 'sc-num'; number.textContent = num;
+    const copy = document.createElement('span'); copy.className = 'sc-copy';
+    const name = document.createElement('span'); name.className = 'sc-name'; name.textContent = s.name;
+    const summary = document.createElement('span'); summary.className = 'sc-desc'; summary.textContent = desc;
+    const mark = document.createElement('span'); mark.className = 'sc-select-mark'; mark.textContent = s.id === scene.id ? '当前战区' : (s.ready ? '选择战区' : '未创建');
+    copy.append(name, summary, mark);
+    el.append(art, number, copy);
     el.onclick = () => {
-      if (!s.ready) return;
+      if (!s.ready || sceneSwitchPending) return;
       bootAudio();
+      if (s.id === scene.id) { updateSceneBriefing(s); return; } // 不重载已选中的地图,避免无意义卡顿
+      const previousSceneId = scene.id;
       activateCustomLevel(s.id === 'custom');
-      // 每关地形/素材/玩法都不同 —— 切换 = 存档 + 重载(关卡刚体在创建时按布局生成)
-      if (s.id !== 'custom') setSceneTheme(s.id);
+      // 更新选择态与存档;实际地形/背景/波次由主装配根在过渡结束时原地重建。
       scene = s;
       localStorage.setItem('contra-scene', s.id);
+      updateSceneBriefing(s);
       if (!uiSfx('switch-a')) sfx(520, 760, 0.07, 'square', 0.04);
-      setTimeout(() => location.reload(), 260);
+      const transition = document.getElementById('sceneTransition');
+      if (transition) {
+        transition.classList.add('active');
+        transition.setAttribute('aria-hidden', 'false');
+        const code = transition.querySelector('[data-deploy-code]');
+        if (code) code.textContent = (BRIEFING[s.id] || BRIEFING.wild).code;
+      }
+      wrap.classList.add('switching');
+      sceneSwitchPending = true;
+      const startBtn = document.getElementById('menuStart');
+      if (startBtn) startBtn.disabled = true;
+      clearTimeout(sceneSwitchT);
+      sceneSwitchT = setTimeout(() => {
+        try {
+          const ok = onSceneChange ? onSceneChange(s.id) : (location.reload(), true);
+          if (ok === false) {
+            // 地图存档校验失败时回滚菜单选择与持久化状态,不让 UI 假装切关成功。
+            scene = SCENES.find((item) => item.id === previousSceneId) || SCENES[0];
+            localStorage.setItem('contra-scene', scene.id);
+            activateCustomLevel(scene.id === 'custom');
+            updateSceneBriefing(scene);
+            if (!uiSfx('switch-b')) sfx(240, 180, 0.12, 'square', 0.04);
+          }
+        } catch (err) {
+          window.__lastSceneSwitchError = String(err && err.stack || err);
+          scene = SCENES.find((item) => item.id === previousSceneId) || SCENES[0];
+          localStorage.setItem('contra-scene', scene.id);
+          activateCustomLevel(scene.id === 'custom');
+          updateSceneBriefing(scene);
+        } finally {
+          if (transition) {
+            transition.classList.remove('active');
+            transition.setAttribute('aria-hidden', 'true');
+          }
+          wrap.classList.remove('switching');
+          sceneSwitchPending = false;
+          if (startBtn) startBtn.disabled = false;
+          sceneSwitchT = null;
+        }
+      }, 360);
     };
     wrap.appendChild(el);
-  }
+  });
+  updateSceneBriefing(scene);
   document.getElementById('menuStart').onclick = () => { uiSfx('click-b', 0.4); start(false); };
   document.getElementById('menuHelp').onclick = () => {
     bootAudio();
@@ -179,6 +250,11 @@ function build() {
   document.getElementById('helpClose').onclick = () => closeHelp();
   document.getElementById('menuGear').onclick = () => { uiSfx('click-a'); start(true); };
   document.body.classList.add('in-menu');
+  const menu = document.getElementById('menu');
+  if (menu) {
+    menu.classList.add('menu-entering');
+    setTimeout(() => menu.classList.remove('menu-entering'), 900);
+  }
 }
 
 function closeHelp() {
@@ -187,4 +263,3 @@ function closeHelp() {
   h.classList.remove('show');
   setTimeout(() => { h.style.display = 'none'; }, 220);
 }
-

@@ -117,9 +117,48 @@ export const LAYOUTS = {
     { x: 40.6, y: 0.52, w: 2.0, h: 1.04, type: 'rock' },
     { x: 58.0, y: 0.54, w: 2.1, h: 1.08, type: 'crate' },
   ],
-};
+  // 剿匪行动·多层建筑：屋顶绳降进入，逐层清理到地面。墙体为可破坏 tile，
+  // 门/灯保留单体刚体，门可用 E 打开或被子弹击毁，灯被击毁后环境光同步熄灭。
+  raid: (() => {
+    const floor = (x, y, w) => ({ x, y, w, h: 0.5, type: 'concrete', destructible: false });
+    const wall = (x, floorTop, width = 0.28, height = 2.9) => ({
+      x, y: floorTop + height / 2, w: width, h: height, type: 'wall', destructible: true,
+    });
+    const partition = (x, floorTop, id) => [
+      wall(x - 1.35, floorTop, 0.28, 2.65),
+      wall(x + 1.35, floorTop, 0.28, 2.65),
+      { x, y: floorTop + 2.9, w: 3.0, h: 0.45, type: 'wall', destructible: true },
+      { x, y: floorTop + 1.02, w: 2.42, h: 2.04, type: 'door', doorId: id, interactive: true, destructible: true, hp: 130, maxHp: 130 },
+    ];
+    const lamp = (x, floorTop, id) => ({
+      x, y: floorTop + 3.05, w: 0.68, h: 0.18, type: 'lamp', lampId: id,
+      raidFloorId: Math.round(floorTop / 3.5), interactive: true, destructible: true, hp: 8, maxHp: 8,
+    });
+    const crate = (x, floorTop, type = 'crate') => ({ x, y: floorTop + 0.52, w: 1.0, h: 1.04, type, destructible: true });
+    return [
+      ground90(),
+      // 屋顶(10.5m)：在 x≈16 留垂降井；下面两层的落井口交错，防止一次直穿整栋楼。
+      floor(7, 10.25, 14), floor(46, 10.25, 56),
+      // 三层(7m)：靠左落井；右段为可清理的独立房间。
+      floor(14, 6.75, 28), floor(53, 6.75, 42),
+      // 二层(3.5m)：右侧落井到地面。
+      floor(24, 3.25, 48), floor(63, 3.25, 22),
+      // 建筑外侧可破坏墙柱，屋顶到一层有贯通的室内尺度。
+      wall(0.25, 0, 0.5, 10.5), wall(73.75, 0, 0.5, 10.5),
+      ...partition(11, 0, 'g-01'), ...partition(29, 0, 'g-02'), ...partition(45, 0, 'g-03'), ...partition(61, 0, 'g-04'),
+      ...partition(17, 3.5, 'f1-01'), ...partition(37, 3.5, 'f1-02'), ...partition(58, 3.5, 'f1-03'),
+      ...partition(23, 7, 'f2-01'), ...partition(43, 7, 'f2-02'), ...partition(62, 7, 'f2-03'),
+      // 可打烂的顶灯和掩体；每层至少两盏灯，破坏后该区域会更暗、守军更难看清目标。
+      ...[4, 19, 34, 50, 67].map((x, i) => lamp(x, 0, `g-lamp-${i}`)),
+      ...[6, 28, 48, 66].map((x, i) => lamp(x, 3.5, `f1-lamp-${i}`)),
+      ...[6, 31, 51, 68].map((x, i) => lamp(x, 7, `f2-lamp-${i}`)),
+      ...[crate(7, 0), crate(36, 0, 'steel'), crate(54, 0), crate(9, 3.5, 'steel'), crate(28, 3.5), crate(48, 3.5), crate(9, 7), crate(34, 7, 'steel'), crate(54, 7)],
+    ];
+  })(),
+ };
 // 场景 → 布局(custom 关卡由 loadCustomLevel 接管)
 const savedScene = localStorage.getItem('contra-scene') || 'wild';
+LEVEL.spawn = savedScene === 'raid' ? { x: 4.2, y: 10.5 } : { x: 0, y: 0 };
 LEVEL.rects = (LAYOUTS[savedScene] || LAYOUTS.wild).slice();
 
 // 块耐久:按面积算(平台 3.6x0.5 ≈ 72HP,步枪 3~4 发打穿);主地表不可破坏
@@ -140,7 +179,7 @@ export function buildLevel(world) {
   // 子弹命中某 tile 只碎那一片 —— 局部弹坑,而不是整块消失
   for (let i = LEVEL.rects.length - 1; i >= 0; i--) {
     const r = LEVEL.rects[i];
-    if (r.destructible === false) continue;
+    if (r.destructible === false || r.interactive) continue;
     const cols = Math.max(1, Math.round(r.w / TILE));
     const rows = Math.max(1, Math.round(r.h / TILE));
     const tw = r.w / cols, th = r.h / rows;
@@ -185,26 +224,51 @@ export function activateCustomLevel(on) { localStorage.setItem('contra-level-act
 export function isCustomActive() {
   // 场景选择键是唯一事实来源:选中"野外"时陈旧的 active flag 不算数。
   // 守卫必须在这里(消费点之前)做 —— menu.js 的 flag 对齐在 import 顺序上晚于本模块,靠不住
-  const scene = localStorage.getItem('contra-scene');
-  if (scene && scene !== 'custom') return false;
+  const scene = localStorage.getItem('contra-scene') || 'wild';
+  if (scene !== 'custom') return false;
   const c = loadCustomLevel();
   return !!c && Array.isArray(c.rects) && localStorage.getItem('contra-level-active') === '1';
 }
-function applyCustomIfActive() {
-  if (!isCustomActive()) return;
+function customRects() {
   const c = loadCustomLevel();
-  // v1 存的是左下角(与消费端错位的旧格式),v2 起存中心点;旧档按绘制意图转一次
+  if (!c || !Array.isArray(c.rects)) return null;
+  // 先校验所有矩形,避免损坏/不完整的 localStorage 存档生成 NaN 刚体。
+  const validRect = (r) => r && ['x', 'y', 'w', 'h'].every((k) =>
+    typeof r[k] === 'number' && Number.isFinite(r[k])) && r.w > 0 && r.h > 0;
+  if (!c.rects.every(validRect)) return null;
+  // v1 存左下角,v2 起存中心点;旧档按绘制意图迁移。
   const toCenter = (r) => (c.version >= 2 ? r : { ...r, x: r.x + r.w / 2, y: r.y + r.h / 2 });
-  // 固定主地表(防掉深渊)+ 用户画的块(全部可破坏)
-  LEVEL.rects = [
+  return [
     { x: 33, y: -1.5, w: 90, h: 3, type: 'ground', destructible: false },
     ...c.rects.map((r) => {
       const t = toCenter(r);
-      return { x: t.x, y: t.y, w: t.w, h: t.h, type: t.type || 'plat', destructible: true };
+      return { x: t.x, y: t.y, w: t.w, h: t.h, type: r.type || 'plat', destructible: true };
     }),
   ];
 }
+function applyCustomIfActive() {
+  if (!isCustomActive()) return;
+  LEVEL.rects = customRects() || LEVEL.rects;
+}
 applyCustomIfActive();
+
+// 游戏内无刷新切换场景:替换地形数据,由装配根重建物理刚体。
+export function setActiveLayout(id) {
+  LEVEL.spawn = id === 'raid' ? { x: 4.2, y: 10.5 } : { x: 0, y: 0 };
+  if (id === 'custom') {
+    const rects = customRects();
+    if (!rects) return false;
+    LEVEL.rects = rects;
+    return true;
+  }
+  const src = LAYOUTS[id] || LAYOUTS.wild;
+  LEVEL.rects = src.map((r) => {
+    const copy = { ...r };
+    delete copy.body; delete copy.hp; delete copy.maxHp;
+    return copy;
+  });
+  return true;
+}
 
 // 找 x 处最高的可行走表面(y 越小越高…… 世界 y 向上,返回该点的地面高度)
 export function groundYAt(x, belowY = Infinity) {
@@ -251,6 +315,12 @@ export const THEMES = {
     filter: 'brightness(0.92) saturate(0.95)',
     duskColor: 'rgba(20, 50, 90, 0.14)',
   },
+  raid: {
+    label: '剿匪行动',
+    sky: ['#070d16', '#192637', '#3d5365'],
+    filter: 'brightness(0.62) saturate(0.72) hue-rotate(-8deg)',
+    duskColor: 'rgba(3,8,14,0.68)',
+  },
 };
 let themeId = (() => {
   const t = localStorage.getItem('contra-scene');
@@ -262,10 +332,14 @@ export function setSceneTheme(id) {
   themeId = id;
   SKY = null;          // 天空离屏缓存按主题重建
   tintCache = {};      // 图层染色缓存重建
+  activateBackgroundSet(id); // 切场景同步切换背景图层
   localStorage.setItem('contra-scene', id);
 }
 
-const bgImgs = {};
+let bgImgs = {};
+let curSet = null;
+let BG_SCALE = 4.5;
+const bgImgCache = new Map();
 // 每关一套图层:dir(公共目录)+ 各槽文件名 + layerScale(素材层高 → 全屏的放大倍数;
 // 160px 层 = 4.5,360px 层 = 2.0,324px 层 = 2.22)
 // foreAlpha = 前景剪影层透明度:前景画在玩家之后,素材内容越"重"就要越透 ——
@@ -279,14 +353,25 @@ const BG_SETS = {
   room: { dir: 'bg/city', scale: 2.22, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png' } },
   desert: { dir: 'bg/desert', scale: 2.0, files: { sky: 'clouds.png', far: 'far.png', near: 'dunes.png', trees: 'bush.png', fore: 'bush.png' } },
   tropic: { dir: 'bg/tropic', scale: 2.0, files: { sky: 'sky.png', far: 'ridge.png', near: 'palms.png', trees: 'grass.png', fore: 'grass.png' } },
+  raid: { dir: 'bg/city', scale: 2.22, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png' } },
 };
-const curSet = BG_SETS[savedScene] || BG_SETS.wild;
-for (const [k, f] of Object.entries(curSet.files)) {
-  const im = new Image();
-  im.src = `${curSet.dir}/${f}`;
-  bgImgs[k] = im;
+function activateBackgroundSet(id) {
+  const sceneId = BG_SETS[id] ? id : 'wild';
+  curSet = BG_SETS[sceneId] || BG_SETS.wild;
+  if (!bgImgCache.has(sceneId)) {
+    const loaded = {};
+    for (const [k, f] of Object.entries(curSet.files)) {
+      const im = new Image();
+      im.decoding = 'async';
+      im.src = `${curSet.dir}/${f}`;
+      loaded[k] = im;
+    }
+    bgImgCache.set(sceneId, loaded);
+  }
+  bgImgs = bgImgCache.get(sceneId);
+  BG_SCALE = curSet.scale;
 }
-const BG_SCALE = curSet.scale; // 素材层放大倍数(随关卡素材分辨率不同)
+activateBackgroundSet(themeId); // 场景切换复用已加载的 Image,避免刷新页面重新请求素材
 // 染色缓存:素材层 × 主题 → 离屏 canvas(滤镜只跑一次,平铺时零开销)
 let tintCache = {};
 function tinted(key) {
@@ -377,6 +462,67 @@ export function drawForeground(ctx, W, H, camX) {
 }
 const PPM_FG = 52 * 1.15;
 
+// 剿匪行动室内底图：实体墙之前绘制，房间有窗带、结构柱、线槽与墙板，不再是空旷平台。
+// 装饰只用基本 Canvas primitives，不创建离屏图层/渐变，不增加每帧 GC 压力。
+export function drawBuildingInterior(ctx, w2s, ppm, time = 0) {
+  if (themeId !== 'raid') return;
+  const rect = (x0, y0, x1, y1, color) => {
+    const [sx, sy] = w2s(x0, y1);
+    const [ex, ey] = w2s(x1, y0);
+    if (ex < -8 || sx > 1290 || ey < -8 || sy > 730) return;
+    ctx.fillStyle = color;
+    ctx.fillRect(sx, sy, ex - sx, ey - sy);
+  };
+  // 四层室内墙面；屋顶层也画护墙与设备平台，避免看起来像漂浮在天空里的小人。
+  for (let floor = 0; floor < 3; floor++) {
+    const base = floor * 3.5;
+    rect(0.5, base + 0.18, 73.5, base + 3.30, floor % 2 ? '#182331' : '#141f2b');
+    rect(0.5, base + 3.12, 73.5, base + 3.28, '#394450'); // ceiling beam
+    rect(0.5, base + 0.32, 73.5, base + 0.42, '#263746'); // cable raceway
+    for (let x = 2.5; x < 74; x += 5.5) {
+      rect(x, base + 0.42, x + 0.09, base + 3.10, 'rgba(86,106,124,0.42)');
+      rect(x + 0.14, base + 0.55, x + 0.19, base + 2.98, 'rgba(5,10,17,0.46)');
+    }
+    // 窗户/射击狭缝：冷蓝玻璃 + 边框 + 竖向分隔线。
+    for (let x = 4 + (floor % 2) * 2; x < 72; x += 11.5) {
+      rect(x, base + 1.72, x + 3.0, base + 2.58, '#0b1723');
+      rect(x + 0.08, base + 1.80, x + 2.92, base + 2.50, '#1c3446');
+      rect(x + 0.12, base + 2.35, x + 2.88, base + 2.40, 'rgba(135,184,205,0.48)');
+      rect(x + 1.44, base + 1.78, x + 1.52, base + 2.52, '#0b121b');
+    }
+    // 墙上配电柜/设备箱与管道，让长走廊有比例尺和战术细节。
+    for (let x = 7 + (floor % 2) * 3; x < 71; x += 17.5) {
+      rect(x, base + 0.62, x + 1.25, base + 1.42, '#273847');
+      rect(x + 0.12, base + 0.72, x + 1.13, base + 1.32, '#101922');
+      rect(x + 0.2, base + 1.15, x + 0.68, base + 1.20, '#d68b3c');
+      rect(x + 0.84, base + 0.82, x + 0.91, base + 1.02, '#6da8b6');
+    }
+    // 灯被击毁后仍保留天花灯槽，但不再画发光核心；灯源与碰撞物件共用 rect 数据。
+    const activeLamps = LEVEL.rects.filter((r) => r.type === 'lamp' && r.raidFloorId === floor);
+    for (const lamp of activeLamps) {
+      const pulse = 0.84 + Math.sin(time * 2.6 + lamp.x) * 0.04;
+      rect(lamp.x - 0.8, base + 2.78, lamp.x + 0.8, base + 2.84, `rgba(255,174,86,${0.10 * pulse})`);
+      rect(lamp.x - 0.30, base + 2.78, lamp.x + 0.30, base + 2.82, `rgba(255,190,116,${0.58 * pulse})`);
+    }
+  }
+  // 屋顶设备基座与矮护墙，屋顶的可视区域保持在建筑风格内。
+  rect(0.5, 10.55, 73.5, 13.8, '#111b27');
+  rect(0.5, 10.55, 73.5, 10.72, '#3a4652');
+  for (let x = 3; x < 72; x += 8.5) {
+    rect(x, 10.78, x + 1.8, 11.42, '#222f3b');
+    rect(x + 0.12, 10.94, x + 1.68, 11.00, '#647887');
+  }
+  // 房间内的微弱环境反光/尘埃是固定少量 primitive，不用粒子系统持续造粒子。
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.strokeStyle = '#6d91aa';
+  ctx.lineWidth = Math.max(1, ppm * 0.018);
+  const sweep = (time * 9) % 74;
+  const [sx, sy] = w2s(sweep, 0.5);
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 18, sy - 2); ctx.stroke();
+  ctx.restore();
+}
+
 export function drawTerrain(ctx, rects, w2s, ppm) {
   for (const r of rects) {
     const [sx, sy] = w2s(r.x - r.w / 2, r.y + r.h / 2);
@@ -446,6 +592,27 @@ export function drawTerrain(ctx, rects, w2s, ppm) {
       ctx.fillRect(sx, sy, w, Math.max(2, Math.min(3, h * 0.13)));
       ctx.fillStyle = 'rgba(18,23,28,0.22)';
       ctx.fillRect(sx, sy + h * 0.78, w, h * 0.22);
+    } else if (r.type === 'wall') {
+      ctx.fillStyle = '#3b4653';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = 'rgba(138,157,174,0.48)';
+      ctx.fillRect(sx, sy, w, Math.max(1, Math.min(3, h * 0.1)));
+      ctx.fillStyle = 'rgba(8,13,20,0.40)';
+      ctx.fillRect(sx + w * 0.82, sy, Math.max(1, w * 0.18), h);
+      if (w > 10 && h > 7) {
+        ctx.strokeStyle = 'rgba(8,14,20,0.38)'; ctx.lineWidth = 1;
+        ctx.strokeRect(sx + 1, sy + 1, w - 2, h - 2);
+      }
+    } else if (r.type === 'door') {
+      ctx.fillStyle = '#253646'; ctx.fillRect(sx, sy, w, h);
+      ctx.strokeStyle = '#7f8f9a'; ctx.lineWidth = Math.max(1, ppm * 0.035); ctx.strokeRect(sx + 1, sy + 1, w - 2, h - 2);
+      ctx.fillStyle = '#405567'; ctx.fillRect(sx + w * 0.15, sy + h * 0.08, w * 0.7, h * 0.84);
+      ctx.fillStyle = '#d99a4b'; ctx.fillRect(sx + w * 0.77, sy + h * 0.47, Math.max(2, w * 0.04), Math.max(2, h * 0.08));
+      ctx.fillStyle = 'rgba(255,177,74,0.14)'; ctx.fillRect(sx + w * 0.06, sy + h * 0.12, w * 0.08, h * 0.76);
+    } else if (r.type === 'lamp') {
+      ctx.fillStyle = '#222f3b'; ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#f6ba6c'; ctx.fillRect(sx + w * 0.18, sy + h * 0.20, w * 0.64, h * 0.5);
+      ctx.fillStyle = 'rgba(255,180,86,0.18)'; ctx.fillRect(sx - w * 0.45, sy - h * 0.65, w * 1.9, h * 1.2);
     } else if (r.type === 'rock') {
       ctx.fillStyle = '#665e52';
       ctx.fillRect(sx, sy, w, h);

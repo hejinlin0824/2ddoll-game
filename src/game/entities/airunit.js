@@ -10,7 +10,7 @@ import { LEVEL, groundYAt, CAT } from '../world/level.js';
 import { burst, debris, particles } from '../systems/fx.js';
 import { hasLOS } from '../systems/combat.js';
 import { Dummy } from './enemies.js';
-import { beep, noiseBurst } from '../systems/audio.js';
+import { beep, playSample } from '../systems/audio.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -35,6 +35,7 @@ export class Gunship {
   // opts: { enemies(注册表引用,放无人机用), hp }
   constructor(world, spawn, opts = {}) {
     this.world = world;
+    this.audioType = 'gunship';
     this.enemies = opts.enemies || [];
     this.maxHp = opts.hp || 240;
     this.hp = this.maxHp;
@@ -54,7 +55,6 @@ export class Gunship {
     this.burstLeft = 0; this.burstCd = 0;
     this.rocketT = 4.5; this.rocketSalvo = 0; this.rocketCd = 0;
     this.droneT = 3.5;        // 入场 3.5s 后开始放无人机
-    this.thunkT = 0;          // 旋翼拍击声节拍
     this.smokeT = 0;
     this.crashStillT = 0;     // 坠落中近静止计时(橇着地撑住机身的兜底爆)
     this.rotorSpd = -26;
@@ -170,7 +170,7 @@ export class Gunship {
     let tx = pp.x + pv.x * 0.18 - mx, ty = pp.y + pv.y * 0.18 - my;
     const a = Math.atan2(ty, tx) + (Math.random() - 0.5) * 0.11;
     this.events.push({
-      type: 'shot', x: mx, y: my, stats: GUNSHIP_GUN,
+      type: 'shot', x: mx, y: my, stats: GUNSHIP_GUN, weaponName: '直升机机炮', soundSource: 'helicopter',
       parts: [{ dx: Math.cos(a), dy: Math.sin(a), damage: GUNSHIP_GUN.damage }],
     });
   }
@@ -180,10 +180,9 @@ export class Gunship {
     let tx = pp.x + pv.x * 0.3 - mx, ty = pp.y + pv.y * 0.3 - my;
     const a = Math.atan2(ty, tx) + (Math.random() - 0.5) * 0.05;
     this.events.push({
-      type: 'shot', x: mx, y: my, stats: GUNSHIP_ROCKET,
+      type: 'shot', x: mx, y: my, stats: GUNSHIP_ROCKET, weaponName: '火箭弹', soundSource: 'rocket',
       parts: [{ dx: Math.cos(a), dy: Math.sin(a), damage: GUNSHIP_ROCKET.damage }],
     });
-    noiseBurst(0.3, 0.08, 700);
     burst(mx, my, 6, '#cfd2d8', 3);
   }
 
@@ -233,15 +232,7 @@ export class Gunship {
     this.pushX *= 1 - Math.min(1, 6 * dt);
     this.pushY *= 1 - Math.min(1, 6 * dt);
 
-    // 旋翼拍击声(距离衰减;近了才听得见)
-    this.thunkT -= dt;
-    if (this.thunkT <= 0) {
-      const d = player ? Math.hypot(player.torso.getPosition().x - fp.x, player.torso.getPosition().y - fp.y) : 99;
-      if (d < 24) {
-        beep(52, 44, 0.06, 'square', 0.055 * (1 - d / 24));
-        this.thunkT = 0.13;
-      } else this.thunkT = 0.25;
-    }
+    // 旋翼与发动机持续声由 game.js 的 updateAircraftLoop 统一处理，避免与合成哔声叠加。
 
     // 受损冒烟:半血以下灰烟,两成血以下黑烟带火
     const hpr = this.hp / this.maxHp;
@@ -478,6 +469,7 @@ export class TransportHeli {
   // opts: { enemies, count, roles(本波兵种队列), spec(品质/护甲), excludeGun, dropX }
   constructor(world, opts = {}) {
     this.world = world;
+    this.audioType = 'transport';
     this.enemies = opts.enemies || [];
     this.spec = opts.spec || {};
     this.excludeGun = opts.excludeGun || null;
@@ -626,6 +618,7 @@ export class TransportHeli {
 export class Drone {
   constructor(x, y, owner) {
     this.owner = owner || null;
+    this.audioType = 'drone';
     this.x = x; this.y = y;
     this.vx = (Math.random() - 0.5) * 2; this.vy = 1.2;
     this.hp = 1; this.maxHp = 1;
@@ -667,8 +660,7 @@ export class Drone {
       });
     }
     burst(this.x, this.y, 8, '#ffd77a', 4);
-    beep(1250, 300, 0.09, 'square', 0.05);
-    noiseBurst(0.09, 0.06, 2600);
+    if (!this.exploding) this.events.push({ type: 'droneShatter', x: this.x, y: this.y });
     this.events.push({ type: 'killed', x: this.x, y: this.y, coins: 1, big: false });
   }
 
@@ -702,7 +694,9 @@ export class Drone {
         const ds = this.enraged ? 12.5 : 11;
         this.vx = Math.cos(a) * ds;
         this.vy = Math.sin(a) * ds;
-        beep(680, 1300, 0.25, 'sawtooth', 0.032); // 俯冲啸声
+        if (!playSample('drone-dive', { x: this.x, y: this.y, listenerX: pp.x, listenerY: pp.y, volume: 0.54, maxDistance: 26, distantTail: false })) {
+          beep(680, 1300, 0.25, 'sawtooth', 0.032); // 资源未加载时的兜底啸声
+        }
       }
     } else if (this.state === 'dive') {
       this.trailT -= dt;
@@ -713,6 +707,7 @@ export class Drone {
       if (playerAlive && dist < 0.55) {
         // 自爆:blast 事件由 game.js 结算伤害(吃防御),碎片照常
         this.events.push({ type: 'blast', x: this.x, y: this.y, dmg: 7, r: 1.35, big: false });
+        this.exploding = true;
         this.shatter({ x: dx / dist, y: dy / dist });
         return;
       }
@@ -768,4 +763,3 @@ export class Drone {
     c.restore();
   }
 }
-

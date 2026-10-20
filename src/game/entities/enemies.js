@@ -30,6 +30,12 @@ export class Dummy {
     this.max = opts.max ?? 5;
     this.quality = opts.quality || 'normal';
     this.role = opts.role || 'rifleman'; // rifleman | rusher | support | veteran
+    this.raidMode = !!opts.raidMode;
+    this.raidFloorId = Number.isInteger(opts.raidFloorId) ? opts.raidFloorId : null;
+    this.sightRange = Number.isFinite(opts.sightRange) ? opts.sightRange : 10.5;
+    this.suspicion = 0; this.suspicious = false; this.lastKnown = null; this.searchT = 0;
+    this.supportCallT = -1; this.supportCalled = false; this.alarmZoneId = null;
+    this.isReinforcement = !!opts.isReinforcement;
     // 职能用行为和耐久区分，而不是单纯给所有敌人加血。
     this.maxHp = this.role === 'veteran' ? 15 : this.role === 'support' ? 11 : this.role === 'rusher' ? 9 : 10;
     this.respawn = opts.respawn !== false; // 波次模式 false:死亡后由波次管理器清理
@@ -39,9 +45,9 @@ export class Dummy {
     this.events = [];       // 对外事件(main 消费:开枪/死亡/重生)
     this.alive = true;
     this.hp = this.maxHp;
-    this.face = -1;
+    this.face = Number.isFinite(opts.face) ? Math.sign(opts.face) || -1 : -1;
     this.alert = false;
-    this.patrolDir = 1;
+    this.patrolDir = Number.isFinite(opts.patrolDir) ? Math.sign(opts.patrolDir) || 1 : (this.face > 0 ? 1 : -1);
     this.respawnT = 0;
     this.fireT = 1.2 + Math.random();
     this.burstLeft = 0; this.burstCd = 0;
@@ -145,13 +151,14 @@ export class Dummy {
     if (!this.alive) return null;
     const head = zone === 'head';
     this.flashT = head ? 0.22 : 0.14; // 受击闪白(爆头更久)
-    this.alert = true; // 疼痛警觉:挨打立知有敌
+    this.alertTo(); // 疼痛警觉:挨打立知有敌;剿匪模式还要排入无线电呼叫
     let broke = null;
     // 沿弹道击退:每发都推一下布娃娃(肉击全额,甲击减半 —— 打甲上闷响,打肉上踉跄)
     const kb = (head ? 1.6 : 1) * Math.min(2.2, 0.5 + dmg * 0.12);
     const v = this.p.torso.getLinearVelocity();
     this.p.torso.setLinearVelocity(Vec2(v.x + dir.x * kb, v.y + dir.y * kb * 0.5 + (head ? 0.8 : 0.3)));
     const armor = this.armor[zone];
+    this.events.push({ type: 'hurt', x: this.x, y: this.y, zone, armored: !!(armor && armor.dur > 0), role: this.role });
     if (armor && armor.dur > 0) {
       armor.dur = Math.max(0, armor.dur - dmg * armorMul); // 破甲词条:对耐久伤害加倍
       if (armor.dur === 0) broke = zone;
@@ -220,8 +227,10 @@ export class Dummy {
   // 被枪声/队友传唤点名:进入战斗状态(主动跑向交战距离,不再站桩等你走近)
   alertTo() {
     if (!this.alive) return;
+    const newlyAlerted = !this.alert;
     this.alert = true;
     this.flashT = Math.max(this.flashT, 0.12); // 惊觉一颤
+    if (newlyAlerted) this.events.push({ type: 'alert', x: this.x, y: this.y, role: this.role });
   }
 
   // ---- 个体顿帧:受击/被击杀时只定格这一个敌人,世界照常跑 ----
@@ -344,8 +353,8 @@ export class Dummy {
     const dist = Math.hypot(pp.x - tp.x, pp.y - tp.y);
     // 交战粘性:进入战斗后保持警戒直到玩家倒下 —— 否则"远处点名"会被距离条件立刻覆盖
     // (敌人要跑步穿过大半张地图来交战,途中距离始终 > DEALERT_R,不能拿它当解除条件)
-    if (!playerAlive) this.alert = false;
-    else if (!this.alert && dist < ALERT_R) this.alert = true;
+    if (!playerAlive && !this.raidMode) this.alert = false;
+    else if (playerAlive && !this.raidMode && !this.alert && dist < ALERT_R) this.alert = true;
     this.staggerT = Math.max(0, this.staggerT - dt);
     this.poise = Math.max(0, this.poise - dt * 3); // 韧性缓慢恢复(停火 2.7s 清空)
 
@@ -395,6 +404,14 @@ export class Dummy {
       }
       // 玩家在近处的高台上:起跳去够(以前只有卡墙才跳,永远趴在高台下面挨不着)
       if (this.staggerT <= 0 && this.p.grounded && pp.y > tp.y + 0.9 && dist < 3.4) ai.jumpPressed = true;
+    } else if (this.raidMode && this.suspicious && this.searchT > 0 && this.lastKnown) {
+      const sx = this.lastKnown.x - tp.x;
+      const sy = this.lastKnown.y - tp.y;
+      this.face = Math.abs(sx) > 0.18 ? Math.sign(sx) : this.face;
+      ai.aim = { x: this.lastKnown.x, y: this.lastKnown.y + 0.3 };
+      // 怀疑阶段只检查声源/最后目击点，不进入战斗射击状态，也不会呼叫增援。
+      if (Math.abs(sx) > 0.9) vx = Math.sign(sx) * 0.92;
+      else { vx = 0; this.patrolDir *= (Math.random() < dt * 0.6 ? -1 : 1); this.face = this.patrolDir || this.face; }
     } else if (this.behavior === 'patrol') {
       const target = this.spawn.x + (this.patrolDir > 0 ? this.max : this.min);
       // 提前 0.3m 掉头(滞后):防止在边界处来回抖动
@@ -437,6 +454,3 @@ export class Dummy {
     }
   }
 }
-
-
-

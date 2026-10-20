@@ -1,25 +1,26 @@
 // 魂斗罗风格 2D 布娃娃射击 —— 主循环
 import { World, Vec2 } from 'planck';
 import { W, H, PPM, STEP } from './core/config.js';
-import { LEVEL, buildLevel, groundYAt, drawSky, drawParallax, drawTerrain, drawForeground } from './world/level.js';
+import { LEVEL, buildLevel, setActiveLayout, setSceneTheme, groundYAt, drawSky, drawParallax, drawBuildingInterior, drawTerrain, drawForeground, destroyRect } from './world/level.js';
 import { Player } from './entities/player.js';
 import { loadSavedGun, loadEquip, QUALITY } from './domain/gunPresets.js';
 import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID, loadGunAffixes } from './domain/affixes.js';
 import { WeaponWheel } from './ui/wheel.js';
 import { Dummy } from './entities/enemies.js';
 import { Gunship } from './entities/airunit.js';
-import { throwGrenade, stepGrenades, drawGrenades } from './entities/grenade.js';
+import { throwGrenade, stepGrenades, drawGrenades, clearGrenades } from './entities/grenade.js';
 import { WaveDirector } from './domain/waves.js';
 import { invLoad, invEquipped, invIsFull, invAddCoins } from './domain/inventory.js';
 import { bpInit, bpToggle, bpIsOpen, bpClose, bpWire, bpSetGunInfo } from './ui/backpack.js';
 import { corpseInit, corpseIsOpen, openCorpse, closeCorpse } from './ui/corpse.js';
 import { menuInit, menuIsOpen, menuShow, menuToggle, helpIsOpen, helpClose } from './ui/menu.js';
-import { initAudio, beep, gunSynth, noiseBurst, setMuffle, getActx } from './systems/audio.js';
+import { initAudio, beep, gunSynth, noiseBurst, setMuffle, getActx, playReloadSound, playRadioVoice, playFootstep, playMovementSound, playImpactSound, playExplosion, playRocketLaunch, updateAircraftLoop, stopAllWorldLoops, updateSceneAmbience } from './systems/audio.js';
 import { updateStatusPanel, streakShow, streakHide, lootToast } from './systems/hud.js';
 import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak, tickFeel } from './systems/feel.js';
 import { input, mouse, attachInput, bindCamera } from './systems/input.js';
 import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
 import { bullets, spawnBullet, castRay, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups, damageTerrain } from './systems/combat.js';
+import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel } from './systems/raid.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
@@ -51,7 +52,7 @@ if (!ctx.roundRect) {
 
 // ---- 世界 ----
 const world = new World(Vec2(0, -30));
-const levelBodies = buildLevel(world);
+let levelBodies = buildLevel(world);
 // 注意:Player.build 内部会在 spawn 基础上再抬 0.9m,这里传原始地面高度
 let player = new Player(world, Vec2(LEVEL.spawn.x, LEVEL.spawn.y));
 // 武器/装备轮盘:按住 Tab 唤起 + 子弹时间;player 会被 resetPlayer 整体重建,传取值函数
@@ -65,6 +66,11 @@ const wheel = new WeaponWheel(() => player, {
 const pstate = { hp: 30, maxHp: 30, deadT: 0 };
 function freshPstate() { return { hp: 30, maxHp: 30, deadT: 0 }; }
 const pickups = [];    // 掉落物:金币 / 0 耐久装备
+let respawnFx = null; // 玩家重生/手动复位的轻量战术部署效果(真实时间计时)
+const raidState = createRaidState((localStorage.getItem('contra-scene') || 'wild') === 'raid');
+let raidIntro = null; // 剿匪行动：开局/重生的屋顶绳降动画
+const raidInsertionAudioEmitter = { kind: 'raid-insertion' }; // 稳定对象:WebAudio 循环声按发声实体缓存
+let raidInsertionAudioActive = false;
 
 // ---- 实体注册 / 波次 / 玩家复位 ----
 export const enemies = []; // 敌人注册表
@@ -105,19 +111,87 @@ const GARRISONS = {
     { x: 50, y: 2.67, behavior: 'patrol', min: -1, max: 1 },
     { x: 67.5, y: 2.77, behavior: 'guard' },
   ],
+  raid: [
+    { x: 7.6, y: 0, floor: 0, face: 1, behavior: 'patrol', min: -1.7, max: 1.7, role: 'rifleman' },
+    { x: 21.5, y: 0, floor: 0, face: -1, behavior: 'guard', role: 'support' },
+    { x: 37.4, y: 0, floor: 0, face: 1, behavior: 'patrol', min: -1.5, max: 1.5, role: 'rusher' },
+    { x: 66.5, y: 0, floor: 0, face: -1, behavior: 'guard', role: 'rifleman' },
+    { x: 8.2, y: 3.5, floor: 1, face: 1, behavior: 'guard', role: 'rifleman' },
+    { x: 25.5, y: 3.5, floor: 1, face: -1, behavior: 'patrol', min: -1.2, max: 1.2, role: 'rusher' },
+    { x: 47.5, y: 3.5, floor: 1, face: 1, behavior: 'guard', role: 'support' },
+    { x: 68.3, y: 3.5, floor: 1, face: -1, behavior: 'patrol', min: -1.2, max: 1.2, role: 'rifleman' },
+    { x: 9.3, y: 7, floor: 2, face: -1, behavior: 'patrol', min: -1.5, max: 1.5, role: 'rifleman' },
+    { x: 31.5, y: 7, floor: 2, face: -1, behavior: 'guard', role: 'support' },
+    { x: 51.7, y: 7, floor: 2, face: 1, behavior: 'guard', role: 'rifleman' },
+    { x: 68.4, y: 7, floor: 2, face: -1, behavior: 'patrol', min: -1.1, max: 1.1, role: 'rusher' },
+    { x: 28.5, y: 10.5, floor: 3, face: 1, behavior: 'guard', role: 'rifleman' },
+    { x: 61.5, y: 10.5, floor: 3, face: -1, behavior: 'patrol', min: -1.3, max: 1.3, role: 'support' },
+  ],
 };
-const _scene = localStorage.getItem('contra-scene') || 'wild';
-// custom 自建关卡不布守军:守军坐标是按五张内置地形逐点校的,回退 wild 坐标会把
-// 假人空投到自定义地图的空中/墙里;自建关从第一波运兵机开始打,节奏更干净
-if (_scene !== 'custom') {
-  for (const g of (GARRISONS[_scene] || GARRISONS.wild)) {
+function spawnGarrisons(sceneId = (localStorage.getItem('contra-scene') || 'wild')) {
+  enemies.length = 0;
+  // custom 自建关卡的守军坐标没有逐点校准,该模式从第一波运输机开始。
+  if (sceneId === 'custom') return;
+  for (const g of (GARRISONS[sceneId] || GARRISONS.wild)) {
     enemies.push(new Dummy(world, { x: g.x, y: g.y }, {
-      behavior: g.behavior, min: g.min, max: g.max,
+      behavior: g.behavior, min: g.min, max: g.max, face: g.face,
+      role: g.role, raidMode: sceneId === 'raid', raidFloorId: g.floor,
+      sightRange: g.sightRange || 10.8, isReinforcement: false,
       quality: 'normal', armorMul: 0, respawn: false,
     }));
   }
 }
-const waves = new WaveDirector(world, {
+spawnGarrisons();
+if (raidState.enabled) {
+  beginRaidRappel();
+  // 已保存为剿匪行动时，首帧就把镜头放在屋顶插入点，避免先闪出野外原点。
+  cam.x = 4.2; cam.y = 12.1; cam.zoom = 1;
+}
+
+function beginRaidRappel() {
+  raidIntro = null;
+  if (!raidState.enabled || !player?.allBodies?.length) return;
+  const lift = 3.8;
+  const highPose = player.allBodies.map((body) => {
+    const p = body.getPosition();
+    return { body, x: p.x, y: p.y + lift, a: body.getAngle() };
+  });
+  for (const pose of highPose) {
+    pose.body.setTransform(Vec2(pose.x, pose.y), pose.a);
+    pose.body.setLinearVelocity(Vec2(0, 0));
+    pose.body.setAngularVelocity(0);
+  }
+  player.roping = true;
+  const torso = player.torso.getPosition();
+  raidIntro = { t: 0, duration: 2.15, lift, highPose, heliX: torso.x, heliY: torso.y + 2.55 };
+  raidState.message = '直升机绳降 · 屋顶插入';
+  raidState.messageT = 3.0;
+  raidState.rappelDone = false;
+}
+
+function advanceRaidRappel(dt, advance = true) {
+  if (!raidIntro) return;
+  if (advance) raidIntro.t = Math.min(raidIntro.duration, raidIntro.t + dt);
+  const u = clamp(raidIntro.t / raidIntro.duration, 0, 1);
+  const eased = 1 - Math.pow(1 - u, 2.2);
+  const offset = -raidIntro.lift * eased;
+  for (const pose of raidIntro.highPose) {
+    pose.body.setTransform(Vec2(pose.x, pose.y + offset), pose.a);
+    pose.body.setLinearVelocity(Vec2(0, 0));
+    pose.body.setAngularVelocity(0);
+  }
+  if (u >= 1) {
+    player.roping = false;
+    raidIntro = null;
+    raidState.rappelDone = true;
+    raidState.message = '屋顶已着陆 · 选择潜行或强攻';
+    raidState.messageT = 3.2;
+    floaters.push({ x: player.torso.getPosition().x, y: player.torso.getPosition().y + 1.7, vy: 0.45, age: 0, text: 'INSERTION COMPLETE', color: '#ffb14a', size: 17, bold: true, life: 1.4, max: 1.4 });
+  }
+}
+
+function createWaveDirector() {
+  return new WaveDirector(world, {
   onEvent: (ev) => {
     const p = player.torso.getPosition();
     if (ev.type === 'wave') {
@@ -135,7 +209,9 @@ const waves = new WaveDirector(world, {
       beep(523, 1046, 0.4, 'square', 0.09);
     }
   },
-});
+  });
+}
+let waves = createWaveDirector();
 
 function resetPlayer() {
   player.destroy();
@@ -144,6 +220,9 @@ function resetPlayer() {
   syncArmorFromInventory(); // 重生必须重绑装备:否则词缀(HP上限/防御/吸血…)全部静默失效
   pstate.hp = pstate.maxHp; // 装备属性同步完成后再满血复活,包含生命上限词条
   resetStreak(); // 死亡清空连杀
+  const sp = player.torso.getPosition();
+  respawnFx = { x: sp.x, y: sp.y, t: 0, duration: 1.12 };
+  if (raidState.enabled) beginRaidRappel();
 }
 
 // 玩家装备视觉/耐久绑定到背包里的"已装备"实例;防具词缀聚合为玩家属性
@@ -193,11 +272,159 @@ function onInvChanged() {
 bpInit(onInvChanged);
 corpseInit(onInvChanged);
 bpWire(); // ★ 绑定背包按钮事件(漏掉这行按钮就是死的)
-attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, toggleDebug: () => { debugDraw = !debugDraw; }, initAudio,
+
+// 运行时更换战区,不用 location.reload:遮罩覆盖期间重建世界实体/地形/波次与背景。
+function switchScene(sceneId) {
+  if (!sceneId) return;
+  raidIntro = null;
+  if (raidInsertionAudioActive) { updateAircraftLoop(raidInsertionAudioEmitter, 0, 0, 0, 0, false, 'transport', 0); raidInsertionAudioActive = false; }
+  // 先校验/准备布局,自定义地图存档异常时不要先销毁当前战场。
+  if (!setActiveLayout(sceneId)) return false;
+  // 先关闭所有持有旧实体引用的浮层/轮盘,再销毁旧物理世界中的刚体。
+  wheel.forceClose();
+  stopAllWorldLoops();
+  bpClose();
+  closeCorpse();
+  clearGrenades(world);
+  try { player.destroy(); } catch { /* 之后会统一清理 world */ }
+  let body = world.getBodyList();
+  while (body) {
+    const next = body.getNext();
+    try { world.destroyBody(body); } catch { /* 切关时尽力清理 */ }
+    body = next;
+  }
+
+  // 清空跨场景的临时实体和特效,避免旧战区的子弹/尸体/飘字留在新地图。
+  enemies.length = 0;
+  pickups.length = 0;
+  bullets.length = 0;
+  particles.length = 0;
+  beams.length = 0;
+  debris.length = 0;
+  decals.length = 0;
+  floaters.length = 0;
+  rings.length = 0;
+  flash.t = 0;
+  setGhost(0); setHitFlash(0);
+  feel.hitStopT = 0; feel.killSlowT = 0; feel.slowCd = 0; feel.trauma = 0; feel.lowHpA = 0; feel.heartT = 0;
+  resetStreak();
+
+  setSceneTheme(sceneId === 'custom' ? 'wild' : sceneId);
+  localStorage.setItem('contra-scene', sceneId);
+  levelBodies = buildLevel(world);
+  player = new Player(world, Vec2(LEVEL.spawn.x, LEVEL.spawn.y));
+  Object.assign(pstate, freshPstate());
+  syncArmorFromInventory();
+  pstate.hp = pstate.maxHp;
+  resetRaidState(raidState, sceneId === 'raid');
+  spawnGarrisons(sceneId);
+  if (raidState.enabled) beginRaidRappel();
+  waves = createWaveDirector();
+
+  cam.x = sceneId === 'raid' ? 4.2 : 0; cam.y = sceneId === 'raid' ? 12.1 : 3.4; cam.zoom = 1; cam.scoped = 0;
+  cam.oX = 0; cam.oY = 0; cam.oR = 0; cam.kx = 0; cam.ky = 0;
+  input.left = input.right = input.down = input.fire = input.jumpPressed = false;
+  mouse.active = false;
+  respawnFx = { x: LEVEL.spawn.x, y: LEVEL.spawn.y + 1, t: 0, duration: 0.85 };
+  acc = 0;
+  lastMenuRender = 0;
+  return true;
+}
+
+function interactWithRaidDoor() {
+  if (!raidState.enabled) return false;
+  const p = player.torso.getPosition();
+  let nearest = null, best = Infinity;
+  for (const r of LEVEL.rects) {
+    if (r.type !== 'door' || !r.body) continue;
+    const d = Math.hypot(p.x - r.x, (p.y - r.y) * 0.72);
+    if (d < best) { best = d; nearest = r; }
+  }
+  if (nearest && best < 1.85) {
+    const x = nearest.x, y = nearest.y;
+    destroyRect(nearest);
+    emitRaidNoise(raidState, { x, y, floorId: floorForY(y), radius: 4.6, intensity: 0.24, kind: 'door', faction: 'player' });
+    floaters.push({ x, y: y + 0.9, vy: 0.55, age: 0, text: '门锁解除', color: '#ffcb79', size: 16, bold: true, life: 0.9, max: 0.9 });
+    beep(190, 310, 0.09, 'triangle', 0.045);
+  } else {
+    floaters.push({ x: p.x, y: p.y + 1.2, vy: 0.35, age: 0, text: '附近没有可交互的门', color: '#bdc8d7', size: 12, life: 0.75, max: 0.75 });
+  }
+  // 剿匪行动里 E 专用于门交互，避免在没有门时意外把玩家重置回屋顶。
+  return true;
+}
+
+function spawnRaidReinforcements(caller) {
+  const packet = beginRaidIncident(raidState, caller, enemies);
+  if (!packet) return null;
+  const floorId = packet.floorId;
+  const floorY = [0, 3.5, 7, 10.5][floorId] ?? 0;
+  const side = caller.x < 37 ? 1 : -1;
+  const spawned = [];
+  if (packet.response === 'infantry' || packet.response === 'combined') {
+    const count = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+      const spawnX = clamp(packet.x + side * (12.5 + i * 1.2), 2.1, 71.9);
+      const role = i === 0 ? 'rusher' : (i === count - 1 ? 'support' : 'rifleman');
+      const d = new Dummy(world, { x: spawnX, y: floorY }, {
+        behavior: 'patrol', min: -1.0, max: 1.0, face: -side, patrolDir: -side,
+        role, quality: 'fine', armorMul: 0.2, respawn: false,
+        raidMode: true, raidFloorId: floorId, sightRange: 11.2, isReinforcement: true,
+      });
+      d.isReinforcement = true;
+      d.alarmZoneId = packet.id;
+      d.supportCalled = true;
+      d.lastKnown = { x: player.torso.getPosition().x, y: player.torso.getPosition().y };
+      d.suspicion = 1; d.suspicious = false; d.alertTo();
+      enemies.push(d); spawned.push(d);
+    }
+  }
+  if (packet.response === 'helicopter' || packet.response === 'combined') {
+    const edgeX = side > 0 ? 75.2 : -9.5;
+    const heli = new Gunship(world, { x: edgeX, y: Math.max(6.8, floorY + 6.8) }, { enemies, hp: 150 });
+    heli.raidMode = true;
+    heli.raidFloorId = floorId;
+    heli.isReinforcement = true;
+    heli.alarmZoneId = packet.id;
+    heli.responseSide = -side;
+    enemies.push(heli); spawned.push(heli);
+  }
+  const p = player.torso.getPosition();
+  emitRaidNoise(raidState, { x: packet.x, y: packet.y, floorId, radius: 13, intensity: 1.0, kind: 'radio', faction: 'enemy', life: 0.5 });
+  floaters.push({ x: p.x, y: p.y + 2.3, vy: 0.75, age: 0, text: packet.response === 'infantry' ? '增援小队正在接近' : packet.response === 'helicopter' ? '空中增援已响应' : '地面与空中增援已响应', color: '#ff6d59', size: 18, bold: true, life: 1.7, max: 1.7 });
+  beep(360, 250, 0.18, 'square', 0.055);
+  return { packet, spawned };
+}
+
+function drawRaidVision(c, w2sC, ppmZ, time) {
+  if (!raidState.enabled) return;
+  for (const e of enemies) {
+    if (!e.raidMode || !e.alive || e.destroyed || e.airUnit || e.alert) continue;
+    const p = e.p?.torso?.getPosition?.() || { x: e.x, y: e.y };
+    const range = (e.sightRange || 10.5) * (e.suspicious ? 1 : 0.88);
+    const direction = e.face || -1;
+    const spread = e.suspicious ? 0.48 : 0.34;
+    const [ox, oy] = w2sC(p.x, p.y + 0.42);
+    const [ax, ay] = w2sC(p.x + direction * range, p.y + 0.42 + range * Math.sin(spread));
+    const [bx, by] = w2sC(p.x + direction * range, p.y + 0.42 - range * Math.sin(spread));
+    c.save();
+    c.fillStyle = e.suspicious ? 'rgba(255,177,74,0.12)' : 'rgba(255,205,122,0.055)';
+    c.beginPath(); c.moveTo(ox, oy); c.lineTo(ax, ay); c.lineTo(bx, by); c.closePath(); c.fill();
+    c.strokeStyle = e.suspicious ? 'rgba(255,177,74,0.34)' : 'rgba(255,205,122,0.10)';
+    c.lineWidth = 1;
+    c.beginPath(); c.moveTo(ox, oy); c.lineTo(ax, ay); c.moveTo(ox, oy); c.lineTo(bx, by); c.stroke();
+    if (e.suspicious) {
+      c.fillStyle = `rgba(255,177,74,${0.3 + 0.12 * Math.sin(time * 6 + e.x)})`;
+      c.beginPath(); c.arc(ox, oy - 10, 2.8, 0, Math.PI * 2); c.fill();
+    }
+    c.restore();
+  }
+}
+
+attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, interact: interactWithRaidDoor, toggleDebug: () => { debugDraw = !debugDraw; }, initAudio,
   corpseNearby: () => !!corpseNearby(), corpseOpen: () => { const c = corpseNearby(); if (c) openCorpse(c); },
   corpseIsOpen, corpseClose: closeCorpse });
 bindCamera(cam);
-menuInit({ beep, noiseBurst, initAudio, onSlam: () => { addTrauma(0.45); feel.menuFlashT = 0.22; } }); // 主菜单:背景=实时场景,真空门三段式
+menuInit({ beep, noiseBurst, initAudio, onSceneChange: switchScene, onSlam: () => { addTrauma(0.45); feel.menuFlashT = 0.22; } }); // 主菜单:背景=实时场景,真空门三段式
 bpSetGunInfo(() => ({ main: player.gunDef?.name || '主武器', side: '手枪', weapon: player.weapon }));
 
 // 枪械设计器保存后,游戏页实时换枪/换装(storage 事件跨标签页触发)
@@ -222,8 +449,29 @@ const hud = {
 };
 
 let debugDraw = false;
+let raidHudStamp = 0;
+function updateRaidHUD(now) {
+  const root = document.getElementById('raidHud');
+  if (!root) return;
+  const display = raidState.enabled ? 'flex' : 'none';
+  if (root.style.display !== display) root.style.display = display;
+  if (!raidState.enabled || now - raidHudStamp < 140) return;
+  raidHudStamp = now;
+  const active = raidState.activeIncident;
+  const profile = raidShotProfile(player.weapon === 'pistol' ? '手枪' : (player.gunDef?.name || '主武器'), player.isSuppressorOn(), player.weapon);
+  const mode = active ? 'alarm' : raidState.awareness > 0.22 ? 'search' : 'stealth';
+  if (root.dataset.mode !== mode) root.dataset.mode = mode;
+  const status = raidState.messageT > 0 ? raidState.message : active ? '局部增援交战中' : raidState.awareness > 0.22 ? '守军正在搜索' : '未暴露 · 可以潜行';
+  const set = (id, value) => { const el = document.getElementById(id); if (el && el.textContent !== value) el.textContent = value; };
+  set('raidMissionStatus', status);
+  set('raidFloorText', floorLabel(raidState.floorId));
+  set('raidNoiseText', `声源 ${profile.radius.toFixed(1)}m · ${player.isSuppressorOn() ? '消音器 ON' : '标准枪声'}`);
+  set('raidIncidentText', active ? `支援事件 ${raidState.incidents.length} · ${active.response.toUpperCase()}` : `已清理楼层 ${Object.values(raidState.clearedFloors).filter(Boolean).length}/4`);
+  const fill = document.getElementById('raidAlertFill');
+  if (fill) fill.style.width = `${Math.round(clamp(raidState.awareness, 0, 1) * 100)}%`;
+}
 
-// ---- 世界坐标 -> 屏幕(狙击开镜时整体按 cam.zoom 放大)----
+// ---- 世界坐标(狙击开镜时整体按 cam.zoom 放大)----
 // 震动不再随机抖:trauma² × 平滑噪声,每帧算好 cam.oX/oY/oR,全画面共用(带轻微旋转让打击更"沉")
 // ---- 物理步进 ----
 // 依赖包:系统模块通过它访问世界状态(装配根组装一次;player 用 getter 防复位换实例)
@@ -234,6 +482,7 @@ const C = {
   invAddCoins, syncArmorFromInventory, setHitFlash, addDecal,
 };
 window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }); // 调试句柄
+window.__raid = () => ({ ...raidState, incidents: raidState.incidents.map((i) => ({ ...i })), rappel: !!raidIntro }); // 剿匪行动调试状态
 window.__combat = { spawnBullet, stepBullets, applyHitscanDamage, onEnemyDied, stepPickups, alertEnemiesNear }; // 调试:命中管线直调
 window.__corpse = { nearby: () => corpseNearby(), open: openCorpse, close: closeCorpse, isOpen: corpseIsOpen }; // 调试:搜尸管线直调
 window.__actx = getActx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
@@ -256,6 +505,16 @@ function corpseNearby() {
 
 function step(dt) {
   input.aim = aimWorld(W, H, PPM);
+  // 屋顶插入时复用声音系统已有的运输机循环声；暂停菜单时静音并在离开场景时清理。
+  const insertionListener = player.torso.getPosition();
+  if (raidIntro && raidState.enabled && !menuIsOpen()) {
+    const heliY = Number.isFinite(raidIntro.heliY) ? raidIntro.heliY : insertionListener.y + 2.55;
+    updateAircraftLoop(raidInsertionAudioEmitter, raidIntro.heliX, heliY, insertionListener.x, insertionListener.y, true, 'transport', 0.9);
+    raidInsertionAudioActive = true;
+  } else if (raidInsertionAudioActive) {
+    updateAircraftLoop(raidInsertionAudioEmitter, 0, 0, insertionListener.x, insertionListener.y, false, 'transport', 0);
+    raidInsertionAudioActive = false;
+  }
   if (wheel.open || bpIsOpen() || corpseIsOpen() || menuIsOpen()) {
     // 轮盘/背包/搜尸/主菜单期间禁火;主菜单还锁走位(待机演示画面)
     input.fire = false;
@@ -266,13 +525,21 @@ function step(dt) {
     const c = corpseNearby();
     if (!c) closeCorpse();
   }
+  const rappelAtStart = !!raidIntro;
+  if (raidIntro) {
+    input.left = input.right = input.down = input.fire = false;
+    input.jumpPressed = false;
+  }
   player.update(dt, input);
+  if (raidIntro) advanceRaidRappel(dt, !menuIsOpen());
   input.jumpPressed = false;
 
   for (const ev of player.events) {
+    if (rappelAtStart) continue; // 绳降动画期间不消费射击/近战等输入事件
     if (ev.type === 'grenade') {
       // 抛雷:实体由 grenade 模块管理,起爆结算走 handleDetonation(step 里驱动)
       throwGrenade(world, ev.x, ev.y, ev.vx, ev.vy);
+      emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: 4.5, intensity: 0.22, kind: 'grenade-pin' });
     } else if (ev.type === 'shot') {
       const st = ev.stats;
       // 复仇词条:低血量(<35%,与红晕阈值一致)时玩家输出提升
@@ -289,8 +556,13 @@ function step(dt) {
       flash.r = st.damage >= 25 ? 38 : 30;
       addTrauma(0.035 + 0.02 * st.recoil); // 开枪:与武器后坐词条挂钩的轻震
       camKick(ev.parts[0].dx, ev.parts[0].dy, (1.6 + 3.2 * st.recoil) * (1.25 - 0.5 * player.skill), st.recoil); // 方向性后坐:小拳快回(重量感,不抢准星)
-      alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 26); // 枪声传唤 26m 内的敌人
-      gunSynth(st.sfx); // 每把枪自己的音色词条
+      if (raidState.enabled) {
+        const sound = raidShotProfile(ev.weaponName, !!ev.suppressed, ev.weapon);
+        emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: sound.radius, intensity: sound.intensity, kind: 'gunshot' });
+      } else alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 26); // 传统模式沿用范围传唤
+      { const lp = player.torso.getPosition();
+        gunSynth(st.sfx, ev.suppressed ? 0.48 : 1, { weaponName: ev.weaponName, x: ev.x, y: ev.y, listenerX: lp.x, listenerY: lp.y, source: 'player', maxDistance: ev.suppressed ? 12 : 28, distantTail: false });
+      } // 消音只缩小传播范围并压低近场响度，不改变弹道伤害
     } else if (ev.type === 'hitscanShot') {
       const st = ev.stats;
       const d = ev.parts[0];
@@ -298,16 +570,22 @@ function step(dt) {
       const ex = ev.x + d.dx * tEnd, ey = ev.y + d.dy * tEnd;
       beams.push({ x1: ev.x, y1: ev.y, x2: ex, y2: ey, life: 0.16, max: 0.16 });
       burst(ex, ey, 10, '#cfe8ff', 5);
-      flash.t = 0.09; flash.x = ev.x; flash.y = ev.y; flash.r = 48;
+      flash.t = ev.suppressed ? 0.045 : 0.09; flash.x = ev.x; flash.y = ev.y; flash.r = ev.suppressed ? 18 : 48;
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       addTrauma(0.22); // 狙击:大震
       camKick(d.dx, d.dy, (1.6 + 3.2 * st.recoil) * 1.25 * (1.25 - 0.5 * player.skill), st.recoil); // 狙:单发重拳(钳制内读重量)
-      alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传唤更远
-      gunSynth(st.sfx);
-      beep(2400, 200, 0.16, 'square', 0.045); // 高频"滋"的激光层
+      if (raidState.enabled) {
+        const sound = raidShotProfile(ev.weaponName, !!ev.suppressed, ev.weapon);
+        emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: sound.radius, intensity: sound.intensity, kind: 'gunshot' });
+      } else alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传统模式传唤更远
+      { const lp = player.torso.getPosition();
+        gunSynth(st.sfx, ev.suppressed ? 0.4 : 1, { weaponName: ev.weaponName, x: ev.x, y: ev.y, listenerX: lp.x, listenerY: lp.y, source: 'player', maxDistance: ev.suppressed ? 12 : 28, distantTail: false });
+      }
+      beep(2400, 200, 0.16, 'square', ev.suppressed ? 0.014 : 0.045); // 消音狙击保留极轻微的弹道裂响
       if (pstate.hp < pstate.maxHp * 0.35 && player.lowHpDmgPct) ev.parts[0].damage *= 1 + player.lowHpDmgPct / 100;
       applyHitscanDamage(C, ev, tEnd);
     } else if (ev.type === 'melee') {
+      if (raidState.enabled) emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: ev.shield ? 7.5 : 4.5, intensity: ev.shield ? 0.5 : 0.22, kind: 'melee' });
       beep(ev.shield ? 170 : 240, ev.shield ? 80 : 110, 0.12, 'square', 0.07);
       // 挥击弧线刮风尘土
       const baseA = Math.atan2(ev.dy, ev.dx);
@@ -329,6 +607,9 @@ function step(dt) {
         if (dist > reach) continue;
         if ((dx * ev.dx + dy * ev.dy) / (dist || 1) < 0.35) continue; // 约 ±70° 扇形
         e.hurt?.(dmg);
+        { const lp = player.torso.getPosition();
+          playImpactSound(ev.shield ? 'armor' : 'flesh', { x: e.x, y: e.y, listenerX: lp.x, listenerY: lp.y, volume: ev.shield ? 0.48 : 0.40, maxDistance: 5, emitter: e, source: 'player', distantTail: false });
+        }
         e.knockback?.(dx / dist * (ev.shield ? 9 : 3.5), ev.shield ? 4 : 2);
         addTrauma(0.1);
         e.freezeHit?.(0.025); // 近战命中:短促顿挫(只顿挨打的人)
@@ -336,20 +617,33 @@ function step(dt) {
         if (player.meleeLsPct) pstate.hp = Math.min(pstate.maxHp, pstate.hp + player.meleeLsPct);
       }
     } else if (ev.type === 'reload') {
-      beep(300, 170, 0.09, 'square', 0.045);
+      { const lp = player.torso.getPosition(); playReloadSound('start', ev.weaponName || (ev.weapon === 'pistol' ? '手枪' : player.gunDef?.name), { x: lp.x, y: lp.y, listenerX: lp.x, listenerY: lp.y, source: 'player', volume: 0.68 }); }
     } else if (ev.type === 'reloaded') {
-      beep(480, 720, 0.07, 'square', 0.045);
+      { const lp = player.torso.getPosition(); playReloadSound('end', ev.weaponName || (player.weapon === 'rifle' ? (player.gunDef?.name || '自定义枪') : '手枪'), { x: lp.x, y: lp.y, listenerX: lp.x, listenerY: lp.y, source: 'player', volume: 0.62 }); }
+    } else if (ev.type === 'suppressor') {
+      if (ev.ok) {
+        const profile = raidShotProfile(ev.weaponName, ev.on, player.weapon);
+        const text = ev.on ? `消音器已开启 · 声源约 ${profile.radius.toFixed(1)}m` : '消音器已关闭';
+        floaters.push({ x: player.torso.getPosition().x, y: player.torso.getPosition().y + 1.45, vy: 0.4, age: 0, text, color: ev.on ? '#9cd7c0' : '#d3dce7', size: 13, bold: true, life: 1.2, max: 1.2 });
+      } else {
+        floaters.push({ x: player.torso.getPosition().x, y: player.torso.getPosition().y + 1.2, vy: 0.3, age: 0, text: '当前武器不支持消音器', color: '#d3a48b', size: 12, life: 0.9, max: 0.9 });
+      }
+      beep(ev.ok && ev.on ? 520 : 320, ev.ok && ev.on ? 860 : 220, 0.08, 'triangle', 0.035);
     } else if (ev.type === 'shield') {
       ev.on ? beep(230, 470, 0.12, 'sine', 0.06) : beep(470, 190, 0.1, 'sine', 0.05);
     } else if (ev.type === 'jump') {
+      if (raidState.enabled) emitRaidNoise(raidState, { x: ev.x ?? player.torso.getPosition().x, y: player.torso.getPosition().y, floorId: floorForY(player.torso.getPosition().y), radius: 8.5, intensity: 0.46, kind: 'jump' });
       burst(ev.x ?? player.torso.getPosition().x, groundYAt(player.torso.getPosition().x, player.torso.getPosition().y), 6, '#9a8a70', 2.5);
-      beep(260, 540, 0.14, 'square', 0.05);
+      { const lp = player.torso.getPosition(); playMovementSound('jump', { x: lp.x, y: lp.y, listenerX: lp.x, listenerY: lp.y, volume: 0.3 }); }
     } else if (ev.type === 'land') {
+      if (raidState.enabled) emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: ev.hard ? 13 : 6.5, intensity: ev.hard ? 0.82 : 0.32, kind: ev.hard ? 'hard-land' : 'land' });
       burst(ev.x, ev.y, ev.hard ? 14 : 7, '#9a8a70', ev.hard ? 5 : 3);
       if (ev.hard) { addTrauma(0.25); hitStop(0.03); }
-      beep(150, 60, 0.1, 'sine', 0.07);
+      { const lp = player.torso.getPosition(); playMovementSound('land', { x: ev.x, y: ev.y, listenerX: lp.x, listenerY: lp.y, volume: ev.hard ? 0.75 : 0.44 }); }
     } else if (ev.type === 'step') {
+      if (raidState.enabled) emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: player.crouch ? 1.8 : 4.2, intensity: player.crouch ? 0.08 : 0.24, kind: player.crouch ? 'sneak-step' : 'step' });
       burst(ev.x, ev.y, 2, '#8a7a60', 1.4);
+      { const lp = player.torso.getPosition(); playFootstep({ x: ev.x, y: ev.y, listenerX: lp.x, listenerY: lp.y, emitter: player, source: 'player', volume: 0.38 }); }
     } else if (ev.type === 'fell') {
       resetPlayer();
     }
@@ -363,24 +657,79 @@ function step(dt) {
   stepPickups(dt, C); // 磁吸/拾取/背包满拦截(systems/combat.js)
   // 波次推进 + 敌人更新 + 开火事件(敌人是 AI 驱动的 Player 实例,开枪走同一套弹道管线)
   // 主菜单待机时 playerAlive=false:敌人不警戒不射击,纯巡逻当背景演示
-  const playerAlive = !menuIsOpen() && pstate.hp > 0 && !player.ragdoll;
+  const playerAlive = !menuIsOpen() && !raidIntro && pstate.hp > 0 && !player.ragdoll;
+  if (raidState.enabled) updateRaid(dt, { state: raidState, player, enemies, playerAlive, rects: LEVEL.rects });
   waves.update(dt, enemies, player, playerAlive);
   for (const e of enemies) {
+    const preUpdateSet = raidState.enabled && raidState.activeIncident ? new Set(enemies) : null;
     e.update(dt, player, playerAlive);
+    // 守军若在战斗中真的穿过楼梯井/坠到另一层，更新其感知楼层；空中/坠落中则保留最近的有效楼层。
+    if (raidState.enabled && e.raidMode && !e.airUnit && e.alive) {
+      const liveFloor = floorForY(e.y);
+      const floorTop = [0, 3.5, 7, 10.5][liveFloor] ?? 0;
+      if (Math.abs((e.y - 0.9) - floorTop) < 0.95) e.raidFloorId = liveFloor;
+    }
+    // Gunship 会稍后生成无人机；任何在局部支援事件里出现的子实体都继承同一个清算 ID。
+    if (preUpdateSet && raidState.activeIncident) {
+      for (const newborn of enemies) {
+        if (preUpdateSet.has(newborn) || newborn.alarmZoneId) continue;
+        newborn.isReinforcement = true; newborn.raidMode = true;
+        newborn.raidFloorId = raidState.activeIncident.floorId;
+        newborn.alarmZoneId = raidState.activeIncident.id;
+        newborn.supportCalled = true;
+        if (newborn.alertTo) newborn.alertTo();
+      }
+    }
+    const listenerPos = player.torso.getPosition();
+    if (e.audioType === 'gunship' || e.audioType === 'transport') {
+      if (e.destroyed) updateAircraftLoop(e, 0, 0, listenerPos.x, listenerPos.y, false, e.audioType, 0);
+      else {
+        const rotorPower = e.alive === false ? clamp(Math.abs(e.rotorSpd ?? 0) / 26, 0.08, 1) : 1;
+        updateAircraftLoop(e, e.x, e.y, listenerPos.x, listenerPos.y, true, e.audioType, rotorPower);
+      }
+    }
     for (const ev of e.events) {
+      const evx = Number.isFinite(ev.x) ? ev.x : e.x;
+      const evy = Number.isFinite(ev.y) ? ev.y : e.y;
+      const soundOpts = { x: evx, y: evy, listenerX: listenerPos.x, listenerY: listenerPos.y, emitter: e, source: 'enemy', maxDistance: 46 }; 
       if (ev.type === 'shot') {
+        if (raidState.enabled && !e.airUnit) emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: Number.isInteger(e.raidFloorId) ? e.raidFloorId : floorForY(ev.y), radius: 8.5, intensity: 0.48, kind: 'enemy-fire', faction: 'enemy', life: 0.24 });
         for (const pt of ev.parts) spawnBullet(ev.x, ev.y, pt.dx, pt.dy, ev.stats, pt.damage * ENEMY_DMG_MUL, 'enemy');
         flash.t = 0.05; flash.x = ev.x; flash.y = ev.y; flash.r = 20;
         flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
-        gunSynth(ev.stats?.sfx, 0.55);
+        if (ev.soundSource === 'rocket') playRocketLaunch({ ...soundOpts, volume: 0.6, maxDistance: 40 });
+        else gunSynth(ev.stats?.sfx, ev.soundSource === 'helicopter' ? 0.86 : 0.55, { ...soundOpts, weaponName: ev.weaponName || e.gunName || 'AK-47', source: ev.soundSource || 'enemy', maxDistance: ev.soundSource === 'helicopter' ? 48 : 44, echoTail: !ev.soundSource || ev.soundSource === 'enemy' });
+      } else if (ev.type === 'reload') {
+        playReloadSound('start', ev.weaponName || e.gunName || 'M4A1', { ...soundOpts, volume: 0.30 });
+      } else if (ev.type === 'reloaded') {
+        playReloadSound('end', ev.weaponName || e.gunName || 'M4A1', { ...soundOpts, volume: 0.27 });
+      } else if (ev.type === 'step') {
+        playFootstep({ ...soundOpts, volume: 0.19 });
+      } else if (ev.type === 'jump') {
+        playMovementSound('jump', { ...soundOpts, volume: 0.16 });
+      } else if (ev.type === 'land') {
+        playMovementSound('land', { ...soundOpts, volume: ev.hard ? 0.42 : 0.24 });
+      } else if (ev.type === 'alert') {
+        if (e.alive) playRadioVoice('alert', { ...soundOpts, volume: 0.28, maxDistance: 27 });
+      } else if (ev.type === 'callSupport') {
+        if (raidState.enabled && e.alive) {
+          playRadioVoice('alert', { ...soundOpts, volume: 0.38, maxDistance: 30, distantTail: false });
+          spawnRaidReinforcements(e);
+        }
+        playRadioVoice('alert', { ...soundOpts, volume: 0.48, maxDistance: 30 });
+      } else if (ev.type === 'hurt') {
+        if (!ev.armored) playRadioVoice('hurt', { ...soundOpts, volume: 0.23, maxDistance: 21 });
+      } else if (ev.type === 'droneShatter') {
+        playImpactSound('armor', { ...soundOpts, volume: 0.36, maxDistance: 30, source: 'enemy' });
       } else if (ev.type === 'died') {
-        onEnemyDied(C, ev, e); // 击杀结算:个体顿帧/爆浆/传唤/连杀/掉落/回血(systems/combat.js)
+        playRadioVoice('death', { ...soundOpts, volume: 0.31, maxDistance: 25 });
+        if (raidState.enabled && e.raidMode) emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: Number.isInteger(e.raidFloorId) ? e.raidFloorId : floorForY(ev.y), radius: 4.5, intensity: 0.18, kind: 'body-fall', faction: 'player', life: 0.25 });
+        onEnemyDied(C, ev, e); // 击杀结算;剿匪模式的警觉由听力/尸体发现决定
       } else if (ev.type === 'blast') {
         // 空中单位爆炸(无人机自爆/母体机坠毁):复合特效 + 范围伤害(吃玩家防御)
         explosion(ev.x, ev.y, ev.big);
         addTrauma(ev.big ? 0.5 : 0.22);
-        noiseBurst(ev.big ? 0.5 : 0.16, ev.big ? 0.12 : 0.07, ev.big ? 420 : 900);
-        if (ev.big) beep(90, 30, 0.5, 'sawtooth', 0.1);
+        playExplosion(!!ev.big, { ...soundOpts, volume: ev.big ? 0.88 : 0.57, maxDistance: 52 });
         const bp = player.torso.getPosition();
         const bd = Math.hypot(bp.x - ev.x, bp.y - ev.y);
         if (!player.ragdoll && pstate.hp > 0 && bd < ev.r) {
@@ -428,8 +777,7 @@ function handleDetonation(x, y) {
   const R = 3.2;
   explosion(x, y, true);
   addTrauma(0.34);
-  noiseBurst(0.42, 0.12, 520);
-  beep(70, 30, 0.45, 'sawtooth', 0.11);
+  { const lp = player.torso.getPosition(); playExplosion(true, { x, y, listenerX: lp.x, listenerY: lp.y, volume: 0.86, maxDistance: 52 }); }
   for (const e of enemies) {
     const d = Math.hypot(e.x - x, e.y - y);
     if (d > R) continue;
@@ -447,7 +795,8 @@ function handleDetonation(x, y) {
     const d = Math.hypot(dx, dy);
     if (d <= 1.9) damageTerrain(r, 60 * (1 - 0.55 * (d / 1.9)), r.x, r.y, { x: 0, y: -1 });
   }
-  alertEnemiesNear(enemies, { x, y }, 22); // 爆炸声传唤
+  if (raidState.enabled) emitRaidNoise(raidState, { x, y, floorId: floorForY(y), radius: 36, intensity: 1.4, kind: 'explosion', faction: 'player', life: 0.75 });
+  else alertEnemiesNear(enemies, { x, y }, 22); // 传统模式的爆炸声传唤
 }
 
 // 角色面板已抽至 systems/hud.js(updateStatusPanel)
@@ -468,13 +817,94 @@ function drawEnemyBars(c, enemies, w2sC, scale) {
   }
 }
 
+function drawRespawnFx(c, w2sC, ppmZ, time, frontLayer) {
+  const fx = respawnFx;
+  if (!fx) return;
+  const p = clamp(fx.t / fx.duration, 0, 1);
+  const fade = Math.pow(1 - p, 1.25);
+  const [x, y] = w2sC(fx.x, fx.y);
+  const z = ppmZ / PPM;
+  c.save();
+  c.globalCompositeOperation = 'screen';
+  if (!frontLayer) {
+    // 从地面向上掠过的短光柱:只画一次简洁渐变,不生成大量粒子。
+    const beam = c.createLinearGradient(x, y - 105 * z, x, y + 42 * z);
+    beam.addColorStop(0, 'rgba(255,177,74,0)');
+    beam.addColorStop(0.42, `rgba(255,177,74,${0.12 * fade})`);
+    beam.addColorStop(1, 'rgba(255,177,74,0)');
+    c.fillStyle = beam;
+    c.fillRect(x - 17 * z, y - 105 * z, 34 * z, 150 * z);
+  }
+  const r = (0.28 + p * 1.42) * ppmZ;
+  c.strokeStyle = `rgba(255,190,105,${(0.85 * fade).toFixed(3)})`;
+  c.lineWidth = Math.max(1, 2.2 * z);
+  c.setLineDash([7 * z, 5 * z]);
+  c.lineDashOffset = -p * 42 * z;
+  c.beginPath();
+  c.ellipse(x, y + 0.22 * ppmZ, r, Math.max(5, r * 0.23), 0, 0, Math.PI * 2);
+  c.stroke();
+  c.setLineDash([]);
+  if (frontLayer && p < 0.78) {
+    const a = (1 - p / 0.78) * 0.85;
+    c.globalCompositeOperation = 'source-over';
+    c.globalAlpha = a;
+    c.fillStyle = '#ffd9a0';
+    c.font = `700 ${Math.max(9, 11 * z)}px sans-serif`;
+    c.textAlign = 'center';
+    c.fillText('HERO  /  REDEPLOYED', x, y - 68 * z);
+    c.fillStyle = 'rgba(255,177,74,0.7)';
+    c.fillRect(x - 44 * z, y - 60 * z, 88 * z, Math.max(1, z));
+  }
+  c.restore();
+}
+
 function drawWorld(c, camO, VW, VH, ppmZ, time) {
   const zl = ppmZ / PPM; // 像素尺寸随倍率缩放
   const z = zl;
   const w2sC = makeW2S(camO, VW, VH, PPM); // 与 camera.js 同一份公式(狙击镜内视图也走这里)
   drawSky(c, VW, VH);
   drawParallax(c, VW, VH, camO.x, PPM);
+  if (raidState.enabled) drawBuildingInterior(c, w2sC, ppmZ, time);
+  if (raidState.enabled) drawRaidVision(c, w2sC, ppmZ, time);
   drawTerrain(c, LEVEL.rects, w2sC, ppmZ);
+  if (raidIntro) {
+    const rp = player.torso.getPosition();
+    const u = clamp(raidIntro.t / raidIntro.duration, 0, 1);
+    const heliFade = clamp((1 - u) / 0.18, 0, 1);
+    const [rx, ry] = w2sC(raidIntro.heliX, raidIntro.heliY);
+    const [tx, ty] = w2sC(rp.x, rp.y + 0.52);
+    // 绳索 + 快速绘制的运输直升机剪影；不创建实体/贴图，绳降时才绘制。
+    c.save();
+    c.globalAlpha = clamp((1 - u) * 5, 0, 1);
+    c.strokeStyle = 'rgba(225,232,240,0.82)'; c.lineWidth = Math.max(1.2, ppmZ * 0.025); c.setLineDash([7, 5]);
+    c.beginPath(); c.moveTo(rx, ry + 9); c.lineTo(tx, ty); c.stroke(); c.setLineDash([]);
+    const hs = Math.max(0.58, Math.min(1.1, ppmZ / 52));
+    c.globalAlpha = heliFade;
+    c.translate(rx, ry - 3 * hs);
+    c.scale(hs, hs);
+    const rotor = Math.sin(time * 76) * 5;
+    c.fillStyle = '#101b27'; c.strokeStyle = '#708497'; c.lineWidth = 1.5;
+    // tail boom
+    c.beginPath(); c.moveTo(-20, 0); c.lineTo(-45, -4); c.lineTo(-50, -1); c.lineTo(-24, 5); c.closePath(); c.fill(); c.stroke();
+    // tail fin and tail rotor
+    c.fillStyle = '#263747'; c.beginPath(); c.moveTo(-47, -4); c.lineTo(-43, -13); c.lineTo(-38, -4); c.closePath(); c.fill();
+    c.strokeStyle = '#b1bdc8'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(-48, -7); c.lineTo(-48, 5); c.moveTo(-54, -1); c.lineTo(-42, -1); c.stroke();
+    // main fuselage
+    c.fillStyle = '#182633'; c.strokeStyle = '#8193a0'; c.lineWidth = 1.7;
+    c.beginPath(); c.moveTo(-25, -2); c.quadraticCurveTo(-19, -12, -5, -12); c.lineTo(12, -10); c.quadraticCurveTo(27, -6, 28, 1); c.lineTo(19, 6); c.lineTo(-16, 6); c.closePath(); c.fill(); c.stroke();
+    // cockpit glass + cargo-door details
+    c.fillStyle = '#6fa0b5'; c.beginPath(); c.moveTo(13, -8); c.lineTo(23, -5); c.lineTo(24, 0); c.lineTo(12, 0); c.closePath(); c.fill();
+    c.fillStyle = '#314a5b'; c.fillRect(-11, -8, 16, 11);
+    c.strokeStyle = '#a4b4c0'; c.lineWidth = 1.1; c.beginPath(); c.moveTo(-4, -7); c.lineTo(-4, 2); c.moveTo(4, -7); c.lineTo(4, 2); c.stroke();
+    // rotor mast + animated blades
+    c.strokeStyle = '#90a0ad'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, -11); c.lineTo(0, -17); c.stroke();
+    c.strokeStyle = 'rgba(190,205,215,0.88)'; c.lineWidth = 2.4; c.beginPath(); c.moveTo(-37, -17 + rotor * 0.18); c.lineTo(37, -17 - rotor * 0.18); c.stroke();
+    // landing skids
+    c.strokeStyle = '#82929e'; c.lineWidth = 2; c.beginPath(); c.moveTo(-17, 9); c.lineTo(18, 9); c.moveTo(-14, 5); c.lineTo(-18, 9); c.moveTo(14, 5); c.lineTo(18, 9); c.stroke();
+    // insertion lamp flashes at a restrained rate
+    if (Math.sin(time * 5.8) > 0.25) { c.fillStyle = '#ffb14a'; c.beginPath(); c.arc(-17, -2, 2.1, 0, Math.PI * 2); c.fill(); }
+    c.restore();
+  }
 
   // 地面痕迹:弹孔(带亮边)/ 血渍(暗红椭圆),后半段生命淡出
   for (const d of decals) {
@@ -683,7 +1113,13 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   c.globalAlpha = 1;
   c.textAlign = 'left';
 
+  // 复活先出现短促的战术重部署扫描，再让角色从淡影进入实态。
+  if (respawnFx) drawRespawnFx(c, w2sC, ppmZ, time, false);
+  c.save();
+  if (respawnFx && respawnFx.t < 0.38) c.globalAlpha = 0.12 + 0.88 * clamp(respawnFx.t / 0.38, 0, 1);
   player.draw(c, w2sC, ppmZ, time);
+  c.restore();
+  if (respawnFx) drawRespawnFx(c, w2sC, ppmZ, time, true);
 
   // 枪口火舌(动态:三层焰瓣沿枪口方向,长度随机抖动,越衰减越短)
   if (flash.t > 0) {
@@ -923,11 +1359,16 @@ function shapeGetType(shape) { return shape.m_type || (shape.getType ? shape.get
 
 // ---- 主循环(固定物理步长)----
 let acc = 0, last = performance.now(), fpsN = 0, fpsT = 0, fps = 60;
+let lastMenuRender = 0; // 主菜单后面的真实战场预览降至 30 FPS,交互 UI 仍保持 rAF 流畅度
 // 子弹时间:轮盘打开时世界只走 8% 速度,指数平滑过渡;轮盘动画走真实 dt
 let timeScale = 1;
 function frame(now) {
   let dt = STEP;
   try {
+    // 按当前战区维持一个低音量环境底床；素材仍在异步解码时会在后续帧自动重试。
+    let audioScene = 'wild';
+    try { audioScene = localStorage.getItem('contra-scene') || 'wild'; } catch {}
+    updateSceneAmbience(audioScene);
     dt = (now - last) / 1000;
     last = now;
     dt = Math.min(dt, 0.1);
@@ -957,8 +1398,17 @@ function frame(now) {
     }
     wheel.update(dt); // 「菜单拥有自己的时钟」:UI 永远实时,世界慢动作
     updateCamera(dt, player, input, W, H, PPM);
-    render(now / 1000);
-    wheel.draw(ctx);
+    if (respawnFx) {
+      respawnFx.t += dt;
+      if (respawnFx.t >= respawnFx.duration) respawnFx = null;
+    }
+    // 菜单背景是真实运行的游戏场景;毛玻璃下 30 FPS 足够表现动势,可显著降低 Canvas/模糊合成负担。
+    const inMenuPreview = menuIsOpen();
+    if (!inMenuPreview || now - lastMenuRender >= 1000 / 30) {
+      render(now / 1000);
+      wheel.draw(ctx);
+      if (inMenuPreview) lastMenuRender = now;
+    }
     canvas.style.cursor = wheel.open ? 'none' : '';
   } catch (err) {
     // 渲染/物理异常不能杀死主循环(rAF 只在帧尾续register),记下诊断继续跑
@@ -975,10 +1425,11 @@ function frame(now) {
   const defPct = Math.round(Math.min(0.8, player.defense) * 100);
   const ammo = player.ammoInfo();
   const ammoTxt = ammo.reloadT > 0 ? '换弹中…' : `弹药 ${ammo.ammo}/${ammo.mag}`;
-  const hudTxt = `${stateTxt} · ${player.weapon === 'rifle' ? '主武器' : player.shield ? '手枪+盾' : '手枪'} · ${ammoTxt} · HP ${Math.ceil(pstate.hp)} · 盔 ${Math.ceil((invEquipped('head')?.dur) ?? 0)} · 甲 ${Math.ceil((invEquipped('body')?.dur) ?? 0)} · 熟练度 ${Math.round(player.skill * 100)}% · 防御 ${defPct}% · 后坐力 ${heatBar} · ${fps} FPS · B 调试视图`;
+  const hudTxt = `${stateTxt} · ${player.weapon === 'rifle' ? '主武器' : player.shield ? '手枪+盾' : '手枪'} · ${ammoTxt} · HP ${Math.ceil(pstate.hp)} · 盔 ${Math.ceil((invEquipped('head')?.dur) ?? 0)} · 甲 ${Math.ceil((invEquipped('body')?.dur) ?? 0)} · 熟练度 ${Math.round(player.skill * 100)}% · 防御 ${defPct}% · 后坐力 ${heatBar} · ${fps} FPS · R 换弹 · X 消音器 · E 交互/复位 · B 调试视图`;
   if (hudTxt !== hud._last) { hud.state.textContent = hudTxt; hud._last = hudTxt; } // 脏检查,避免每帧 DOM 写入
   hud.ragdoll.textContent = player.ragdoll ? '失控倒地 · 按 E 起身' : '';
   hud.ragdoll.style.display = player.ragdoll ? 'block' : 'none';
+  updateRaidHUD(now);
 
   requestAnimationFrame(frame);
 }
@@ -987,6 +1438,3 @@ requestAnimationFrame(frame);
 window.__frame = frame; // 调试:后台标签页 rAF 会整体暂停(AGENT.md 坑 7),可手动推帧
 // 调试:确定性批量推帧(后台标签页验证用)——__frame(0) 的 dt 恒为 0 不会推进,用这个
 window.__frameN = (n) => { for (let i = 0; i < n; i++) frame(last + (1000 / 60) * (i + 1)); };
-
-
-

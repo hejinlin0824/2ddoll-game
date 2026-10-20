@@ -5,10 +5,15 @@ import { Vec2 } from 'planck';
 import { invEquipped, invSave, invIsFull, invInsertItem } from '../domain/inventory.js';
 import { burst, debris, decals, floaters, particles, explosion, spawnHelmetDebris, spawnVestDebris, gibBurst, setGhost } from './fx.js';
 import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak } from './feel.js';
-import { beep } from './audio.js';
+import { beep, playImpactSound, playPlayerHurt, playExplosion } from './audio.js';
 import { lootToast } from './hud.js';
 
 export const bullets = [];
+
+function impactSoundOpts(C, x, y, volume = 0.3, emitter = null) {
+  const p = C?.player?.torso?.getPosition?.() || { x, y };
+  return { x, y, listenerX: p.x, listenerY: p.y, volume, maxDistance: 27, source: 'world', emitter };
+}
 
 // 连续检测弹丸本步走过的路径，避免只检查终点/中点时高速子弹穿过窄命中区。
 // 单步采样间距目标为 0.08m，最多 32 段以限制异常武器参数带来的开销。
@@ -135,10 +140,10 @@ export function alertEnemiesNear(enemies, pos, r) {
 }
 
 // 机械单位(空中部队)命中反馈:火花 + 金属叮 + 橙金数字,不走血肉管线;吸血照常结算
-function airHitFeedback(C, res, x, y, dir, dmg) {
+function airHitFeedback(C, e, res, x, y, dir, dmg) {
   burst(x, y, 5, '#ffd77a', 3.6);
   C.particles.push({ x, y, vx: -dir.x * 2 + (Math.random() - 0.5) * 2, vy: 1 + Math.random() * 2, life: 0.3, size: 2, color: '#fff2c8', grav: 0.6 });
-  beep(1550, 900, 0.045, 'square', 0.035);
+  playImpactSound('armor', impactSoundOpts(C, x, y, 0.32, e));
   floaters.push({ x: x + (Math.random() - 0.5) * 0.12, y, vy: 2.2 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 1.5, rot: 0, age: 0, text: String(Math.round(dmg * 10) / 10), color: '#ffd77a', size: 18, bold: true, life: 0.7, max: 0.7 });
   const lsPct = C.player.lifestealPct || 0;
   if (lsPct > 0) C.pstate.hp = Math.min(C.pstate.maxHp, C.pstate.hp + dmg * (res.absorbed ? 0.5 : 1) * (lsPct / 100));
@@ -152,8 +157,9 @@ function hitFeedback(C, e, zone, res, x, y, dir, dmg) {
   if (res.absorbed) {
     burst(x, y, 5, '#ffe9a8', 3.6);
     C.particles.push({ x, y, vx: -dir.x * 2 + (Math.random() - 0.5), vy: 1 + Math.random() * 2, life: 0.3, size: 2, color: '#fff6d8', grav: 0.5 });
-    beep(1500, 950, 0.05, 'square', 0.04);
+    playImpactSound('armor', impactSoundOpts(C, x, y, 0.34, e));
   } else {
+    playImpactSound('flesh', impactSoundOpts(C, x, y, zone === 'head' ? 0.34 : 0.27, e));
     burst(x, y, 4, zone === 'head' ? '#ffd77a' : '#c9563c', 3);
     for (let bi = 0; bi < 2; bi++) {
       C.particles.push({ x, y, vx: dir.x * (1.5 + Math.random() * 2), vy: dir.y * 2 + Math.random(), life: 0.32, size: 2.2, color: '#a83a28', grav: 1 });
@@ -201,7 +207,7 @@ export function applyHitscanDamage(C, ev, maxT) {
     const zmul = zone === 'head' ? 2 : zone === 'body' ? 1 : 0.2; // 部位倍率与弹丸一致
     const dmg = ev.parts[0].damage * zmul * mult;
     const res = e.hit(zone, dmg, dir, ev.stats.armorDmgMul ?? 1) ?? { broke: null, absorbed: false };
-    if (e.airUnit) airHitFeedback(C, res, hx, hy, dir, dmg); // 机械:火花金属叮
+    if (e.airUnit) airHitFeedback(C, e, res, hx, hy, dir, dmg); // 机械:火花金属叮
     else hitFeedback(C, e, zone, res, hx, hy, dir, dmg);
     mult *= ev.stats.falloff ?? 0.55;
   }
@@ -305,7 +311,7 @@ export function stepBullets(dt, C) {
         const bdir = { x: b.vx / (sp || 1), y: b.vy / (sp || 1) };
         const dmg = b.damage * mult;
         const res = e.hit(zone, dmg, bdir, b.armorMul ?? 1) ?? { broke: null, absorbed: false };
-        if (e.airUnit) airHitFeedback(C, res, hx, hy, bdir, dmg); // 机械:火花金属叮
+        if (e.airUnit) airHitFeedback(C, e, res, hx, hy, bdir, dmg); // 机械:火花金属叮
         else hitFeedback(C, e, zone, res, hx, hy, bdir, dmg);     // 反馈与狙击共用一条管线
         bullets.splice(i, 1); consumed = true;
       }
@@ -324,7 +330,7 @@ export function stepBullets(dt, C) {
         if (item && item.dur > 0) {
           item.dur = Math.max(0, Math.round((item.dur - dmg) * 10) / 10);
           burst(hx, hy, 4, '#9fb0c4', 3);
-          beep(720, 300, 0.06, 'square', 0.05);
+          playImpactSound('armor', impactSoundOpts(C, hx, hy, 0.42, player));
           floaters.push({ x: hx + (Math.random() - 0.5) * 0.12, y: hy, vy: 2 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 1.4, rot: (Math.random() - 0.5) * 0.3, age: 0, text: String(Math.round(dmg * 10) / 10), color: '#dfe6f2', size: 15, bold: false, life: 0.62, max: 0.62 });
           if (item.dur === 0) { // 护甲碎裂:白闪+重影,装备进背包等修复
             item.equipped = false;
@@ -346,7 +352,8 @@ export function stepBullets(dt, C) {
           addTrauma(0.18);
           floaters.push({ x: hx + (Math.random() - 0.5) * 0.15, y: hy, vy: 2.3 + Math.random() * 0.9, vx: (Math.random() - 0.5) * 1.6, rot: (Math.random() - 0.5) * 0.34, age: 0, text: String(Math.round(pdmg * 10) / 10), color: '#ff5b4a', size: 17, bold: false, life: 0.72, max: 0.72 });
           burst(hx, hy, 5, '#c9563c', 3.5);
-          beep(180, 80, 0.12, 'sawtooth', 0.06);
+          playImpactSound('flesh', impactSoundOpts(C, hx, hy, 0.38, player));
+          playPlayerHurt(impactSoundOpts(C, hx, hy, 0.28, player));
           if (pstate.hp <= 0 && !player.ragdoll) {
             player.setRagdoll(true); // 倒地
             player.deathImpulse?.({ x: b.vx / (sp || 1), y: b.vy / (sp || 1) }, zone); // 死亡动作随部位
@@ -364,6 +371,11 @@ export function stepBullets(dt, C) {
     if (terrainHit) {
       const { rect, x: hx, y: hy } = terrainHit;
       burst(hx, hy, 5, '#ffd77a', 3.5);
+      if (b.rocket) {
+        playExplosion(false, { ...impactSoundOpts(C, hx, hy, 0.62, b), maxDistance: 38 });
+      } else if ((rect.type === 'steel' || rect.type === 'concrete') && Math.random() < 0.42) {
+        playImpactSound('ricochet', { ...impactSoundOpts(C, hx, hy, 0.19, b), maxDistance: 21 });
+      }
       // 弹孔 + 扬尘:打进地形留下痕迹(FIFO 上限)
       C.addDecal('hole', hx, hy, Math.atan2(b.vy, b.vx), 0.05 + Math.random() * 0.03);
       for (let di = 0; di < 3; di++) {
@@ -422,7 +434,7 @@ export function onEnemyDied(C, ev, enemy) {
     }
   }
   beep(220, 60, 0.3, 'sawtooth', 0.08);
-  alertEnemiesNear(enemies, ev, 11); // 死者的惨叫惊动 11m 内的队友
+  if (localStorage.getItem('contra-scene') !== 'raid') alertEnemiesNear(enemies, ev, 11); // 剿匪模式改由可调听力半径决定是否发现尸体/声音
   const streak = addStreak();
   if (streak % 5 === 0) killSlow(0.8); // 慢放只跟每 5 连杀走(用户指定,清场/爆头不再触发)
   // 掉落:只爆金币(贪婪加成);装备走"搜尸"(enemies die() 的 loot 表,站尸上 Tab)
@@ -489,4 +501,3 @@ export function stepPickups(dt, C) {
     if (pk.x > C.bounds.right - 0.5) { pk.x = C.bounds.right - 0.5; pk.vx = -Math.abs(pk.vx) * 0.4; }
   }
 }
-

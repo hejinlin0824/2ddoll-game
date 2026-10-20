@@ -43,9 +43,11 @@ export function attachInput(hooks) {
       return;
     }
     if (hooks.menuIsOpen()) {
-      // 主菜单/暂停期间:再按暂停键 = 开门继续战斗;其余按键全部吞掉(防背后开枪/切武器)
-      if (pauseKey && !e.repeat) { e.preventDefault(); hooks.menuToggle(); hooks.initAudio(); }
-      if (e.code === 'Tab') e.preventDefault();
+      // 主菜单/暂停期间:暂停键或 Enter/空格继续;其余按键全部吞掉(防背后开枪/切武器)
+      if ((pauseKey || e.code === 'Enter' || e.code === 'Space') && !e.repeat) {
+        e.preventDefault(); hooks.menuToggle(); hooks.initAudio();
+      }
+      if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
       return;
     }
     if (pauseKey && !e.repeat) {
@@ -81,8 +83,17 @@ export function attachInput(hooks) {
       hooks.initAudio();
       return;
     }
-    if (e.code === 'KeyR') hooks.getPlayer().setRagdoll(!hooks.getPlayer().ragdoll);
-    if (e.code === 'KeyE') hooks.resetPlayer();
+    if (e.code === 'KeyR') {
+      const p = hooks.getPlayer();
+      // R 换弹;Shift+R 保留开发用的纯布娃娃测试入口。
+      if (e.shiftKey) p.setRagdoll(!p.ragdoll);
+      else p.reload?.();
+    }
+    if (e.code === 'KeyE') {
+      const handled = hooks.interact && hooks.interact();
+      if (!handled) hooks.resetPlayer();
+    }
+    if (e.code === 'KeyX') hooks.getPlayer().toggleSuppressor?.();
     if (e.code === 'KeyB') hooks.toggleDebug();
     if (e.code === 'KeyQ') hooks.getPlayer().setWeapon(hooks.getPlayer().weapon === 'rifle' ? 'pistol' : 'rifle');
     if (e.code === 'Digit1') hooks.getPlayer().setWeapon('rifle');

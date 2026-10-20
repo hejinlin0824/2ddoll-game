@@ -357,150 +357,275 @@
       #shopDetail { border-radius:10px; padding:12px; background:rgba(7,12,21,.46); } .op-row { gap:12px; margin-top:8px; padding:10px 11px; border-radius:9px; border-color:rgba(148,178,214,.14); background:rgba(148,178,214,.035); } .op-name { font-size:11px; letter-spacing:.2px; } .op-desc { color:rgba(194,208,231,.58); font-size:9px; line-height:1.55; } .op-go,.op-go.plain { border-radius:8px; padding:8px 13px; font-size:10px; }
       .bt-bar { border-radius:9px; padding:10px 12px; background:rgba(255,177,74,.06); } #boxRow { gap:9px; } .box-card { border-radius:10px; padding:13px; background:linear-gradient(145deg,rgba(23,32,49,.76),rgba(9,14,24,.82)); } .box-name { font-size:12px; letter-spacing:.4px; } .box-card button { border-radius:8px; padding:9px; font-size:10px; letter-spacing:1px; }
       #bpToast { top:22px; padding:10px 18px; border:1px solid rgba(255,221,170,.4); border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.38); backdrop-filter:blur(8px); font-weight:700; }
+      /* Building raid: unobtrusive stealth telemetry, independent of the general HUD. */
+      #raidHud { position:fixed; right:20px; top:20px; z-index:8; width:min(360px,calc(100vw - 32px)); box-sizing:border-box; flex-direction:column; gap:9px; padding:13px 15px 12px; color:#e8edf4; border:1px solid rgba(162,190,218,.24); border-top:2px solid var(--raid-accent,#ffb14a); background:linear-gradient(145deg,rgba(8,15,24,.91),rgba(8,13,21,.76)); box-shadow:0 12px 32px rgba(0,0,0,.22); backdrop-filter:blur(7px); font-family:var(--font-body); pointer-events:none; animation:raidHudIn .45s cubic-bezier(.2,.8,.2,1) both; }
+      #raidHud::before { content:""; position:absolute; left:-1px; top:11px; width:2px; height:30px; background:var(--raid-accent,#ffb14a); }
+      #raidHud[data-mode="alarm"] { --raid-accent:#ff6256; border-color:rgba(255,98,86,.44); }
+      #raidHud[data-mode="search"] { --raid-accent:#ffc56e; }
+      .rh-top { display:flex; align-items:center; gap:8px; color:rgba(190,208,230,.62); font-size:9px; font-weight:900; letter-spacing:1.4px; }
+      .rh-mark { width:7px; height:7px; background:var(--raid-accent,#ffb14a); box-shadow:0 0 10px var(--raid-accent,#ffb14a); transform:rotate(45deg); flex:none; }
+      .rh-top b { margin-left:auto; color:#dfe8f2; font-size:9px; letter-spacing:.9px; }
+      .rh-status { font-size:15px; font-weight:900; letter-spacing:.2px; line-height:1.35; color:#f3f5f8; }
+      .rh-awareness { display:grid; grid-template-columns:54px minmax(50px,1fr) auto; gap:8px; align-items:center; color:rgba(183,201,224,.64); font-size:9px; }
+      .rh-awareness>div { height:4px; overflow:hidden; background:rgba(148,178,214,.15); }
+      .rh-awareness i { display:block; height:100%; width:0; background:var(--raid-accent,#ffb14a); transition:width .18s linear; box-shadow:0 0 10px var(--raid-accent,#ffb14a); }
+      .rh-awareness b { color:rgba(220,230,242,.8); font-size:9px; font-weight:700; }
+      .rh-noise { color:rgba(255,205,133,.76); border-top:1px solid rgba(148,178,214,.13); padding-top:8px; font-size:10px; }
+      .rh-keys { display:flex; gap:14px; color:rgba(173,192,217,.48); font-size:9px; }
+      .rh-keys span { display:flex; align-items:center; gap:5px; }
+      .rh-keys kbd { display:inline-grid; place-items:center; min-width:15px; height:15px; border:1px solid rgba(148,178,214,.22); color:rgba(226,235,247,.78); background:rgba(148,178,214,.06); font:800 9px var(--font-body); }
+      @keyframes raidHudIn { from { opacity:0; transform:translateY(-7px); } to { opacity:1; transform:translateY(0); } }
+      body.in-menu #raidHud { visibility:hidden; }
+      @media(prefers-reduced-motion:reduce) { #raidHud { animation:none; } #raidHud .rh-awareness i { transition:none; } }
       @media(max-width:860px) { #bp { padding:8px; } .bp-panel { width:100%; height:95vh; max-height:95vh; padding:13px; border-radius:12px; } .bp-head { gap:8px; flex-wrap:wrap; margin-bottom:10px; padding-bottom:11px; } .bp-titleblock { min-width:0; flex:1; } .bp-mark { width:34px; height:34px; font-size:21px; } .bp-title { font-size:18px; } .bp-tabs { order:3; width:100%; margin:0; } .bp-tabs button { flex:1; padding:9px; } .bp-res { margin-left:auto; padding:7px 8px; } .bp-main { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); gap:10px; } .bp-eq { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; padding:10px; } .bp-eq-title { grid-column:1/-1; } .bp-eq::after { display:none; } .eq-slot { min-height:63px; padding:7px; } .eq-slot.gunslot { padding:8px; } .eq-slot.gunslot::before { width:22px; height:22px; margin-right:6px; } .bp-bag { padding:10px; } .bp-hint { max-height:48px; overflow:auto; margin-top:8px; padding-top:7px; } .shop-cols { grid-template-columns:minmax(0,1fr); height:auto; overflow-y:auto; } }
       @media(max-width:480px) { .bp-titleblock { flex-basis:100%; } .bp-res { margin-left:0; } .bp-cat-grid { grid-template-columns:minmax(0,1fr); } .ic-card { padding:8px; } }
 
-      /* ---- 主菜单:黄金比例斜切双门(61.8% / 38.2%),切边带立体光影 ---- */
+      /* ---- HERO / NIGHTFALL : immersive operation launcher ---- */
       body.in-menu #hud-top, body.in-menu #pnl, body.in-menu #hud-state, body.in-menu #streak, body.in-menu #hud-ragdoll { visibility: hidden; }
-      #menu { position: fixed; inset: 0; z-index: 40; display: flex; pointer-events: none; }
-      /* 切缝光影:贴着斜切边的琥珀亮线 + 向右晕开的深影(立体感的来源)。
-         斜线从顶部 62% 落到底部 53%(黄金比例 61.8% 上沿),旋转角 = atan(9%W / H) ≈ 9.1° */
-      .menu-seam {
-        position: absolute; left: calc(53% - 17px); bottom: -1.5%; width: 34px; height: 103%;
-        transform-origin: 50% 100%; transform: rotate(9.1deg);
+      #menu {
+        --menu-scene-accent: #ffb14a;
+        position: fixed; inset: 0; z-index: 40; display: grid; overflow: hidden;
+        grid-template-columns: minmax(0, 1.08fr) minmax(330px, .92fr);
+        grid-template-rows: 54px minmax(220px, 1fr) auto 24px;
+        column-gap: clamp(24px, 4.2vw, 72px); row-gap: clamp(12px, 1.9vh, 22px);
+        padding: clamp(17px, 2.65vw, 38px) clamp(18px, 4.1vw, 64px) 18px;
+        isolation: isolate; pointer-events: none; color: var(--text);
+        background: linear-gradient(180deg, rgba(4,8,15,.30), rgba(4,8,15,.15) 46%, rgba(4,8,15,.5));
+        box-sizing: border-box; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,177,74,.35) transparent;
+      }
+      #menu::before {
+        content: ""; position: absolute; inset: 0; z-index: -2; pointer-events: none;
+        background: rgba(4,8,15,.24); backdrop-filter: blur(2px) saturate(.88); -webkit-backdrop-filter: blur(2px) saturate(.88);
+      }
+      #menu::after {
+        content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .22;
         background:
-          linear-gradient(90deg, rgba(255, 214, 150, 0.95) 0 2.5px, rgba(255, 177, 74, 0.35) 2.5px 5px, rgba(0,0,0,0) 5px),
-          linear-gradient(90deg, rgba(4, 6, 10, 0) 0 5px, rgba(4, 6, 10, 0.62) 14px, rgba(4, 6, 10, 0.28) 24px, rgba(0,0,0,0) 34px);
-        filter: drop-shadow(-3px 0 10px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 14px rgba(255, 190, 110, 0.25));
-        opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
+          linear-gradient(rgba(150,180,220,.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(150,180,220,.07) 1px, transparent 1px),
+          radial-gradient(ellipse at 14% 24%, rgba(255,177,74,.12), transparent 36%),
+          radial-gradient(ellipse at 78% 62%, rgba(72,124,190,.14), transparent 42%);
+        background-size: 52px 52px, 52px 52px, auto, auto;
+        mask-image: linear-gradient(90deg, #000, rgba(0,0,0,.72) 62%, transparent);
       }
-      .menu-half {
-        position: absolute; top: 0; bottom: 0; width: 100%;
-        box-sizing: border-box;
-        backdrop-filter: blur(14px) saturate(1.1);
-        -webkit-backdrop-filter: blur(14px) saturate(1.1);
-        pointer-events: auto;
-        will-change: transform;
+      #menu > * { min-width: 0; box-sizing: border-box; }
+      #menu .menu-topbar, #menu .menu-left, #menu .menu-right, #menu .menu-deck, #menu .menu-footer { pointer-events: auto; }
+      #menu .menu-seam, #menuGlow { display: none !important; }
+      .menu-topbar {
+        grid-column: 1 / -1; grid-row: 1; display: flex; align-items: center; justify-content: space-between; gap: 20px;
+        padding-bottom: 13px; border-bottom: 1px solid rgba(164,190,226,.18); position: relative;
       }
-      /* 黄金比例斜切:左门占 0 → 62%(顶)/ 53%(底),右门补齐;clip 同时裁掉指针事件 */
-      .menu-left {
-        left: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 0 0 7%;
-        color: var(--text);
-        background: linear-gradient(105deg, rgba(7, 11, 19, 0.88), rgba(7, 11, 19, 0.6));
-        clip-path: polygon(0 0, 62% 0, 53% 100%, 0 100%);
-        transition: clip-path 0.24s ease;
-      }
-      .menu-right {
-        right: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 6% 9% 6%;
-        color: var(--text);
-        background: linear-gradient(255deg, rgba(7, 11, 19, 0.55), rgba(7, 11, 19, 0.26));
-        clip-path: polygon(62% 0, 100% 0, 100% 100%, 53% 100%);
-        transition: clip-path 0.24s ease;
-      }
-      /* 斜切安全区:斜线在底部只到 53vw,左舷内容必须整体住在 ~46vw 里(按钮不再被切) */
-      .menu-col { width: min(600px, 45vw); }
-      .menu-tip { margin-top: 14px; color: var(--text-faint); font-size: 10.5px; letter-spacing: 2px; }
-      /* 开门瞬间:斜切 morph 回竖直(配合原版开门动画),斜切光影淡出、竖缝辉光接管 */
-      #menu.opening .menu-left { clip-path: polygon(0 0, 57.5% 0, 57.5% 100%, 0 100%); }
-      #menu.opening .menu-right { clip-path: polygon(57.5% 0, 100% 0, 100% 100%, 57.5% 100%); }
-      #menu.opening .menu-seam { opacity: 0 !important; }
-      #menuGlow {
-        position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px;
-        background: linear-gradient(180deg, rgba(190,215,255,0), rgba(210,230,255,0.9) 30%, rgba(210,230,255,0.9) 70%, rgba(190,215,255,0));
-        box-shadow: 0 0 22px 4px rgba(170, 200, 255, 0.55);
-        opacity: 0; pointer-events: none; transition: opacity 0.12s linear;
-      }
-      .brand-row { display: flex; align-items: center; gap: 16px; margin-bottom: 34px; }
-      .brand-ava { width: 66px; height: 66px; border-radius: 2px; object-fit: cover; object-position: 50% 0;
-        border: 2px solid rgba(255, 177, 74, 0.9); background: linear-gradient(180deg, #22304d, #16203a);
-        box-shadow: 0 0 22px rgba(255, 177, 74, 0.3), 0 6px 18px rgba(0, 0, 0, 0.5); user-select: none; }
-      .menu-brand {
-        font-family: var(--font-disp); font-size: 56px; letter-spacing: 12px; line-height: 1;
-        background: linear-gradient(180deg, #ffe9a8 0%, #ffb14a 55%, #ff7a3c 100%);
-        -webkit-background-clip: text; background-clip: text; color: transparent;
-        filter: drop-shadow(0 3px 0 rgba(0,0,0,0.55)) drop-shadow(0 0 18px rgba(255,177,74,0.26));
-        transform: skewX(-3deg);
-      }
-      .menu-sub { font-size: 10.5px; color: var(--text-dim); letter-spacing: 5px; margin: 10px 0 0; font-weight: 700; }
-      .menu-sub::before { content: ""; display: inline-block; width: 26px; height: 1px; background: var(--amber); vertical-align: middle; margin-right: 10px; opacity: 0.8; }
+      .menu-topbar::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 86px; height: 2px; background: var(--amber); box-shadow: 0 0 16px rgba(255,177,74,.42); }
+      .menu-top-brand { display: flex; align-items: center; gap: 12px; min-width: 210px; }
+      .menu-mark { width: 34px; height: 34px; display: grid; place-items: center; position: relative; overflow: hidden; border: 1px solid rgba(255,177,74,.65); background: linear-gradient(145deg,rgba(255,177,74,.14),rgba(12,20,34,.78)); box-shadow: 0 0 22px rgba(255,177,74,.09); }
+      .menu-mark::before { content: ""; position: absolute; inset: 5px; border: 1px solid rgba(255,177,74,.25); transform: rotate(45deg); }
+      .menu-mark img { width: 25px; height: 25px; object-fit: cover; object-position: top; position: relative; mix-blend-mode: screen; }
+      .menu-top-brand b { display: block; font-family: var(--font-disp); color: #f6f1e7; font-size: 19px; letter-spacing: 5px; line-height: 1; }
+      .menu-top-brand small { display: block; margin-top: 5px; color: rgba(190,207,231,.46); font-size: 8px; font-weight: 800; letter-spacing: 2px; }
+      .menu-top-status { display: flex; align-items: center; justify-content: center; gap: 9px; color: rgba(206,220,241,.60); font-size: 9px; font-weight: 800; letter-spacing: 2px; white-space: nowrap; }
+      .menu-live-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #7ee0a0; box-shadow: 0 0 12px rgba(126,224,160,.72); animation: liveBreath 2s ease-in-out infinite; }
+      .menu-top-right { display: flex; align-items: center; justify-content: flex-end; gap: 9px; color: rgba(190,207,231,.48); font-size: 8px; letter-spacing: 1.4px; white-space: nowrap; }
+      .menu-top-right b { color: #c9e6d0; font-size: 9px; }
+      .menu-top-sep { width: 1px; height: 18px; margin: 0 7px; background: rgba(164,190,226,.20); }
+      @keyframes liveBreath { 50% { opacity: .42; box-shadow: 0 0 3px rgba(126,224,160,.25); } }
 
-      .menu-scene-title { font-size: 11px; color: var(--amber); letter-spacing: 6px; margin-bottom: 12px; font-weight: 700; }
-      /* 关卡选择:2×2 任务卡网格,大编号水印 + 状态角标 */
-      #menuScenes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 26px; }
-      .scene-card {
-        position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
-        text-align: left; cursor: pointer; overflow: hidden;
-        background: linear-gradient(165deg, rgba(148, 178, 214, 0.08), rgba(148, 178, 214, 0.03));
-        border: 1px solid var(--line); border-radius: 2px;
-        padding: 11px 12px 10px; color: var(--text); min-height: 64px;
-        transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
-      }
-      .scene-card:hover { border-color: rgba(255, 177, 74, 0.55); }
-      .scene-card.sel {
-        border-color: var(--amber-2);
-        background: linear-gradient(165deg, rgba(255, 177, 74, 0.16), rgba(255, 177, 74, 0.05));
-        box-shadow: 0 0 18px rgba(255, 177, 74, 0.2), inset 0 0 20px rgba(255, 177, 74, 0.07);
-      }
-      .scene-card.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--amber); }
-      .scene-card.locked { opacity: 0.42; cursor: default; }
-      .scene-card.locked::after { /* 锁定斜纹 */
-        content: ""; position: absolute; inset: 0; pointer-events: none;
-        background: repeating-linear-gradient(-45deg, rgba(7, 11, 19, 0) 0 9px, rgba(7, 11, 19, 0.5) 9px 11px);
-      }
-      .sc-num { position: absolute; right: 8px; top: 2px; font-family: var(--font-disp); font-size: 26px;
-        color: rgba(148, 178, 214, 0.16); letter-spacing: 1px; line-height: 1; pointer-events: none; }
-      .scene-card.sel .sc-num { color: rgba(255, 177, 74, 0.4); }
-      .sc-dot { display: none; }
-      .sc-name { font-family: var(--font-disp); font-size: 15.5px; letter-spacing: 2.5px; }
-      .sc-desc { font-size: 10.5px; color: var(--text-dim); letter-spacing: 1px; }
+      .menu-left { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; min-width: 0; padding: 6px 0 0; position: relative; }
+      .hero-eyebrow { display: flex; align-items: center; gap: 12px; margin-bottom: clamp(14px, 2vh, 22px); color: var(--amber); font-size: 9px; font-weight: 900; letter-spacing: 3px; }
+      .hero-eyebrow .hero-rule { width: 28px; height: 1px; background: var(--amber); box-shadow: 0 0 9px rgba(255,177,74,.45); }
+      .hero-eyebrow .hero-build { color: rgba(194,211,236,.42); font-size: 8px; letter-spacing: 1.2px; font-weight: 700; }
+      .menu-brand { display: block; margin: 0 0 -5px -5px; color: #f6f0e5; font-family: var(--font-disp); font-size: clamp(66px, 8.2vw, 126px); line-height: .88; letter-spacing: -.025em; font-weight: 400; text-shadow: 0 3px 0 rgba(0,0,0,.32), 0 0 48px rgba(255,177,74,.12); }
+      .menu-brand .brand-cut { color: var(--amber); }
+      .menu-nightsub { margin-top: 17px; color: var(--amber); font-family: var(--font-disp); font-size: clamp(20px, 2.65vw, 34px); letter-spacing: clamp(5px, .9vw, 13px); line-height: 1.1; }
+      .menu-hook { display: flex; align-items: flex-start; gap: 12px; max-width: 520px; margin: clamp(15px, 2.2vh, 24px) 0 clamp(18px, 2.6vh, 30px); }
+      .menu-hook-bar { width: 2px; min-height: 42px; flex: none; background: linear-gradient(180deg,var(--amber),rgba(255,177,74,.06)); box-shadow: 0 0 12px rgba(255,177,74,.22); }
+      .menu-hook-copy b { display: block; color: #f0f3fa; font-family: var(--font-disp); font-size: clamp(15px, 1.35vw, 19px); font-weight: 400; letter-spacing: 1.3px; }
+      .menu-hook-copy span { display: block; margin-top: 7px; color: rgba(203,216,238,.57); font-size: 10px; letter-spacing: .6px; line-height: 1.8; }
+      .hero-features { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: clamp(20px, 3vh, 32px); }
+      .hero-feature { display: inline-flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid rgba(148,178,214,.16); background: rgba(8,14,24,.28); color: rgba(202,216,238,.65); font-size: 8px; letter-spacing: .7px; white-space: nowrap; }
+      .hero-feature i { color: var(--amber); font-style: normal; font-size: 8px; font-weight: 900; }
+      .menu-actions { display: flex; align-items: stretch; flex-wrap: wrap; gap: 8px; width: min(100%, 600px); }
+      .menu-primary { min-width: 242px; flex: 1 1 250px; display: flex; align-items: center; gap: 14px; position: relative; overflow: hidden; padding: 12px 14px; text-align: left; cursor: pointer; color: #1a1711; border: 1px solid #ffca79; background: linear-gradient(108deg,#ffd48d 0%,#ffb14a 55%,#e99136 100%); box-shadow: 0 8px 32px rgba(255,156,54,.20), inset 0 1px 0 rgba(255,255,255,.5); transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; }
+      .menu-primary::before { content: ""; position: absolute; inset: -50% auto -50% -38%; width: 24%; transform: skewX(-18deg); background: linear-gradient(90deg,transparent,rgba(255,255,255,.42),transparent); transition: left .48s cubic-bezier(.2,.75,.2,1); }
+      .menu-primary:hover { transform: translateY(-2px); box-shadow: 0 13px 36px rgba(255,156,54,.32), inset 0 1px 0 rgba(255,255,255,.64); filter: saturate(1.08); }
+      .menu-primary:hover::before { left: 120%; }
+      .menu-primary:active { transform: translateY(0) scale(.99); }
+      .menu-primary:disabled { opacity: .48; cursor: wait; transform: none; }
+      .menu-primary-icon { width: 33px; height: 33px; flex: none; display: grid; place-items: center; border: 1px solid rgba(40,27,12,.28); background: rgba(40,27,12,.08); font-size: 17px; }
+      .menu-primary-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+      .menu-primary-copy small { color: rgba(48,34,17,.65); font-size: 7px; font-weight: 900; letter-spacing: 1.7px; }
+      .menu-primary-copy b { font-family: var(--font-disp); font-size: 20px; font-weight: 400; letter-spacing: 3px; white-space: nowrap; }
+      .menu-primary-arrow { margin-left: auto; font-size: 24px; font-weight: 400; transition: transform .18s ease; }
+      .menu-primary:hover .menu-primary-arrow { transform: translate(3px,-3px); }
+      .menu-primary kbd { align-self: flex-start; padding: 4px 5px; border: 1px solid rgba(40,27,12,.26); color: rgba(48,34,17,.68); font: 800 8px var(--font-body); letter-spacing: 1px; }
+      .menu-secondary-row { display: flex; gap: 8px; }
+      .menu-secondary { min-width: 116px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; cursor: pointer; border: 1px solid rgba(154,183,220,.25); background: rgba(9,16,28,.48); color: rgba(230,237,248,.83); font-family: var(--font-body); font-size: 10px; letter-spacing: .6px; transition: border-color .18s,background .18s,transform .18s,color .18s; }
+      .menu-secondary:hover { border-color: rgba(255,177,74,.64); background: rgba(255,177,74,.08); color: #ffd18e; transform: translateY(-2px); }
+      .menu-secondary .action-symbol { color: var(--amber); font-size: 8px; font-weight: 900; }
+      .menu-secondary kbd { color: rgba(170,192,224,.42); font: 700 7px var(--font-body); letter-spacing: .7px; }
 
-      /* 按钮 = 与斜切分界同向的平行四边形(上边右探、下边左收,呼应斜线走向) */
-      .menu-primary {
-        font-family: var(--font-disp); font-size: 22px; letter-spacing: 12px; color: var(--amber-dark); cursor: pointer;
-        background: linear-gradient(180deg, #ffc069, var(--amber-2)); border: none;
-        padding: 14px 0; width: 100%;
-        clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
-        box-shadow: 0 6px 24px rgba(232, 151, 60, 0.32);
-        transition: transform 0.12s, box-shadow 0.12s, letter-spacing 0.2s;
-      }
-      .menu-primary:hover { transform: translateX(3px); box-shadow: 0 10px 30px rgba(232, 151, 60, 0.48); letter-spacing: 14px; }
-      .menu-primary:active { transform: translateX(-2px); }
-      .menu-secondary {
-        font-size: 13.5px; letter-spacing: 6px; color: var(--text); cursor: pointer;
-        background: linear-gradient(165deg, rgba(148, 178, 214, 0.1), rgba(148, 178, 214, 0.04));
-        border: none;
-        padding: 10px 0; width: 100%; margin-top: 9px;
-        clip-path: polygon(11px 0, 100% 0, calc(100% - 11px) 100%, 0 100%);
-        transition: background 0.15s, color 0.15s, transform 0.12s;
-      }
-      .menu-secondary:hover { color: var(--amber); background: rgba(255, 177, 74, 0.1); transform: translateX(3px); }
-      /* 次级按钮的描边:外层 wrapper 画斜角边(clip 会裁掉自身 border,用同形底板叠出 1px 线) */
-      .menu-secondary { position: relative; }
-      .menu-secondary::before {
-        content: ""; position: absolute; inset: 0; z-index: -1;
-        background: rgba(148, 178, 214, 0.45);
-        clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
-        transition: background 0.15s;
-      }
-      .menu-secondary:hover::before { background: rgba(255, 177, 74, 0.8); }
-      .menu-links { display: flex; align-items: center; gap: 20px; margin-top: 26px; font-size: 11.5px; letter-spacing: 2px; }
-      .menu-links a { color: var(--text-dim); text-decoration: none; }
-      .menu-links a:hover { color: var(--amber); }
-      .menu-links a::before { content: "▸ "; color: var(--amber); opacity: 0.7; }
-      .menu-tip { margin-top: 2px; } /* 结构性覆盖:提示已移出链接行(见 298 行主样式) */
+      .menu-right { grid-column: 2; grid-row: 2; align-self: stretch; display: flex; flex-direction: column; justify-content: center; min-width: 0; position: relative; padding: clamp(15px, 2vw, 26px) clamp(16px, 2.1vw, 28px); overflow: hidden; border: 1px solid rgba(157,184,220,.24); background: linear-gradient(143deg,rgba(13,22,37,.72),rgba(7,12,21,.68)); box-shadow: 0 24px 70px rgba(0,0,0,.16),inset 0 1px 0 rgba(240,246,255,.035); }
+      .menu-right::before, .menu-right::after { content: ""; position: absolute; pointer-events: none; }
+      .menu-right::before { inset: 0; opacity: .6; background: radial-gradient(ellipse at 100% 0%,rgba(92,137,195,.12),transparent 46%),linear-gradient(110deg,transparent 42%,rgba(255,177,74,.045)); }
+      .menu-right::after { width: 90px; height: 90px; right: -46px; top: -46px; border: 1px solid rgba(255,177,74,.22); transform: rotate(45deg); box-shadow: 0 0 0 12px rgba(255,177,74,.018),0 0 0 24px rgba(255,177,74,.012); }
+      .menu-right > * { position: relative; z-index: 1; }
+      .brief-topline { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; color: rgba(189,208,235,.58); font-size: 8px; font-weight: 900; letter-spacing: 1.8px; }
+      .brief-live-dot { width: 5px; height: 5px; background: var(--amber); border-radius: 50%; box-shadow: 0 0 10px rgba(255,177,74,.65); }
+      .brief-code { margin-left: auto; color: rgba(189,208,235,.38); font-size: 8px; letter-spacing: 1px; }
+      .menu-hero-number { position: absolute !important; right: 12px; top: 31px; z-index: 0 !important; color: rgba(184,207,241,.055); font-family: var(--font-disp); font-size: clamp(100px,13vw,180px); line-height: .8; letter-spacing: -.06em; pointer-events: none; }
+      .mission-kicker { margin-top: clamp(24px,3vh,38px); color: var(--amber); font-size: 8px; font-weight: 900; letter-spacing: 3px; }
+      .menu-scene-name { max-width: 100%; margin-top: 9px; color: #f3f4f1; font-family: var(--font-disp); font-size: clamp(28px,3.5vw,48px); line-height: 1.05; letter-spacing: 2px; text-shadow: 0 3px 16px rgba(0,0,0,.32); overflow-wrap: anywhere; }
+      .menu-scene-desc { max-width: 400px; margin-top: 11px; color: rgba(205,219,240,.63); font-size: 10px; line-height: 1.85; letter-spacing: .4px; }
+      .mission-divider { display: flex; align-items: center; gap: 9px; margin: clamp(18px,2.4vh,28px) 0 12px; color: rgba(189,208,235,.49); font-size: 8px; font-weight: 900; letter-spacing: 2px; }
+      .mission-divider::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg,rgba(148,178,214,.28),transparent); }
+      .menu-intel { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; position: relative; z-index: 1; }
+      .menu-intel-row { display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 10px 11px; border: 1px solid rgba(148,178,214,.12); background: rgba(4,8,15,.28); }
+      .menu-intel-row span { color: rgba(174,195,224,.45); font-size: 8px; letter-spacing: 1px; }
+      .menu-intel-row b { max-width: 100%; color: rgba(232,239,250,.9); font-size: 10px; letter-spacing: .25px; line-height: 1.55; overflow-wrap: anywhere; }
+      .menu-intel-row b.warn { color: #ffc079; }
+      .mission-bottom { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 15px; color: rgba(175,195,222,.38); font-size: 7px; letter-spacing: 1.3px; }
+      .mission-bottom .mission-secure { display: inline-flex; align-items: center; gap: 6px; color: rgba(164,219,177,.8); }
+      .mission-bottom .mission-secure::before { content: ""; width: 5px; height: 5px; background: #7ee0a0; border-radius: 50%; }
 
-      /* 右舷:作战简报 */
-      .menu-scene-name { font-family: var(--font-disp); font-size: 36px; letter-spacing: 8px; text-shadow: 0 3px 0 rgba(0,0,0,0.5); }
-      .menu-scene-desc { font-size: 12.5px; color: var(--text-dim); margin-top: 8px; letter-spacing: 2.5px; }
-      .menu-intel {
-        margin-top: 26px; border: 1px solid var(--line); border-radius: 2px;
-        background: rgba(9, 14, 25, 0.55); padding: 12px 16px; max-width: 380px;
+      .menu-deck { grid-column: 1 / -1; grid-row: 3; min-width: 0; position: relative; }
+      .menu-deck-head { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
+      .menu-deck-title { display: flex; flex-direction: column; gap: 3px; }
+      .menu-deck-title small { color: var(--amber); font-size: 7px; font-weight: 900; letter-spacing: 2.5px; }
+      .menu-deck-title b { color: #e9effa; font-family: var(--font-disp); font-size: 17px; font-weight: 400; letter-spacing: 3px; }
+      .menu-deck-meta { color: rgba(175,195,222,.42); font-size: 8px; letter-spacing: 1px; }
+      #menuScenes { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 9px; }
+      .scene-card { --card-accent: var(--amber); position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 0; min-height: 113px; padding: 0; overflow: hidden; cursor: pointer; text-align: left; border: 1px solid rgba(148,178,214,.18); background: rgba(8,14,24,.72); color: var(--text); transition: border-color .2s,transform .22s cubic-bezier(.2,.8,.2,1),background .2s,box-shadow .2s; }
+      .scene-card:hover { z-index: 2; transform: translateY(-3px); border-color: rgba(208,222,244,.48); background: rgba(15,25,41,.92); }
+      .scene-card:focus-visible, .menu-primary:focus-visible, .menu-secondary:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+      .scene-card.sel { border-color: var(--card-accent); background: rgba(255,177,74,.075); box-shadow: inset 0 -2px 0 var(--card-accent),0 0 22px rgba(255,177,74,.07); }
+      .scene-card.sel::before { content: "SELECTED"; position: absolute; z-index: 3; top: 7px; left: 7px; padding: 4px 5px; background: var(--card-accent); color: #201609; font-size: 6px; font-weight: 1000; letter-spacing: 1px; }
+      .scene-card.locked { opacity: .54; cursor: not-allowed; filter: saturate(.45); }
+      .scene-card:disabled { cursor: not-allowed; }
+      .sc-art { display: block; height: clamp(38px,5.2vw,60px); position: relative; overflow: hidden; background-color: #111c2b; background-size: cover; background-position: center 48%; isolation: isolate; }
+      .sc-art::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg,rgba(5,9,15,.02),rgba(5,9,15,.15) 40%,rgba(5,9,15,.92)),linear-gradient(90deg,rgba(5,9,15,.18),transparent 60%); z-index: -1; }
+      .sc-art::after { content: ""; position: absolute; inset: 0; opacity: .45; background: repeating-linear-gradient(165deg,transparent 0 12px,rgba(210,225,246,.06) 13px 14px); mix-blend-mode: screen; }
+      .scene-card[data-scene="wild"] .sc-art { background-image: linear-gradient(180deg,rgba(12,29,45,.08),rgba(5,9,16,.12)),url('./bg/mountains-far.png'),linear-gradient(120deg,#3e5669,#182a39 54%,#bd7442); }
+      .scene-card[data-scene="roof"] .sc-art { background-image: linear-gradient(180deg,rgba(9,22,42,.05),rgba(5,9,16,.18)),url('./bg/mountains-near.png'),linear-gradient(120deg,#6b7d8c,#26394d 58%,#e2a55a); }
+      .scene-card[data-scene="room"] .sc-art { background-image: linear-gradient(180deg,rgba(9,20,34,.12),rgba(5,9,16,.20)),url('./bg/city/mid.png'),linear-gradient(120deg,#52606c,#1d2b3c 56%,#a75f37); }
+      .scene-card[data-scene="desert"] .sc-art { background-image: linear-gradient(180deg,rgba(53,32,20,.02),rgba(5,9,16,.22)),url('./bg/desert/dunes.png'),linear-gradient(120deg,#c69a65,#6e543f 60%,#2d3440); }
+      .scene-card[data-scene="tropic"] .sc-art { background-image: linear-gradient(180deg,rgba(8,32,37,.02),rgba(5,9,16,.2)),url('./bg/tropic/ridge.png'),linear-gradient(120deg,#6c9e95,#233c44 55%,#ce9c5b); }
+      .scene-card[data-scene="custom"] .sc-art { background-image: linear-gradient(140deg,rgba(255,177,74,.16),transparent 50%),repeating-linear-gradient(0deg,rgba(139,164,205,.1) 0 1px,transparent 1px 12px),repeating-linear-gradient(90deg,rgba(139,164,205,.1) 0 1px,transparent 1px 12px),linear-gradient(135deg,#1c2738,#0a101b); }
+      .sc-num { position: absolute; right: 7px; top: 5px; z-index: 2; color: rgba(241,246,255,.82); font-family: var(--font-disp); font-size: 20px; line-height: 1; text-shadow: 0 1px 8px rgba(0,0,0,.55); }
+      .sc-copy { position: relative; display: flex; flex: 1; flex-direction: column; gap: 4px; padding: 8px 9px 10px; min-width: 0; }
+      .sc-name { color: rgba(237,242,250,.94); font-family: var(--font-disp); font-size: clamp(12px,1.2vw,16px); line-height: 1.2; letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sc-desc { color: rgba(185,202,227,.54); font-size: 8px; line-height: 1.5; letter-spacing: .2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sc-select-mark { display: block; position: absolute; right: 8px; bottom: 8px; color: var(--card-accent); font-size: 7px; letter-spacing: .8px; opacity: 0; transform: translateX(4px); transition: opacity .18s,transform .18s; }
+      .scene-card.sel .sc-select-mark { opacity: 1; transform: none; }
+      .scene-card.locked .sc-copy::after { content: "未创建"; position: absolute; right: 8px; top: 8px; color: rgba(190,204,227,.35); font-size: 7px; }
+      .scene-card.locked .sc-select-mark { display: none; }
+
+      .menu-footer { grid-column: 1 / -1; grid-row: 4; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; border-top: 1px solid rgba(148,178,214,.12); padding-top: 9px; color: rgba(166,188,219,.38); font-size: 7px; letter-spacing: 1.2px; }
+      .menu-links { display: flex; align-items: center; gap: 18px; min-width: 0; }
+      .menu-links a { position: relative; color: rgba(195,210,234,.58); text-decoration: none; white-space: nowrap; transition: color .16s; }
+      .menu-links a::before { content: "↗"; margin-right: 6px; color: rgba(255,177,74,.68); font-size: 9px; }
+      .menu-links a:hover { color: #ffd18e; }
+      .menu-footer-hint { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+      .menu-footer-hint kbd { display: inline-grid; place-items: center; min-width: 19px; height: 17px; padding: 0 3px; box-sizing: border-box; border: 1px solid rgba(148,178,214,.2); color: rgba(216,226,244,.6); font: 800 8px var(--font-body); }
+      .menu-ver { color: rgba(166,188,219,.27); font-size: 7px; letter-spacing: 1.1px; white-space: nowrap; }
+
+      /* 内容进入/离场使用合成层 transform，不对整屏玻璃层做重模糊动画。 */
+      .menu-entering .menu-topbar { animation: menuTopIn .62s cubic-bezier(.18,.72,.2,1) both; }
+      .menu-entering .menu-left { animation: menuHeroIn .72s cubic-bezier(.18,.78,.2,1) .04s both; }
+      .menu-entering .menu-right { animation: menuBriefIn .72s cubic-bezier(.18,.78,.2,1) .12s both; }
+      .menu-entering .menu-deck { animation: menuDeckIn .64s cubic-bezier(.18,.78,.2,1) .22s both; }
+      .menu-entering .menu-footer { animation: menuTopIn .6s ease .28s both; }
+      @keyframes menuTopIn { from { opacity: 0; transform: translateY(-9px); } to { opacity: 1; transform: none; } }
+      @keyframes menuHeroIn { from { opacity: 0; transform: translate3d(-18px,8px,0); } to { opacity: 1; transform: none; } }
+      @keyframes menuBriefIn { from { opacity: 0; transform: translate3d(18px,8px,0); } to { opacity: 1; transform: none; } }
+      @keyframes menuDeckIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+      #menu.menu-departing::before { animation: menuVeilOut .54s ease forwards; }
+      #menu.menu-departing .menu-topbar, #menu.menu-departing .menu-footer { animation: menuTopOut .5s ease both; }
+      #menu.menu-departing .menu-left { animation: menuHeroOut .54s cubic-bezier(.62,0,.88,.42) both; }
+      #menu.menu-departing .menu-right { animation: menuBriefOut .54s cubic-bezier(.62,0,.88,.42) both; }
+      #menu.menu-departing .menu-deck { animation: menuDeckOut .48s ease both; }
+      #menu.menu-departing { pointer-events: none; }
+      #menu.menu-departing > *:not(#sceneTransition) { pointer-events: none !important; }
+      @keyframes menuVeilOut { to { opacity: 0; } }
+      @keyframes menuHeroOut { to { opacity: 0; transform: translate3d(-18px,0,0) scale(.99); } }
+      @keyframes menuBriefOut { to { opacity: 0; transform: translate3d(18px,0,0) scale(.99); } }
+      @keyframes menuDeckOut { to { opacity: 0; transform: translateY(14px); } }
+      @keyframes menuTopOut { to { opacity: 0; transform: translateY(-6px); } }
+      .menu-right.brief-update .menu-scene-name, .menu-right.brief-update .menu-scene-desc, .menu-right.brief-update .menu-intel { animation: briefSwap .42s cubic-bezier(.2,.75,.2,1) both; }
+      @keyframes briefSwap { from { opacity: .25; transform: translateY(7px); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
+      #sceneTransition { position: absolute; z-index: 10; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 13px; pointer-events: none; opacity: 0; visibility: hidden; background: rgba(3,6,12,.78); backdrop-filter: blur(4px); transition: opacity .18s ease,visibility .18s; }
+      #sceneTransition.active { opacity: 1; visibility: visible; pointer-events: auto; cursor: wait; }
+      .deploy-kicker { color: var(--amber); font-size: 9px; letter-spacing: 5px; font-weight: 800; }
+      .deploy-title { color: #f1f5fc; font-family: var(--font-disp); font-size: clamp(27px,4vw,46px); letter-spacing: 8px; text-shadow: 0 0 28px rgba(255,177,74,.22); }
+      .deploy-code { color: rgba(195,211,236,.68); font-size: 10px; letter-spacing: 2px; }
+      .deploy-track { width: min(260px, 52vw); height: 2px; background: rgba(148,178,214,.18); overflow: hidden; }
+      .deploy-track::after { content: ""; display: block; width: 42%; height: 100%; background: var(--amber); box-shadow: 0 0 12px var(--amber); animation: deployRun .64s ease-in-out infinite; }
+      @keyframes deployRun { from { transform: translateX(-110%); } to { transform: translateX(250%); } }
+      #sceneTransition::before { content: ""; position: absolute; inset: 0; opacity: .25; pointer-events: none; background: repeating-linear-gradient(180deg,transparent 0 3px,rgba(160,190,230,.12) 4px); }
+      #sceneTransition.active .deploy-title { animation: deploySignal .55s ease-in-out infinite alternate; }
+      @keyframes deploySignal { from { opacity: .76; text-shadow: 0 0 12px rgba(255,177,74,.12); } to { opacity: 1; text-shadow: 0 0 30px rgba(255,177,74,.45); } }
+      @media (max-width: 1050px) {
+        #menu { grid-template-columns: minmax(0,1fr) minmax(300px,.86fr); column-gap: 24px; padding-left: 24px; padding-right: 24px; }
+        .menu-brand { font-size: clamp(66px,8vw,96px); }
+        #menuScenes { grid-template-columns: repeat(3,minmax(0,1fr)); }
+        .scene-card { min-height: 100px; }
+        .sc-art { height: 46px; }
+        .hero-features { gap: 5px; }
       }
-      .menu-intel-title { font-size: 10px; color: var(--amber); letter-spacing: 5px; margin-bottom: 9px; font-weight: 700; }
-      .menu-intel-row { display: flex; justify-content: space-between; font-size: 11.5px; letter-spacing: 1.5px; padding: 3px 0; color: var(--text-dim); }
-      .menu-intel-row b { color: var(--text); font-weight: 700; }
-      .menu-intel-row b.warn { color: var(--danger); }
-      .menu-ver { margin-top: 16px; font-size: 10px; color: var(--text-faint); letter-spacing: 3px; }
+      @media (max-width: 720px) {
+        #menu { grid-template-columns: minmax(0,1fr); grid-template-rows: auto auto auto auto auto; gap: 17px; padding: 14px 14px 18px; overflow-y: auto; align-content: start; }
+        .menu-topbar { grid-column: 1; gap: 8px; padding-bottom: 10px; }
+        .menu-top-brand { min-width: 0; gap: 8px; }
+        .menu-mark { width: 29px; height: 29px; }
+        .menu-top-brand b { font-size: 16px; letter-spacing: 3px; }
+        .menu-top-brand small { font-size: 6px; letter-spacing: 1px; }
+        .menu-top-status { display: none; }
+        .menu-top-right { font-size: 7px; gap: 5px; letter-spacing: .5px; }
+        .menu-top-sep { margin: 0 2px; }
+        .menu-left { grid-column: 1; grid-row: 2; padding: 12px 0 2px; }
+        .hero-eyebrow { margin-bottom: 16px; font-size: 8px; letter-spacing: 2px; }
+        .menu-brand { font-size: clamp(65px,18vw,98px); }
+        .menu-nightsub { margin-top: 15px; font-size: 24px; letter-spacing: 7px; }
+        .menu-hook { margin: 15px 0 18px; }
+        .menu-hook-copy b { font-size: 15px; }
+        .menu-hook-copy span { font-size: 9px; }
+        .hero-features { margin-bottom: 18px; }
+        .hero-feature { padding: 6px 7px; font-size: 7px; }
+        .menu-actions { gap: 7px; }
+        .menu-primary { min-width: 100%; flex-basis: 100%; padding: 11px 12px; }
+        .menu-secondary-row { flex: 1; }
+        .menu-secondary { min-height: 41px; flex: 1; min-width: 0; padding: 0 7px; }
+        .menu-secondary kbd { display: none; }
+        .menu-right { grid-column: 1; grid-row: 3; min-height: 270px; padding: 17px; }
+        .mission-kicker { margin-top: 25px; }
+        .menu-scene-name { font-size: 35px; }
+        .menu-scene-desc { font-size: 9px; }
+        .mission-divider { margin: 18px 0 10px; }
+        .menu-intel-row { padding: 8px; }
+        .menu-deck { grid-column: 1; grid-row: 4; }
+        #menuScenes { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+        .scene-card { min-height: 102px; }
+        .sc-art { height: 45px; }
+        .sc-name { font-size: 14px; }
+        .menu-footer { grid-column: 1; grid-row: 5; flex-wrap: wrap; gap: 10px; padding-top: 11px; }
+        .menu-links { flex-wrap: wrap; gap: 13px; }
+        .menu-footer-hint { display: none; }
+      }
+      @media (max-height: 760px) and (min-width: 721px) {
+        #menu { grid-template-rows: 44px minmax(190px,1fr) auto 21px; row-gap: 10px; padding-top: 15px; padding-bottom: 12px; }
+        .menu-topbar { padding-bottom: 9px; }
+        .menu-brand { font-size: clamp(58px,7vw,94px); }
+        .menu-nightsub { margin-top: 11px; }
+        .menu-hook { margin-top: 12px; margin-bottom: 12px; }
+        .hero-features { margin-bottom: 14px; }
+        .menu-right { padding-top: 13px; padding-bottom: 13px; }
+        .mission-kicker { margin-top: 17px; }
+        .mission-divider { margin: 12px 0 8px; }
+        .menu-intel-row { padding: 7px 9px; }
+        .menu-deck-head { margin-bottom: 7px; }
+        .scene-card { min-height: 94px; }
+        .sc-art { height: 42px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #menu *, #menu *::before, #menu *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      }
 
       /* ---- 操作说明 ---- */
       #help { position: fixed; inset: 0; z-index: 45; display: none; align-items: center; justify-content: center;
@@ -836,44 +961,91 @@
     </div>
     <div id="hud-state" class="hud"></div>
     <div id="hud-ragdoll" class="hud"></div>
+    <section id="raidHud" aria-live="polite" data-mode="stealth" style="display:none">
+      <div class="rh-top"><span class="rh-mark"></span><span>OPERATION / BUILDING RAID</span><b id="raidFloorText">ROOFTOP</b></div>
+      <div class="rh-status" id="raidMissionStatus">未暴露 · 可以潜行</div>
+      <div class="rh-awareness"><span>敌方警觉</span><div><i id="raidAlertFill"></i></div><b id="raidIncidentText">已清理楼层 0/4</b></div>
+      <div class="rh-noise" id="raidNoiseText">声源 5.2m · 消音器 OFF</div>
+      <div class="rh-keys"><span><kbd>X</kbd> 消音器</span><span><kbd>E</kbd> 门</span><span><kbd>S</kbd> 潜行</span></div>
+    </section>
 
     <div id="streak"><div id="streakLabel">双杀</div><div class="odo" id="streakOdo"></div></div>
     <div id="lootToasts"></div>
 
-    <div id="menu">
-      <div class="menu-seam" id="menuSeam"></div>
-      <div id="menuGlow"></div>
-      <div class="menu-half menu-left">
-        <div class="menu-col">
-          <div class="brand-row">
-            <img class="brand-ava" src="./hero-avatar.png" alt="HERO" draggable="false">
-            <div>
-              <div class="menu-brand">HERO</div>
-              <div class="menu-sub">TACTICAL STRIKE · 突击行动</div>
-            </div>
-          </div>
-          <div class="menu-scene-title">作 战 区 域</div>
-          <div id="menuScenes"></div>
-          <button id="menuStart" class="menu-primary">进 入 战 场</button>
-          <button id="menuGear" class="menu-secondary">装 备 整 备</button>
-          <button id="menuHelp" class="menu-secondary">操 作 说 明</button>
-          <div class="menu-links">
-            <a href="./weapon-editor.html">军械工坊</a><a href="./level-editor.html">战场编辑器</a><a href="./skin-studio.html">干员外观</a>
-          </div>
-          <div class="menu-tip">M 键随时回到这里</div>
+    <div id="menu" data-scene="wild">
+      <div class="menu-seam" id="menuSeam" aria-hidden="true"></div>
+      <div id="menuGlow" aria-hidden="true"></div>
+      <header class="menu-topbar">
+        <div class="menu-top-brand">
+          <div class="menu-mark"><img src="./hero-avatar.png" alt="" draggable="false"></div>
+          <div><b>HERO</b><small>FIELD OPERATIONS SYSTEM</small></div>
         </div>
-      </div>
-      <div class="menu-half menu-right">
+        <div class="menu-top-status"><span class="menu-live-dot"></span><span>战术链路在线</span><span style="color:rgba(189,208,235,.28)">/</span><span>NIGHTFALL PROTOCOL</span></div>
+        <div class="menu-top-right"><span>模拟战区</span><b>LIVE</b><span class="menu-top-sep"></span><span>ESC / M · 操作台</span></div>
+      </header>
+
+      <section class="menu-left" aria-label="主菜单">
+        <div class="hero-eyebrow"><span class="hero-rule"></span><span>OPERATION NIGHTFALL</span><span class="hero-build">// BUILD 0.5</span></div>
+        <h1 class="menu-brand">HERO<span class="brand-cut">.</span></h1>
+        <div class="menu-nightsub">夜 幕 突 击</div>
+        <div class="menu-hook">
+          <span class="menu-hook-bar"></span>
+          <div class="menu-hook-copy"><b>战场不会等待。现在，轮到你了。</b><span>物理驱动战斗 · 可破坏掩体 · 敌后搜刮与装备成长<br>选择战区，整备武器，然后活着回来。</span></div>
+        </div>
+        <div class="hero-features" aria-label="游戏特色">
+          <span class="hero-feature"><i>01</i> 主动式物理战斗</span>
+          <span class="hero-feature"><i>02</i> 动态空中威胁</span>
+          <span class="hero-feature"><i>03</i> 搜刮与成长</span>
+        </div>
+        <div class="menu-actions">
+          <button id="menuStart" class="menu-primary" type="button">
+            <span class="menu-primary-icon" aria-hidden="true">↗</span>
+            <span class="menu-primary-copy"><small>READY WHEN YOU ARE</small><b id="menuStartLabel">部署突击</b></span>
+            <span class="menu-primary-arrow" aria-hidden="true">↗</span>
+            <kbd>ENTER</kbd>
+          </button>
+          <div class="menu-secondary-row">
+            <button id="menuGear" class="menu-secondary" type="button"><span class="action-symbol">01</span><span>装备整备</span><kbd>LOADOUT</kbd></button>
+            <button id="menuHelp" class="menu-secondary" type="button"><span class="action-symbol">02</span><span>操作说明</span><kbd>CONTROLS</kbd></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="menu-right" aria-label="当前战区情报">
+        <div class="menu-hero-number" id="menuSceneNumber" aria-hidden="true">01</div>
+        <div class="brief-topline"><span class="brief-live-dot"></span><span>LIVE THEATER INTELLIGENCE</span><span class="brief-code" id="menuSceneCode">OP-01 / WILDERNESS</span></div>
+        <div class="mission-kicker">当前任务 / ACTIVE OPERATION</div>
         <div class="menu-scene-name" id="menuSceneName">野外 · 月夜</div>
-        <div class="menu-scene-desc" id="menuSceneDesc">山谷哨卡 · 敌军从东线推进</div>
-        <div class="menu-intel tac">
-          <div class="menu-intel-title">战 术 情 报</div>
-          <div class="menu-intel-row"><span>敌军攻势</span><b>15 波 · 递增装等</b></div>
-          <div class="menu-intel-row"><span>制空威胁</span><b class="warn">武装直升机 · 无人机群</b></div>
-          <div class="menu-intel-row"><span>撤离条件</span><b>全部清场</b></div>
-          <div class="menu-intel-row"><span>战利品</span><b>按波次品质递增</b></div>
+        <div class="menu-scene-desc" id="menuSceneDesc">标准攻势 · 高低平台与掩体</div>
+        <div class="mission-divider">作战简报 <span style="opacity:.45">FIELD BRIEF</span></div>
+        <div class="menu-intel">
+          <div class="menu-intel-row"><span>敌军攻势</span><b id="menuIntelAssault">标准推进</b></div>
+          <div class="menu-intel-row"><span>制空威胁</span><b class="warn" id="menuIntelAir">直升机 + 无人机</b></div>
+          <div class="menu-intel-row"><span>战场地形</span><b id="menuIntelTerrain">平台 / 箱体掩护</b></div>
+          <div class="menu-intel-row"><span>行动收益</span><b id="menuIntelLoot">15 波 · 品质递增</b></div>
         </div>
-        <div class="menu-ver">HERO · OPERATION VALLEY · v0.4</div>
+        <div class="mission-bottom"><span class="mission-secure">战术数据已同步</span><span>HERO // FIELD COMMAND</span></div>
+      </section>
+
+      <section class="menu-deck" aria-label="选择作战区域">
+        <div class="menu-deck-head">
+          <div class="menu-deck-title"><small>01 / CHOOSE YOUR THEATER</small><b>选择战区</b></div>
+          <div class="menu-deck-meta">不同地形 · 不同攻势 · 不同生存路线</div>
+        </div>
+        <div id="menuScenes"></div>
+      </section>
+
+      <footer class="menu-footer">
+        <nav class="menu-links" aria-label="工坊入口"><a href="./weapon-editor.html">军械工坊</a><a href="./level-editor.html">战场编辑器</a><a href="./skin-studio.html">干员外观</a></nav>
+        <div class="menu-footer-hint"><kbd>M</kbd><span>随时返回作战台</span><kbd>R</kbd><span>换弹</span></div>
+        <div class="menu-ver">HERO · OPERATION NIGHTFALL · v0.5</div>
+      </footer>
+
+      <div id="sceneTransition" aria-hidden="true" role="status">
+        <div class="deploy-kicker">HERO / THEATER DEPLOYMENT</div>
+        <div class="deploy-title">正在部署战区</div>
+        <div class="deploy-code" data-deploy-code>OP-01 / WILDERNESS</div>
+        <div class="deploy-track"></div>
       </div>
     </div>
 
@@ -1033,7 +1205,8 @@
             <div class="help-row"><b>Tab</b> 武器轮盘(子弹时间)</div>
             <div class="help-row"><b>站尸上 Tab</b> 战场回收装备</div>
             <div class="help-row"><b>G</b> 背包 · <b>Esc/P/M</b> 暂停</div>
-            <div class="help-row"><b>R</b> 失控 · <b>E</b> 起身 · <b>B</b> 调试视图</div>
+            <div class="help-row"><b>R</b> 换弹 · <b>Shift+R</b> 失控测试 · <b>E</b> 复位</div>
+            <div class="help-row"><b>Enter / 空格</b> 菜单开始 · <b>B</b> 调试视图</div>
           </div>
         </div>
         <div class="help-links"><a href="./weapon-editor.html">▸ 军械工坊</a></div>
@@ -1044,3 +1217,7 @@
 </html>
 
 
+
+
+
+--------------------------------------------------------------------------------

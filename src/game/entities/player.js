@@ -190,6 +190,14 @@ export class Player {
       this.gunDef.affixes = [];
     }
     this.gunMods = computeGunMods(this.gunDef.affixes);
+    // 消音器按枪型分别保存；手枪、MP5/SMG、AWP/狙击枪可单独安装/关闭。
+    this.suppressors = Object.create(null);
+    if (this.persistPlayerData) {
+      try {
+        const saved = JSON.parse(localStorage.getItem('contra-suppressors') || '{}');
+        if (saved && typeof saved === 'object' && !Array.isArray(saved)) this.suppressors = saved;
+      } catch { /* 损坏的消音器存档退回关闭状态 */ }
+    }
     this.gunAngle = 0;            // 枪的世界指向角
     this._limbsMirrored = false;  // 面朝左时肘/膝限位要镜像
     this.moveMul = 1;             // 移速加成(装备词条)
@@ -209,6 +217,7 @@ export class Player {
     // ---- 武器词条状态:弹药/换弹/盾牌/近战 ----
     this.ammo = this.stats().mag;
     this.reloadT = 0;
+    this.reloadTotalT = 0;
     this.meleeT = 0;
     this.shield = false;
     this.shieldHp = 100;
@@ -281,7 +290,19 @@ export class Player {
 
   ammoInfo() {
     const st = this.stats();
-    return { ammo: this.ammo, mag: st.mag, reloadT: this.reloadT };
+    return { ammo: this.ammo, mag: st.mag, reloadT: this.reloadT, reloadTotalT: this.reloadTotalT };
+  }
+
+  // 手动 / 自动换弹共用状态入口。弹药为无限储备、仅管理当前弹匣。
+  reload() {
+    if (this.ragdoll || this.reloadT > 0) return false;
+    const st = this.stats();
+    if (this.ammo >= st.mag) return false;
+    this.reloadT = Math.max(0.25, st.reload);
+    this.reloadTotalT = this.reloadT;
+    this.reloadWeaponName = this.weapon === 'rifle' ? (this.gunDef?.name || '自定义枪') : '手枪';
+    this.events.push({ type: 'reload', manual: true, weapon: this.weapon, weaponName: this.reloadWeaponName });
+    return true;
   }
 
   destroy() {
@@ -295,6 +316,7 @@ export class Player {
 
   setRagdoll(on) {
     this.ragdoll = on;
+    if (on) { this.reloadT = 0; this.reloadTotalT = 0; this.reloadWeaponName = ''; } // 进入失控态时取消动作,避免换弹计时被 ragdoll 分支冻结。
     for (const j of Object.values(this.j)) j.enableMotor(!on);
     for (const b of this.limbBodies) {
       for (let f = b.getFixtureList(); f; f = f.getNext()) {
@@ -531,6 +553,31 @@ export class Player {
     this.servo(elJ, mirror ? clamp(bend, -2.3, -0.02) : clamp(bend, 0.02, 2.3), kp - 2, 22);
   }
 
+  suppressorSlot() {
+    if (this.weapon === 'pistol') return 'pistol';
+    const name = String(this.gunDef?.name || '');
+    return /MP5|SMG|冲锋|AWP|狙击|sniper/i.test(name) ? name : null;
+  }
+
+  isSuppressorOn() {
+    const slot = this.suppressorSlot();
+    return !!slot && this.suppressors?.[slot] === true;
+  }
+
+  toggleSuppressor() {
+    const slot = this.suppressorSlot();
+    if (!slot) {
+      this.events.push({ type: 'suppressor', ok: false, on: false, weaponName: this.weapon === 'rifle' ? (this.gunDef?.name || '主武器') : '当前武器' });
+      return false;
+    }
+    this.suppressors[slot] = !this.suppressors[slot];
+    if (this.persistPlayerData) {
+      try { localStorage.setItem('contra-suppressors', JSON.stringify(this.suppressors)); } catch { /* 忽略存储不可用 */ }
+    }
+    this.events.push({ type: 'suppressor', ok: true, on: this.suppressors[slot], slot, weaponName: slot === 'pistol' ? '手枪' : slot });
+    return true;
+  }
+
   setWeapon(w) {
     if (w === this.weapon) return;
     if (w === 'rifle' && this.shield) this.setShield(false); // 盾牌只能配手枪
@@ -538,6 +585,7 @@ export class Player {
     this.recoilT = 0;
     this.ammo = this.stats().mag; // 换枪满弹匣
     this.reloadT = 0;
+    this.reloadTotalT = 0;
   }
 
   // ---- 防弹盾牌:举盾时只能用手枪;盾面挡敌方子弹,耐久打光会碎 ----
@@ -556,6 +604,7 @@ export class Player {
       this.recoilT = 0;
       this.ammo = this.stats().mag;
       this.reloadT = 0;
+      this.reloadTotalT = 0;
     }
     if (this.persistPlayerData) {
       try { localStorage.setItem('contra-shield', on ? '1' : '0'); } catch { /* 忽略 */ }
@@ -703,6 +752,19 @@ export class Player {
       const k = Math.sin((1 - this.throwT / 0.28) * Math.PI);
       t.shF = 2.6 - 1.7 * k; t.elF = Math.max(0.05, 0.9 - 0.85 * k);
     }
+
+    // 换弹动作:远侧手离开护木/枪身,伸向弹匣区域,停留一下后回到握点。
+    // 用三段式动作曲线而不是随机摆臂,既可读又不会影响枪口/弹道方向。
+    if (this.reloadT > 0 && this.reloadTotalT > 0 && !this.shield && !this.roping) {
+      const p = clamp(1 - this.reloadT / this.reloadTotalT, 0, 1);
+      const smooth = (v) => { v = clamp(v, 0, 1); return v * v * (3 - 2 * v); };
+      const reach = p < 0.24 ? smooth(p / 0.24)
+        : p < 0.72 ? 1
+          : 1 - smooth((p - 0.72) / 0.28);
+      t.shB = lerp(t.shB, this.weapon === 'rifle' ? 0.72 : 0.95, reach);
+      t.elB = lerp(t.elB, this.weapon === 'rifle' ? 1.18 : 1.28, reach);
+      t.torso += Math.sin(p * Math.PI) * 0.035;
+    }
     return t;
   }
 
@@ -826,8 +888,10 @@ export class Player {
       this.reloadT -= dt;
       if (this.reloadT <= 0) {
         this.reloadT = 0;
+        this.reloadTotalT = 0;
         this.ammo = this.stats().mag;
-        this.events.push({ type: 'reloaded' });
+        this.events.push({ type: 'reloaded', weaponName: this.reloadWeaponName || (this.weapon === 'rifle' ? (this.gunDef?.name || '自定义枪') : '手枪') });
+        this.reloadWeaponName = '';
       }
     }
     if (input.fire && this.fireCd <= 0 && this.reloadT <= 0 && this.meleeT <= 0) {
@@ -853,8 +917,7 @@ export class Player {
       }
       if (ready) {
         if (this.ammo <= 0) {
-          this.reloadT = st.reload; // 打空自动换弹
-          this.events.push({ type: 'reload' });
+          this.reload(); // 打空自动换弹,与 R 手动换弹共用同一动画/音效入口
         } else {
           this.fireCd = 60 / st.rpm;
           this.ammo--;
@@ -873,7 +936,7 @@ export class Player {
           this.events.push({
             type: st.mode === 'hitscan' ? 'hitscanShot' : 'shot',
             x: muzzle.x, y: muzzle.y,
-            weapon: this.weapon, stats: st, parts,
+            weapon: this.weapon, weaponName: rifle ? (this.gunDef?.name || '自定义枪') : '手枪', stats: st, parts, suppressed: this.isSuppressorOn(),
           });
           // 熟练度成长 + 后坐力热量积累(词条 recoil 缩放);localStorage 每 10 发存一次(同步 IO 别太频)
           this.heat = Math.min(1, this.heat + 0.26 * st.recoil * (1.25 - 0.5 * this.skill) * (this.gunMods?.heatMul || 1));
@@ -904,13 +967,24 @@ export class Player {
       const kpArm = 16;
       const mirror = this.facing === -1;
       if (this.aimAlpha != null) {
+        // 持枪手保持枪把握点;换弹时远手暂时脱离前握点做弹匣操作。
         this.ikArm(this.j.shF, this.j.elF, S, this.gunPoint(this.gunDef.grips.rear), kpArm, mirror);
-        this.ikArm(this.j.shB, this.j.elB, S, this.gunPoint(this.gunDef.grips.front), kpArm - 1, mirror);
+        if (this.reloadT > 0) {
+          this.servo(this.j.shB, fc * cur.shB, kp, maxW);
+          this.servo(this.j.elB, fc * cur.elB, kp, maxW);
+        } else {
+          this.ikArm(this.j.shB, this.j.elB, S, this.gunPoint(this.gunDef.grips.front), kpArm - 1, mirror);
+        }
       } else {
-        // 未瞄准:枪垂在身前,双臂保持弯姿
+        // 未瞄准:枪垂在身前;换弹阶段远手同样离开护木,结束后恢复 IK 握点。
         this.servo(this.j.shF, fc * cur.shF, kp, maxW);
         this.servo(this.j.elF, fc * cur.elF, kp, maxW);
-        this.ikArm(this.j.shB, this.j.elB, S, this.gunPoint(this.gunDef.grips.front), kpArm - 1, mirror);
+        if (this.reloadT > 0) {
+          this.servo(this.j.shB, fc * cur.shB, kp, maxW);
+          this.servo(this.j.elB, fc * cur.elB, kp, maxW);
+        } else {
+          this.ikArm(this.j.shB, this.j.elB, S, this.gunPoint(this.gunDef.grips.front), kpArm - 1, mirror);
+        }
       }
     } else if (this.aimAlpha != null) {
       // 手枪:单手伸直指向光标
@@ -1144,6 +1218,35 @@ export class Player {
           ctx.lineWidth = 1.5 / k;
           ctx.stroke();
         }
+        // 换弹可视化:非霰弹枪在中段暂时露出空弹匣井,弹匣离膛后下移再插回。
+        // 使用设计坐标锚定在前后握点之间,预设枪和大多数自制枪都能自然对齐。
+        if (this.reloadT > 0 && this.reloadTotalT > 0 && g.name !== '霰弹枪') {
+          const rp = clamp(1 - this.reloadT / this.reloadTotalT, 0, 1);
+          if (rp >= 0.2 && rp <= 0.79) {
+            const eject = rp < 0.38 ? (rp - 0.2) / 0.18 : rp < 0.58 ? 1 : (0.79 - rp) / 0.21;
+            const span = Math.max(1, g.grips.front.x - g.grips.rear.x);
+            const mx = span * 0.35;
+            const my = g.name === 'AWP' ? 0 : g.name === 'M4A1' ? 5 : 7;
+            const mw = Math.max(8, Math.min(15, span * 0.22));
+            const mh = Math.max(13, Math.min(22, mw * 1.38));
+            ctx.fillStyle = 'rgba(9,13,20,0.96)';
+            ctx.fillRect(mx - mw * 0.46, my - mh * 0.25, mw * 0.94, mh * 0.92);
+            ctx.strokeStyle = 'rgba(255,177,74,0.58)';
+            ctx.lineWidth = 1 / k;
+            ctx.strokeRect(mx - mw * 0.46, my - mh * 0.25, mw * 0.94, mh * 0.92);
+            ctx.save();
+            ctx.translate(mx, my + mh * 0.42 + eject * 15);
+            ctx.rotate((this.gunMirrored ? -1 : 1) * eject * 0.22);
+            ctx.fillStyle = '#424b58';
+            ctx.fillRect(-mw * 0.42, -mh * 0.22, mw * 0.84, mh * 0.9);
+            ctx.fillStyle = '#69798c';
+            ctx.fillRect(-mw * 0.32, -mh * 0.16, mw * 0.64, 2 / k);
+            ctx.strokeStyle = 'rgba(4,7,12,0.95)';
+            ctx.lineWidth = 1 / k;
+            ctx.strokeRect(-mw * 0.42, -mh * 0.22, mw * 0.84, mh * 0.9);
+            ctx.restore();
+          }
+        }
         ctx.restore();
         return;
       }
@@ -1310,8 +1413,27 @@ export class Player {
     if (!skinCap(this.armUF, 'upperArm')) cap(this.armUF, D.upperArm, this.C.skin);
     if (!skinCap(this.armLF, 'foreArm')) cap(this.armLF, D.foreArm, this.C.skin);
     if (!hasSkin('foreArm')) hand(this.armLF);
+
+    // 轻量战术换弹指示:在操作员头部上方显示渐进式进度,不使用 DOM/滤镜动画。
+    if (this.reloadT > 0 && this.reloadTotalT > 0) {
+      const [rx, ry] = P(this.head);
+      const progress = clamp(1 - this.reloadT / this.reloadTotalT, 0, 1);
+      const bw = 70 * (ppm / 52), bh = Math.max(3, 3.5 * (ppm / 52));
+      const by = ry - 24 * (ppm / 52);
+      ctx.save();
+      ctx.globalAlpha = 0.88;
+      ctx.fillStyle = 'rgba(5,10,18,0.78)';
+      ctx.fillRect(rx - bw / 2, by, bw, bh + 10 * (ppm / 52));
+      ctx.strokeStyle = 'rgba(255,177,74,0.72)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rx - bw / 2, by, bw, bh + 10 * (ppm / 52));
+      ctx.fillStyle = '#ffb14a';
+      ctx.fillRect(rx - bw / 2 + 2, by + 2, (bw - 4) * progress, Math.max(1, bh - 1));
+      ctx.fillStyle = '#ffe4b4';
+      ctx.font = `700 ${Math.max(8, 9 * (ppm / 52))}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('RELOADING', rx, by + 9 * (ppm / 52));
+      ctx.restore();
+    }
   }
 }
-
-
-
