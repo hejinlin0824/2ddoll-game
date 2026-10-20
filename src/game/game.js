@@ -19,8 +19,8 @@ import { updateStatusPanel, streakShow, streakHide, lootToast } from './systems/
 import { feel, addTrauma, hitStop, killSlow, addStreak, resetStreak, tickFeel } from './systems/feel.js';
 import { input, mouse, attachInput, bindCamera } from './systems/input.js';
 import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
-import { bullets, spawnBullet, castRay, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups, damageTerrain } from './systems/combat.js';
-import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel } from './systems/raid.js';
+import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups, damageTerrain } from './systems/combat.js';
+import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
@@ -395,28 +395,97 @@ function spawnRaidReinforcements(caller) {
   return { packet, spawned };
 }
 
-function drawRaidVision(c, w2sC, ppmZ, time) {
+function drawRaidVision(c, w2sC, ppmZ, time, VW = W, VH = H) {
   if (!raidState.enabled) return;
-  for (const e of enemies) {
-    if (!e.raidMode || !e.alive || e.destroyed || e.airUnit || e.alert) continue;
-    const p = e.p?.torso?.getPosition?.() || { x: e.x, y: e.y };
-    const range = (e.sightRange || 10.5) * (e.suspicious ? 1 : 0.88);
-    const direction = e.face || -1;
-    const spread = e.suspicious ? 0.48 : 0.34;
-    const [ox, oy] = w2sC(p.x, p.y + 0.42);
-    const [ax, ay] = w2sC(p.x + direction * range, p.y + 0.42 + range * Math.sin(spread));
-    const [bx, by] = w2sC(p.x + direction * range, p.y + 0.42 - range * Math.sin(spread));
-    c.save();
-    c.fillStyle = e.suspicious ? 'rgba(255,177,74,0.12)' : 'rgba(255,205,122,0.055)';
-    c.beginPath(); c.moveTo(ox, oy); c.lineTo(ax, ay); c.lineTo(bx, by); c.closePath(); c.fill();
-    c.strokeStyle = e.suspicious ? 'rgba(255,177,74,0.34)' : 'rgba(255,205,122,0.10)';
-    c.lineWidth = 1;
-    c.beginPath(); c.moveTo(ox, oy); c.lineTo(ax, ay); c.moveTo(ox, oy); c.lineTo(bx, by); c.stroke();
-    if (e.suspicious) {
-      c.fillStyle = `rgba(255,177,74,${0.3 + 0.12 * Math.sin(time * 6 + e.x)})`;
-      c.beginPath(); c.arc(ox, oy - 10, 2.8, 0, Math.PI * 2); c.fill();
+
+  // 视野锥只是提示层，不能因为某个敌人数据异常而中断整个渲染帧。
+  // 所有射线/楼层坐标先在 save() 之前计算，Canvas 状态不会被错误数据污染。
+  try {
+    const RAY_STEPS = 14;
+    const blockersByFloor = new Map(RAID_FLOORS.map((floor) => [floor.id, LEVEL.rects.filter((r) =>
+      r && Number.isFinite(r.x) && Number.isFinite(r.y) && Number.isFinite(r.w) && Number.isFinite(r.h)
+      && r.y + r.h / 2 >= floor.top - 0.30 && r.y - r.h / 2 <= floor.top + 3.30
+    )]));
+
+    const rayToBlocker = (x, y, dx, dy, range, blockers) => {
+      let best = range;
+      for (const r of blockers) {
+        const hit = rayAABB(x, y, dx, dy, r);
+        if (Number.isFinite(hit) && hit > 0.02 && hit < best) best = hit;
+      }
+      return best;
+    };
+
+    for (const e of enemies) {
+      if (!e.raidMode || !e.alive || e.destroyed || e.airUnit || e.alert) continue;
+
+      let view;
+      try {
+        const p = e.p?.torso?.getPosition?.() || { x: e.x, y: e.y };
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+        const floorId = Number.isInteger(e.raidFloorId) ? e.raidFloorId : floorForY(p.y);
+        const floor = RAID_FLOORS.find((f) => f.id === floorId);
+        if (!floor) continue;
+
+        const floorBottom = floor.top + 0.035;
+        const floorCeiling = floor.top + 3.0;
+        const [, clipY0] = w2sC(0, floorCeiling);
+        const [, clipY1] = w2sC(0, floorBottom);
+        const clipTop = Math.max(0, Math.min(clipY0, clipY1));
+        const clipBottom = Math.min(VH, Math.max(clipY0, clipY1));
+        if (![clipTop, clipBottom].every(Number.isFinite) || clipBottom <= clipTop) continue;
+
+        const range = (e.sightRange || 10.5) * (e.suspicious ? 1 : 0.88);
+        const centerAngle = (e.face || -1) > 0 ? 0 : Math.PI;
+        const spread = e.suspicious ? 0.48 : 0.34;
+        const origin = { x: p.x, y: p.y + 0.42 };
+        const [ox, oy] = w2sC(origin.x, origin.y);
+        if (![ox, oy].every(Number.isFinite)) continue;
+        const blockers = blockersByFloor.get(floorId) || [];
+        const points = [];
+        for (let i = 0; i <= RAY_STEPS; i++) {
+          const a = centerAngle - spread + (2 * spread * i / RAY_STEPS);
+          const dx = Math.cos(a), dy = Math.sin(a);
+          const dist = rayToBlocker(origin.x, origin.y, dx, dy, range, blockers);
+          points.push(w2sC(origin.x + dx * dist, origin.y + dy * dist));
+        }
+        if (points.some((pt) => !pt || !Number.isFinite(pt[0]) || !Number.isFinite(pt[1]))) continue;
+        view = { e, ox, oy, points, clipTop, clipBottom };
+      } catch (err) {
+        window.__raidVisionError = String(err?.stack || err);
+        continue;
+      }
+
+      // 严格成对 save/restore。这个 HUD 层即使绘制失败，也不能留下楼层 clip
+      // 把后续地形、角色或武器轮盘永久裁切掉。
+      c.save();
+      try {
+        c.beginPath(); c.rect(0, view.clipTop, VW, view.clipBottom - view.clipTop); c.clip();
+        c.fillStyle = view.e.suspicious ? 'rgba(255,177,74,0.12)' : 'rgba(255,205,122,0.055)';
+        c.beginPath(); c.moveTo(view.ox, view.oy);
+        for (const [px, py] of view.points) c.lineTo(px, py);
+        c.closePath(); c.fill();
+        c.strokeStyle = view.e.suspicious ? 'rgba(255,177,74,0.34)' : 'rgba(255,205,122,0.10)';
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(view.ox, view.oy); c.lineTo(view.points[0][0], view.points[0][1]);
+        c.moveTo(view.ox, view.oy); c.lineTo(view.points[view.points.length - 1][0], view.points[view.points.length - 1][1]);
+        c.moveTo(view.points[0][0], view.points[0][1]);
+        for (let i = 1; i < view.points.length; i++) c.lineTo(view.points[i][0], view.points[i][1]);
+        c.stroke();
+        if (view.e.suspicious) {
+          c.fillStyle = `rgba(255,177,74,${0.3 + 0.12 * Math.sin(time * 6 + view.e.x)})`;
+          c.beginPath(); c.arc(view.ox, view.oy - 10, 2.8, 0, Math.PI * 2); c.fill();
+        }
+      } catch (err) {
+        window.__raidVisionError = String(err?.stack || err);
+      } finally {
+        c.restore();
+      }
     }
-    c.restore();
+  } catch (err) {
+    // 视野提示绘制失败不应阻止 drawTerrain / render 的其余层继续绘制。
+    window.__raidVisionError = String(err?.stack || err);
   }
 }
 
@@ -554,8 +623,12 @@ function step(dt) {
       flash.t = 0.07; flash.x = ev.x; flash.y = ev.y;
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
       flash.r = st.damage >= 25 ? 38 : 30;
-      addTrauma(0.035 + 0.02 * st.recoil); // 开枪:与武器后坐词条挂钩的轻震
-      camKick(ev.parts[0].dx, ev.parts[0].dy, (1.6 + 3.2 * st.recoil) * (1.25 - 0.5 * player.skill), st.recoil); // 方向性后坐:小拳快回(重量感,不抢准星)
+      // 剿匪行动需要建筑/楼层保持稳定：相机后坐会让整栋楼随每发子弹左右游移。
+      // 角色与武器本身仍保留动画后坐；其他普通战区继续使用原来的镜头手感。
+      if (!raidState.enabled) {
+        addTrauma(0.035 + 0.02 * st.recoil);
+        camKick(ev.parts[0].dx, ev.parts[0].dy, (1.6 + 3.2 * st.recoil) * (1.25 - 0.5 * player.skill), st.recoil);
+      }
       if (raidState.enabled) {
         const sound = raidShotProfile(ev.weaponName, !!ev.suppressed, ev.weapon);
         emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: sound.radius, intensity: sound.intensity, kind: 'gunshot' });
@@ -572,8 +645,11 @@ function step(dt) {
       burst(ex, ey, 10, '#cfe8ff', 5);
       flash.t = ev.suppressed ? 0.045 : 0.09; flash.x = ev.x; flash.y = ev.y; flash.r = ev.suppressed ? 18 : 48;
       flash.ang = Math.atan2(ev.parts[0].dy, ev.parts[0].dx);
-      addTrauma(0.22); // 狙击:大震
-      camKick(d.dx, d.dy, (1.6 + 3.2 * st.recoil) * 1.25 * (1.25 - 0.5 * player.skill), st.recoil); // 狙:单发重拳(钳制内读重量)
+      // 剿匪行动关闭开枪造成的整屏震动，防止建筑轮廓跟着狙击枪左右晃。
+      if (!raidState.enabled) {
+        addTrauma(0.22);
+        camKick(d.dx, d.dy, (1.6 + 3.2 * st.recoil) * 1.25 * (1.25 - 0.5 * player.skill), st.recoil);
+      }
       if (raidState.enabled) {
         const sound = raidShotProfile(ev.weaponName, !!ev.suppressed, ev.weapon);
         emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: sound.radius, intensity: sound.intensity, kind: 'gunshot' });
@@ -865,7 +941,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   drawSky(c, VW, VH);
   drawParallax(c, VW, VH, camO.x, PPM);
   if (raidState.enabled) drawBuildingInterior(c, w2sC, ppmZ, time);
-  if (raidState.enabled) drawRaidVision(c, w2sC, ppmZ, time);
+  if (raidState.enabled) drawRaidVision(c, w2sC, ppmZ, time, VW, VH);
   drawTerrain(c, LEVEL.rects, w2sC, ppmZ);
   if (raidIntro) {
     const rp = player.torso.getPosition();
@@ -1405,8 +1481,21 @@ function frame(now) {
     // 菜单背景是真实运行的游戏场景;毛玻璃下 30 FPS 足够表现动势,可显著降低 Canvas/模糊合成负担。
     const inMenuPreview = menuIsOpen();
     if (!inMenuPreview || now - lastMenuRender >= 1000 / 30) {
-      render(now / 1000);
-      wheel.draw(ctx);
+      // 世界绘制与轮盘 UI 分开保护：地形/视野等视觉层出错时，Tab 轮盘仍可绘制。
+      try {
+        render(now / 1000);
+      } catch (err) {
+        window.__lastRenderError = { msg: String(err && err.stack || err), at: new Date().toISOString() };
+        // render() 失败时恢复 Canvas 状态栈/裁切区域；下一帧会重画完整游戏场景。
+        canvas.width = W;
+        canvas.height = H;
+        ctx.imageSmoothingEnabled = true;
+      }
+      try {
+        wheel.draw(ctx);
+      } catch (err) {
+        window.__wheelDrawError = String(err && err.stack || err);
+      }
       if (inMenuPreview) lastMenuRender = now;
     }
     canvas.style.cursor = wheel.open ? 'none' : '';

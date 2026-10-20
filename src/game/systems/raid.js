@@ -109,7 +109,10 @@ function enrollLocalGuards(incident, enemies, caller) {
     e.alertTo();
     e.suspicion = 1;
     e.suspicious = false;
-    e.lastKnown = { x: caller.x, y: caller.y };
+    const known = caller.lastKnown || { x: incident.x, y: caller.y };
+    e.lastKnown = { x: known.x, y: Number.isFinite(known.y) ? known.y : caller.y };
+    e.raidVisualContact = false; // 无线电只给最后情报，不会令整队凭空看见目标。
+    e.raidAlertReason = 'radio';
     e.searchT = 4;
     e.supportCalled = true; // 同一片区域不会每名守军都再呼叫一轮增援。
     e.supportCallT = -1;
@@ -175,6 +178,18 @@ export function updateRaid(dt, opts = {}) {
     const ep = e.p?.torso?.getPosition?.() || { x: e.x, y: e.y };
     const floorId = Number.isInteger(e.raidFloorId) ? e.raidFloorId : floorForY(ep.y);
     const sameFloor = floorId === state.floorId;
+    const dxSight = pp.x - ep.x, dySight = pp.y - ep.y;
+    const sightDist = Math.hypot(dxSight, dySight);
+    const baseRange = e.sightRange || 10.5;
+    const lit = isFloorLit(rects, floorId, pp.x);
+    const sightRange = baseRange * (lit ? 1 : 0.72) * (player.crouch ? 0.62 : 1);
+    const facing = e.face || -1;
+    const inCone = dxSight * facing >= -sightDist * 0.18 && Math.abs(dySight) < Math.max(1.25, sightDist * 0.55);
+    // A real visual contact requires same storey, facing cone, range AND an
+    // unobstructed line segment. Audio may alert a guard, but never grants vision.
+    e.raidVisualContact = !!(sameFloor && sightDist <= sightRange && inCone &&
+      hasLOS(ep.x, ep.y + 0.48, pp.x, pp.y + 0.32));
+    if (e.raidVisualContact) e.lastKnown = { x: pp.x, y: pp.y };
 
     // 声音以一次性脉冲被每名守军消费；跨楼层明显衰减，不会整栋楼瞬间集体开火。
     for (const n of state.noises) {
@@ -196,30 +211,23 @@ export function updateRaid(dt, opts = {}) {
       // 大声枪响在近距离能够直接暴露位置；消音枪只积累较慢的怀疑值。
       const gain = power * (loudPlayerShot ? 1.15 : n.kind === 'gunshot' ? 0.52 : 0.42);
       e.suspicion = clamp((e.suspicion || 0) + gain, 0, 1);
-      e.lastKnown = { x: n.x, y: n.y };
+      // 隔层听声只能判断水平的大致方向，不知道目标实际在上方还是下方。
+      e.lastKnown = { x: n.x, y: n.floorId === floorId ? n.y : ep.y };
       e.searchT = Math.max(e.searchT || 0, 2.7 + power * 1.6);
       if (loudPlayerShot && power > 0.56) e.suspicion = Math.max(e.suspicion, 1);
       if (e.suspicion >= 0.28 && !e.alert) e.suspicious = true;
     }
 
-    // 视野只发生在同楼层；真实地形/门会遮挡 LOS。下蹲、熄灯与距离共同影响发现速度。
-    if (!e.alert && sameFloor) {
-      const dx = pp.x - ep.x, dy = pp.y - ep.y;
-      const dist = Math.hypot(dx, dy);
-      const baseRange = e.sightRange || 10.5;
-      const lit = isFloorLit(rects, floorId, pp.x);
-      const range = baseRange * (lit ? 1 : 0.72) * (player.crouch ? 0.62 : 1);
-      const facing = e.face || -1;
-      const inCone = dx * facing >= -dist * 0.18 && Math.abs(dy) < Math.max(1.25, dist * 0.55);
-      const clear = dist < 1.45 || (dist <= range && inCone && hasLOS(ep.x, ep.y + 0.48, pp.x, pp.y + 0.32));
-      if (clear && dist <= range) {
-        const nearFactor = 0.24 + (1 - dist / range) * 0.86;
-        const crouchMul = player.crouch ? 0.42 : 1;
-        e.suspicion = clamp((e.suspicion || 0) + dt * nearFactor * crouchMul, 0, 1);
-        e.lastKnown = { x: pp.x, y: pp.y };
-        e.searchT = Math.max(e.searchT || 0, 1.6);
-        if (e.suspicion > 0.22) e.suspicious = true;
-      }
+    // Only positive same-floor LOS adds visual suspicion. Already-alert guards keep
+    // evaluating this flag every frame, so they must reacquire sight before firing.
+    if (!e.alert && e.raidVisualContact) {
+      const dist = sightDist;
+      const nearFactor = 0.24 + (1 - dist / sightRange) * 0.86;
+      const crouchMul = player.crouch ? 0.42 : 1;
+      e.suspicion = clamp((e.suspicion || 0) + dt * nearFactor * crouchMul, 0, 1);
+      e.lastKnown = { x: pp.x, y: pp.y };
+      e.searchT = Math.max(e.searchT || 0, 1.6);
+      if (e.suspicion > 0.22) e.suspicious = true;
     }
 
     // 看见尸体的守军会先怀疑；近距离停留则发现尸体并升级警戒。
@@ -243,7 +251,8 @@ export function updateRaid(dt, opts = {}) {
     if (!e.alert) {
       if ((e.suspicion || 0) >= 1) {
         e.alertTo();
-        e.lastKnown = { x: pp.x, y: pp.y };
+        if (e.raidVisualContact) e.lastKnown = { x: pp.x, y: pp.y };
+        e.raidAlertReason = e.raidVisualContact ? 'visual' : 'sound';
         e.supportCallT = 1.25;
         e.supportCalled = false;
         announce(state, '目标暴露 · 守军正在呼叫增援', 2.4);

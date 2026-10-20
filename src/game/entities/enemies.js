@@ -34,6 +34,7 @@ export class Dummy {
     this.raidFloorId = Number.isInteger(opts.raidFloorId) ? opts.raidFloorId : null;
     this.sightRange = Number.isFinite(opts.sightRange) ? opts.sightRange : 10.5;
     this.suspicion = 0; this.suspicious = false; this.lastKnown = null; this.searchT = 0;
+    this.raidVisualContact = false; this.raidAlertReason = null; // 感知/听声警报分开，避免隔层透视追踪
     this.supportCallT = -1; this.supportCalled = false; this.alarmZoneId = null;
     this.isReinforcement = !!opts.isReinforcement;
     // 职能用行为和耐久区分，而不是单纯给所有敌人加血。
@@ -360,50 +361,73 @@ export class Dummy {
 
     let vx = 0;
     if (this.alert && playerAlive) {
-      this.face = pp.x >= tp.x ? 1 : -1;
-      ai.aim = { x: pp.x + (Math.random() - 0.5) * 0.7, y: pp.y + (Math.random() - 0.5) * 0.5 };
-      const sf = this.strafeFlip || 1;
-      const los = this.hasLOS(tp.x, tp.y + 0.45, pp.x, pp.y + 0.45); // 胸口高度对射视线
       const role = this.role;
-      const engageRange = role === 'support' ? 14 : role === 'rusher' ? 9 : 12;
-      if (this.staggerT > 0) {
-        vx = -this.face * 0.5; // 踉跄:控制不住往后倒
-      } else if (dist > engageRange || !los) {
-        // 冲锋兵更快贴近；其他兵以 12m 交战线推进，障碍会迫使其找角度。
-        vx = this.face * (role === 'rusher' ? 3.0 : 2.4);
-      } else if (role === 'rusher') {
-        if (dist > 6.2) vx = this.face * 1.9;
-        else if (dist < 2.5) vx = -this.face * 0.8;
-      } else if (role === 'support') {
-        // 支援兵保持较远射界，不会全体挤成一团。
-        if (dist > 11.5) vx = this.face * 1.0;
-        else if (dist < 7.5) vx = -this.face * 1.25 * sf;
-      } else if (dist > 10) {
-        vx = this.face * 1.7 * sf; // 标准兵保持中距离走位
-      } else if (dist < 5) {
-        vx = -this.face * 1.2 * sf;
-      }
-      // 不同职能使用不同点射节奏；视线被掩体切断会立即停火。
-      this.fireT -= dt;
-      if (this.fireT <= 0 && this.staggerT <= 0 && dist <= engageRange && los) {
-        this.burstLeft = role === 'rusher'
-          ? 3 + Math.floor(Math.random() * 3)
-          : role === 'support'
-            ? 2 + Math.floor(Math.random() * 2)
-            : 2 + Math.floor(Math.random() * 3);
-        this.fireT = role === 'rusher' ? 0.95 + Math.random() * 0.45
-          : role === 'support' ? 1.9 + Math.random() * 0.65
-            : 1.5 + Math.random();
-      }
-      if (this.burstLeft > 0) {
-        if (!los) this.burstLeft = 0; // 射击中途视线断了:立即停手,不往墙上糊子弹
-        else {
-          this.burstCd -= dt;
-          if (this.burstCd <= 0) { ai.fire = true; this.burstLeft--; this.burstCd = 0.13; }
+      // In RAID mode, a sound/radio alert is not a live target lock. Walk toward the
+      // last heard/seen horizontal position on this floor, scan, and wait for real LOS.
+      if (this.raidMode && !this.raidVisualContact) {
+        const known = this.lastKnown || { x: tp.x, y: tp.y };
+        const dxKnown = known.x - tp.x;
+        if (Math.abs(dxKnown) > 0.18) this.face = Math.sign(dxKnown);
+        ai.aim = { x: known.x, y: tp.y + 0.28 };
+        this.burstLeft = 0;
+        this.burstCd = 0;
+        if (this.staggerT > 0) vx = -this.face * 0.45;
+        else if (Math.abs(dxKnown) > 1.35) {
+          vx = this.face * (role === 'rusher' ? 2.2 : role === 'support' ? 0.85 : 1.25);
+        } else {
+          vx = 0;
+          this.searchT = Math.max(0, (this.searchT || 0) - dt);
+          if (this.searchT <= 0 && Math.random() < dt * 0.9) this.face *= -1;
         }
+      } else {
+        this.face = pp.x >= tp.x ? 1 : -1;
+        ai.aim = { x: pp.x + (Math.random() - 0.5) * 0.7, y: pp.y + (Math.random() - 0.5) * 0.5 };
+        const sf = this.strafeFlip || 1;
+        const los = this.hasLOS(tp.x, tp.y + 0.45, pp.x, pp.y + 0.45); // 胸口高度对射视线
+        const engageRange = role === 'support' ? 14 : role === 'rusher' ? 9 : 12;
+        if (this.staggerT > 0) {
+          vx = -this.face * 0.5;
+        } else if (dist > engageRange || !los) {
+          // 视觉接触丢失后只往最后目击位置搜索，不继续透过楼板追踪实时玩家坐标。
+          if (this.raidMode && this.lastKnown) {
+            const dxKnown = this.lastKnown.x - tp.x;
+            vx = Math.abs(dxKnown) > 1.35 ? Math.sign(dxKnown) * (role === 'rusher' ? 2.2 : 1.25) : 0;
+            ai.aim = { x: this.lastKnown.x, y: tp.y + 0.28 };
+          } else {
+            vx = this.face * (role === 'rusher' ? 3.0 : 2.4);
+          }
+          this.burstLeft = 0;
+        } else if (role === 'rusher') {
+          if (dist > 6.2) vx = this.face * 1.9;
+          else if (dist < 2.5) vx = -this.face * 0.8;
+        } else if (role === 'support') {
+          if (dist > 11.5) vx = this.face * 1.0;
+          else if (dist < 7.5) vx = -this.face * 1.25 * sf;
+        } else if (dist > 10) {
+          vx = this.face * 1.7 * sf;
+        } else if (dist < 5) {
+          vx = -this.face * 1.2 * sf;
+        }
+        this.fireT -= dt;
+        if (this.fireT <= 0 && this.staggerT <= 0 && dist <= engageRange && los) {
+          this.burstLeft = role === 'rusher'
+            ? 3 + Math.floor(Math.random() * 3)
+            : role === 'support'
+              ? 2 + Math.floor(Math.random() * 2)
+              : 2 + Math.floor(Math.random() * 3);
+          this.fireT = role === 'rusher' ? 0.95 + Math.random() * 0.45
+            : role === 'support' ? 1.9 + Math.random() * 0.65
+              : 1.5 + Math.random();
+        }
+        if (this.burstLeft > 0) {
+          if (!los) this.burstLeft = 0;
+          else {
+            this.burstCd -= dt;
+            if (this.burstCd <= 0) { ai.fire = true; this.burstLeft--; this.burstCd = 0.13; }
+          }
+        }
+        if (this.staggerT <= 0 && this.p.grounded && pp.y > tp.y + 0.9 && dist < 3.4) ai.jumpPressed = true;
       }
-      // 玩家在近处的高台上:起跳去够(以前只有卡墙才跳,永远趴在高台下面挨不着)
-      if (this.staggerT <= 0 && this.p.grounded && pp.y > tp.y + 0.9 && dist < 3.4) ai.jumpPressed = true;
     } else if (this.raidMode && this.suspicious && this.searchT > 0 && this.lastKnown) {
       const sx = this.lastKnown.x - tp.x;
       const sy = this.lastKnown.y - tp.y;
