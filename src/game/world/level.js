@@ -80,6 +80,38 @@ export const LAYOUTS = {
     { x: 52.6, y: 0.75, w: 2.0, h: 1.5, type: 'crate' },
     { x: 64.0, y: 0.75, w: 1.7, h: 1.5, type: 'steel' },
   ],
+  // 港口仓储·夜：长货柜巷道 + 分层吊机栈道 + 可破坏集装箱，不与剿匪建筑共享布局。
+  port: [
+    ground90(),
+    // 地面码头：蓝色/锈红集装箱组成多条绕行线，箱体可被逐块打穿。
+    { x: 5.5, y: 0.85, w: 5.8, h: 1.7, type: 'container', destructible: true },
+    { x: 11.7, y: 0.85, w: 5.6, h: 1.7, type: 'container-red', destructible: true },
+    { x: 23.0, y: 0.82, w: 4.8, h: 1.64, type: 'container', destructible: true },
+    { x: 29.0, y: 0.82, w: 4.8, h: 1.64, type: 'container-red', destructible: true },
+    { x: 41.5, y: 0.85, w: 6.2, h: 1.7, type: 'container', destructible: true },
+    { x: 49.0, y: 0.85, w: 6.2, h: 1.7, type: 'container-red', destructible: true },
+    { x: 63.0, y: 0.82, w: 4.8, h: 1.64, type: 'container', destructible: true },
+    { x: 69.0, y: 0.82, w: 4.8, h: 1.64, type: 'container-red', destructible: true },
+    // 第二层货柜与平台：高低错位，允许跳上集装箱，也可以从下方绕过。
+    { x: 18.0, y: 2.45, w: 5.2, h: 1.6, type: 'container', destructible: true },
+    { x: 36.8, y: 2.45, w: 5.0, h: 1.6, type: 'container-red', destructible: true },
+    { x: 57.5, y: 2.45, w: 5.2, h: 1.6, type: 'container', destructible: true },
+    // 吊机横梁与维护栈道（钢结构不易破坏），作为远程火力点和垂直机动路线。
+    { x: 9.0, y: 4.15, w: 7.8, h: 0.34, type: 'steel', destructible: false },
+    { x: 28.0, y: 5.2, w: 8.0, h: 0.34, type: 'steel', destructible: false },
+    { x: 48.0, y: 4.45, w: 8.5, h: 0.34, type: 'steel', destructible: false },
+    { x: 67.0, y: 5.3, w: 7.4, h: 0.34, type: 'steel', destructible: false },
+    { x: 8.1, y: 2.85, w: 0.38, h: 5.9, type: 'steel', destructible: false },
+    { x: 27.0, y: 2.6, w: 0.38, h: 7.0, type: 'steel', destructible: false },
+    { x: 47.0, y: 2.55, w: 0.38, h: 6.3, type: 'steel', destructible: false },
+    { x: 66.0, y: 2.6, w: 0.38, h: 7.2, type: 'steel', destructible: false },
+    // 码头设备与矮掩体：既能遮蔽，也能被爆炸/子弹拆除。
+    { x: 2.8, y: 0.55, w: 1.2, h: 1.1, type: 'crate', destructible: true },
+    { x: 20.5, y: 0.52, w: 1.5, h: 1.04, type: 'steel', destructible: true },
+    { x: 38.8, y: 0.58, w: 1.4, h: 1.16, type: 'crate', destructible: true },
+    { x: 59.8, y: 0.52, w: 1.5, h: 1.04, type: 'steel', destructible: true },
+    { x: 76.0, y: 0.55, w: 1.1, h: 1.1, type: 'crate', destructible: true },
+  ],
   // 沙丘·正午:起伏沙脊(宽矮坡)+ 稀疏高岩 —— 人海冲锋,几乎无遮蔽
   desert: [
     ground90(),
@@ -183,12 +215,16 @@ export function buildLevel(world) {
     const cols = Math.max(1, Math.round(r.w / TILE));
     const rows = Math.max(1, Math.round(r.h / TILE));
     const tw = r.w / cols, th = r.h / rows;
+    const isContainer = r.type === 'container' || r.type === 'container-red';
+    // 破坏仍按小 tile 结算，但视觉使用完整货柜的统一坐标网格；打碎某块后只留下真正缺口，不出现满屏小方格边线。
+    const visualGroup = isContainer ? { x: r.x, y: r.y, w: r.w, h: r.h, type: r.type } : null;
     for (let c = 0; c < cols; c++) {
       for (let ro = 0; ro < rows; ro++) {
         LEVEL.rects.push({
           x: r.x - r.w / 2 + tw * (c + 0.5),
           y: r.y - r.h / 2 + th * (ro + 0.5),
           w: tw, h: th, type: r.type, destructible: true,
+          ...(visualGroup ? { visualGroup } : {}),
         });
       }
     }
@@ -303,6 +339,12 @@ export const THEMES = {
     filter: 'saturate(1.05)',
     duskColor: 'rgba(30,15,40,0.22)',
   },
+  port: {
+    label: '港口仓储 · 夜',
+    sky: ['#07131f', '#1d3a50', '#db8955'],
+    filter: 'brightness(0.86) saturate(0.9)',
+    duskColor: 'rgba(4,12,20,0.18)',
+  },
   desert: {
     label: '正午',
     sky: ['#7ea4d8', '#d8c9a8', '#f0dcb0'],
@@ -351,6 +393,8 @@ const BG_SETS = {
   // (用户两次实测毙掉:整屏的 fore.png 直接盖死全场;换底部剪影 front.png 半透明仍挡腿)。
   // front.png 只走 trees 槽(画在玩家后面),港区等于没有前景层 —— 宁缺毋滥
   room: { dir: 'bg/city', scale: 2.22, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png' } },
+  // 港口新背景：来自本轮已有生成图裁切的独立 16:9 全景，只作远景天空/城市层。
+  port: { dir: 'art/maps/port', scale: 1.0, foreAlpha: 0, files: { sky: 'port-background.webp' } },
   desert: { dir: 'bg/desert', scale: 2.0, files: { sky: 'clouds.png', far: 'far.png', near: 'dunes.png', trees: 'bush.png', fore: 'bush.png' } },
   tropic: { dir: 'bg/tropic', scale: 2.0, files: { sky: 'sky.png', far: 'ridge.png', near: 'palms.png', trees: 'grass.png', fore: 'grass.png' } },
   raid: { dir: 'bg/city', scale: 2.22, files: { sky: 'clouds.png', far: 'far.png', near: 'mid.png', trees: 'front.png' } },
@@ -584,6 +628,48 @@ export function drawTerrain(ctx, rects, w2s, ppm) {
       if (w > 8 && h > 8) {
         ctx.fillStyle = '#bcc7d2';
         ctx.fillRect(sx + 2, sy + 2, 2, 2);
+      }
+    } else if (r.type === 'container' || r.type === 'container-red') {
+      const base = r.type === 'container-red' ? '#63423b' : '#294c5d';
+      const lip = r.type === 'container-red' ? '#9b6752' : '#5f8797';
+      const group = r.visualGroup;
+      if (group) {
+        // 片段绘制裁切到当前可破坏 tile；竖向筋线按整个货柜对齐，顶部/底部包边只在外沿出现。
+        const [gx, gy] = w2s(group.x - group.w / 2, group.y + group.h / 2);
+        const gw = group.w * ppm, gh = group.h * ppm;
+        const topTile = Math.abs((r.y + r.h / 2) - (group.y + group.h / 2)) < 0.14;
+        const bottomTile = Math.abs((r.y - r.h / 2) - (group.y - group.h / 2)) < 0.14;
+        const leftTile = Math.abs((r.x - r.w / 2) - (group.x - group.w / 2)) < 0.14;
+        const rightTile = Math.abs((r.x + r.w / 2) - (group.x + group.w / 2)) < 0.14;
+        ctx.save();
+        ctx.beginPath(); ctx.rect(sx, sy, w, h); ctx.clip();
+        ctx.fillStyle = base; ctx.fillRect(sx, sy, w, h);
+        ctx.fillStyle = 'rgba(7,14,22,0.12)'; ctx.fillRect(sx, sy + h * 0.72, w, h * 0.28);
+        ctx.strokeStyle = 'rgba(3,10,17,0.45)'; ctx.lineWidth = 1;
+        const ribStep = Math.max(10, ppm * 0.42);
+        for (let rx = gx + ribStep; rx < gx + gw - 2; rx += ribStep) {
+          ctx.beginPath(); ctx.moveTo(rx, gy + 2); ctx.lineTo(rx, gy + gh - 2); ctx.stroke();
+          ctx.strokeStyle = 'rgba(164,195,207,0.20)'; ctx.beginPath(); ctx.moveTo(rx + 1, gy + 2); ctx.lineTo(rx + 1, gy + gh - 2); ctx.stroke();
+          ctx.strokeStyle = 'rgba(3,10,17,0.45)';
+        }
+        if (topTile) { ctx.fillStyle = lip; ctx.fillRect(gx, gy, gw, Math.max(2, ppm * 0.055)); }
+        if (bottomTile) { ctx.fillStyle = 'rgba(7,14,22,0.45)'; ctx.fillRect(gx, gy + gh - Math.max(2, ppm * 0.07), gw, Math.max(2, ppm * 0.07)); }
+        if (leftTile || rightTile) {
+          const bx = leftTile ? gx + 4 : gx + gw - 7;
+          ctx.fillStyle = 'rgba(203,220,228,0.56)';
+          ctx.fillRect(bx, gy + gh * 0.20, 3, Math.max(3, gh * 0.12));
+          ctx.fillRect(bx, gy + gh * 0.67, 3, Math.max(3, gh * 0.12));
+          ctx.fillStyle = 'rgba(10,18,25,0.55)';
+          ctx.fillRect(bx + (leftTile ? 3 : -2), gy + gh * 0.20, 2, Math.max(3, gh * 0.12));
+          ctx.fillRect(bx + (leftTile ? 3 : -2), gy + gh * 0.67, 2, Math.max(3, gh * 0.12));
+        }
+        ctx.restore();
+      } else {
+        ctx.fillStyle = base; ctx.fillRect(sx, sy, w, h);
+        ctx.fillStyle = lip; ctx.fillRect(sx, sy, w, Math.max(1.5, Math.min(3, h * 0.12)));
+        ctx.fillStyle = 'rgba(7,14,22,0.24)'; ctx.fillRect(sx, sy + h * 0.84, w, h * 0.16);
+        ctx.strokeStyle = 'rgba(3,10,17,0.52)'; ctx.lineWidth = 1;
+        if (w > 6 && h > 4) { for (let rx = sx + w * 0.18; rx < sx + w; rx += Math.max(4, w * 0.28)) { ctx.beginPath(); ctx.moveTo(rx, sy + h * 0.12); ctx.lineTo(rx, sy + h * 0.88); ctx.stroke(); } }
       }
     } else if (r.type === 'concrete') {
       ctx.fillStyle = '#535b63';

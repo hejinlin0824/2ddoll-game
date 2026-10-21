@@ -14,6 +14,7 @@ export const SCENE_RULES = {
   wild: { gunshipEvery: 4, batch: 4, roleBias: 'balanced' },                         // 野外：综合兵种
   roof: { gunshipEvery: 3, batch: 3, roleBias: 'overwatch' },                         // 屋顶：支援兵占位更多、空袭频繁
   room: { gunshipEvery: 6, batch: 2, qualityRush: 2, roleBias: 'breach' },             // 巷战：冲锋与精锐
+  port: { gunshipEvery: 5, batch: 3, cap: 11, roleBias: 'overwatch' },                  // 港口：货柜巷道与起重机高点
   desert: { gunshipEvery: 4, batch: 4, swarm: true, cap: 13, roleBias: 'swarm' },     // 沙丘：高人数、高推进压力
   tropic: { gunshipEvery: 5, batch: 5, cap: 9, roleBias: 'skirmish' },                 // 海岛：大批次突入与快速接近
   raid: { raid: true, gunshipEvery: 0, batch: 0, roleBias: 'stealth' },                  // 剿匪：只触发局部无线电支援，不走常规自动波次

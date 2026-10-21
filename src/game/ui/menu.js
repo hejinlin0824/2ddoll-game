@@ -12,25 +12,43 @@ const SCENES = [
   { id: 'wild', name: '野外 · 月夜', desc: '标准攻势 · 高低平台与掩体', ready: true },
   { id: 'roof', name: '屋顶 · 黎明', desc: '制空压制 · 高位狙击对射', ready: true },
   { id: 'room', name: '港区 · 仓库', desc: '近距离巷战 · 精锐提前出现', ready: true },
+  { id: 'port', name: '港口仓储 · 夜', desc: '货柜迷宫 · 起重机平台 · 可破坏集装箱', ready: true },
   { id: 'desert', name: '沙丘 · 正午', desc: '人海冲锋 · 稀疏掩体与沙脊', ready: true },
   { id: 'tropic', name: '海岛 · 澜', desc: '跳跃推进 · 滩头平台战', ready: true },
   { id: 'raid', name: '剿匪行动 · 多层建筑', desc: '屋顶绳降 · 潜行清剿 · 局部增援', ready: true },
   { id: 'custom', name: '我的关卡', desc: hasCustom ? '部署你的自定义战场' : '先去战场编辑器绘制地图', ready: hasCustom },
 ];
 
+// 生成图裁切后的素材只用于主菜单情报/战区卡，不替换游戏内视差背景与物理世界。
 const SCENE_ART = {
-  wild: './bg/mountains-far.png', roof: './bg/mountains-near.png',
-  room: './bg/city/mid.png', desert: './bg/desert/dunes.png',
-  tropic: './bg/tropic/ridge.png', raid: './bg/city/far.png', custom: null,
+  wild: './bg/mountains-far.png',
+  roof: './art/scenes/city.webp',
+  room: './art/scenes/industrial.webp',
+  port: './art/maps/port/port-card.webp',
+  desert: './art/scenes/desert.webp',
+  tropic: './art/scenes/tropical.webp',
+  raid: './art/scenes/interior.webp',
+  custom: null,
+};
+const SCENE_THREAT = {
+  wild: './art/portraits/enemy-rifleman.png',
+  roof: './art/portraits/enemy-ghillie.png',
+  room: './art/portraits/enemy-heavy.png',
+  port: './art/portraits/enemy-commander.png',
+  desert: './art/portraits/enemy-rifleman.png',
+  tropic: './art/portraits/enemy-ghillie.png',
+  raid: './art/portraits/enemy-commander.png',
+  custom: null,
 };
 
 const BRIEFING = {
   wild:   { code: 'OP-01 / WILDERNESS', number: '01', assault: '标准推进', air: '直升机 + 无人机', terrain: '平台 / 箱体掩护', loot: '15 波 · 品质递增' },
   roof:   { code: 'OP-02 / ROOFTOP', number: '02', assault: '高位交火', air: '高频空袭', terrain: '高台 / 长射线', loot: '15 波 · 高风险' },
   room:   { code: 'OP-03 / DOCKYARD', number: '03', assault: '精锐突入', air: '低频投放', terrain: '密集箱体 / 窄通道', loot: '精锐提前出现' },
-  desert: { code: 'OP-04 / DUNES', number: '04', assault: '人海冲锋', air: '运输机批次投放', terrain: '沙脊 / 开阔地', loot: '高密度战利品' },
-  tropic: { code: 'OP-05 / ISLAND', number: '05', assault: '滩头推进', air: '多兵批次投放', terrain: '岩台 / 连续跳台', loot: '机动路线优先' },
-  raid: { code: 'OP-06 / BUILDING RAID', number: '06', assault: '潜入后局部警报', air: '按敌方无线电呼叫响应', terrain: '四层建筑 / 可破坏墙门灯', loot: '逐层清剿 · 选择潜行或强攻' },
+  port:   { code: 'OP-04 / NIGHT PORT', number: '04', assault: '货柜巷道交战', air: '吊机高点与偶发机炮', terrain: '可破坏集装箱 / 金属栈道', loot: '横向推进 · 高低路线' },
+  desert: { code: 'OP-05 / DUNES', number: '05', assault: '人海冲锋', air: '运输机批次投放', terrain: '沙脊 / 开阔地', loot: '高密度战利品' },
+  tropic: { code: 'OP-06 / ISLAND', number: '06', assault: '滩头推进', air: '多兵批次投放', terrain: '岩台 / 连续跳台', loot: '机动路线优先' },
+  raid: { code: 'OP-07 / BUILDING RAID', number: '07', assault: '潜入后局部警报', air: '按敌方无线电呼叫响应', terrain: '四层建筑 / 可破坏墙门灯', loot: '逐层清剿 · 选择潜行或强攻' },
   custom: { code: 'OP-X / USER THEATER', number: 'X', assault: '自定义遭遇', air: '按关卡配置', terrain: '玩家绘制布局', loot: '按波次递增' },
 };
 
@@ -137,6 +155,18 @@ function updateSceneBriefing(s) {
   put('menuIntelTerrain', data.terrain);
   put('menuIntelLoot', data.loot);
   put('menuStartLabel', started ? '继续战斗' : (s?.id === 'raid' ? '开始剿匪' : '部署突击'));
+  // 静态敌情剪影只放在简报面板；真正的敌人仍由 Player 骨骼/物理关节实时绘制。
+  const threatArt = document.getElementById('menuThreatArt');
+  const threatSrc = SCENE_THREAT[s?.id] || null;
+  if (threatArt) {
+    if (threatSrc) {
+      if (threatArt.getAttribute('src') !== threatSrc) threatArt.setAttribute('src', threatSrc);
+      threatArt.hidden = false;
+    } else {
+      threatArt.removeAttribute('src');
+      threatArt.hidden = true;
+    }
+  }
   const menuRoot = document.getElementById('menu');
   if (menuRoot) menuRoot.dataset.scene = s?.id || 'wild';
   document.querySelectorAll('#menuScenes .scene-card').forEach((el) => {

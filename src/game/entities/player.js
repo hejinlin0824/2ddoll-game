@@ -7,9 +7,10 @@
 import { Box, Circle, Vec2, RevoluteJoint } from 'planck';
 import { CAT, groundYAt } from '../world/level.js';
 import { particles, addDecal, bloodJet } from '../systems/fx.js';
-import { loadSavedGun, loadEquip, loadAssets, GUN_PRESETS, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
+import { loadSavedGun, loadEquip, loadAssets, loadGunBuild, GUN_PRESETS, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
 import { skinImg, skinXf, skinFitScale, SKIN_END_ANCHORED, SKIN_BOX } from '../domain/skin.js';
+import { loadAppearance, appearancePalette, appearanceRevision } from '../domain/appearance.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
@@ -30,6 +31,7 @@ const A = {
 
 const COLOR = {
   skin: '#e2b088', skinDark: '#b8885f',
+  shirt: '#35495b', shirtDark: '#263747',
   pants: '#3a66b0', pantsDark: '#2a4a80',
   boot: '#2b2b33', bootDark: '#1f1f26',
   bandana: '#d8302c', bandanaDark: '#a32220',
@@ -49,11 +51,13 @@ export class Player {
     this.world = world;
     this.spawn = { x: spawn.x, y: spawn.y };
     this.events = [];
-    this.C = { ...COLOR, ...(opts.palette || {}) };
     this.loadoutOpt = opts.loadout || null;
     this.gunDefOpt = opts.gunDef || null;
     this.persistPlayerData = opts.persistPlayerData !== false;
-    this.useSkin = !opts.palette; // 自绘皮肤只给主角:敌人带 palette 进来,跳过皮肤
+    this.useSkin = !opts.palette; // 自绘皮肤/程序化外观只给主角:敌人带 palette 进来,跳过玩家 DIY
+    this.appearance = this.persistPlayerData && this.useSkin ? loadAppearance() : null;
+    this._appearanceRevision = appearanceRevision();
+    this.C = { ...COLOR, ...(opts.palette || {}), ...(this.appearance ? appearancePalette(this.appearance) : {}) };
     this.build();
   }
 
@@ -181,6 +185,10 @@ export class Player {
     this.gunDef = this.gunDefOpt
       ? { ...this.gunDefOpt }
       : (this.persistPlayerData ? loadSavedGun() : { ...firstPresetGun });
+    // 手枪是独立模块蓝图；NPC 只拿默认轮廓，绝不读玩家的手枪涂装/配件存档。
+    this.sidearmDef = this.persistPlayerData
+      ? loadGunBuild('Glock 17')
+      : { ...GUN_PRESETS['Glock 17'], parts: GUN_PRESETS['Glock 17'].parts.map((p) => ({ ...p })), attachments: [] };
 
     // 主武器词条存档仅属于玩家。NPC 使用空词条,避免读写玩家主武器成长数据。
     if (this.persistPlayerData) {
@@ -243,7 +251,7 @@ export class Player {
   stats() {
     const m = this.weapon === 'rifle' ? this.gunMods : null;
     if (this._statsCache && this._statsW === this.weapon && this._statsM === m) return this._statsCache;
-    const base = this.weapon === 'rifle' ? this.gunDef?.stats : PISTOL_STATS;
+    const base = this.weapon === 'rifle' ? this.gunDef?.stats : (this.sidearmDef?.stats || PISTOL_STATS);
     const s = { ...(base || DEFAULT_STATS) };
     if (m) {
       s.damage = Math.round(s.damage * m.dmgMul * 10) / 10;
@@ -530,8 +538,8 @@ export class Player {
   }
 
   // 枪械设计坐标(px,原点=后手握点/枪把,瞄准手就握在这)→ 世界坐标(米)
-  gunPoint(gp) {
-    const g = this.gunDef;
+  gunPoint(gp, gunDef = this.gunDef) {
+    const g = gunDef || this.gunDef;
     const dy = (this.gunMirrored ? -1 : 1) * (gp.y - g.grips.rear.y) / g.meterScale;
     const dx = (gp.x - g.grips.rear.x) / g.meterScale;
     const cos = Math.cos(this.gunAngle), sin = Math.sin(this.gunAngle);
@@ -554,8 +562,17 @@ export class Player {
   }
 
   suppressorSlot() {
-    if (this.weapon === 'pistol') return 'pistol';
-    const name = String(this.gunDef?.name || '');
+    if (this.weapon === 'pistol') {
+      const sidearmParts = Array.isArray(this.sidearmDef?.attachments) ? this.sidearmDef.attachments : [];
+      return sidearmParts.some((id) => ['suppressor', 'glock_suppressor'].includes(id)) ? 'pistol' : null;
+    }
+    const g = this.gunDef || {};
+    const name = String(g.basePreset || g.name || '');
+    const attachments = Array.isArray(g.attachments) ? g.attachments : [];
+    // 模块枪：只有实际安装了消音模块才启用该枪型的消音器开关。
+    const installed = attachments.some((id) => ['suppressor', 'mp5_integral', 'awp_suppressor', 'glock_suppressor'].includes(id));
+    if (installed) return name || 'custom-rifle';
+    // 旧存档兼容：历史 MP5/AWP 仍可使用原来的消音器切换状态。
     return /MP5|SMG|冲锋|AWP|狙击|sniper/i.test(name) ? name : null;
   }
 
@@ -866,12 +883,13 @@ export class Player {
 
     // 跑步相位推进 + 脚步尘土
     const sp = Math.abs(torso.getLinearVelocity().x);
-    if (this.grounded && !this.crouch && sp > 0.5) {
+    if (this.grounded && sp > 0.5) {
       const prev = this.phase;
-      this.phase += dt * (sp * 3.0 + 2.0);
+      // 跑动使用较自然的步频；蹲伏时步幅和落脚频率更慢，供潜行声音系统降低音量/警觉半径。
+      this.phase += dt * (this.crouch ? (sp * 1.1 + 1.65) : (sp * 2.25 + 1.6));
       if (Math.floor(prev / Math.PI) !== Math.floor(this.phase / Math.PI)) {
         const p = torso.getPosition();
-        this.events.push({ type: 'step', x: p.x + this.facing * 0.1, y: p.y - 0.78 });
+        this.events.push({ type: 'step', x: p.x + this.facing * 0.1, y: p.y - 0.78, stealth: this.crouch });
       }
     } else if (sp <= 0.5 && this.grounded) {
       this.phase = 0;
@@ -890,7 +908,7 @@ export class Player {
         this.reloadT = 0;
         this.reloadTotalT = 0;
         this.ammo = this.stats().mag;
-        this.events.push({ type: 'reloaded', weaponName: this.reloadWeaponName || (this.weapon === 'rifle' ? (this.gunDef?.name || '自定义枪') : '手枪') });
+        this.events.push({ type: 'reloaded', weaponName: this.reloadWeaponName || (this.weapon === 'rifle' ? (this.gunDef?.customName || this.gunDef?.name || '自定义枪') : (this.sidearmDef?.customName || '手枪')) });
         this.reloadWeaponName = '';
       }
     }
@@ -898,11 +916,9 @@ export class Player {
       const st = this.stats();
       const rifle = this.weapon === 'rifle';
       const gunDir = this.armLF.getWorldVector(Vec2(0, -1));
-      const hand = this.armLF.getWorldPoint(Vec2(0, -D.foreArm.h / 2));
-      const pistolLen = 0.22;
       const muzzle = rifle
         ? this.gunPoint(this.gunDef.muzzle)
-        : { x: hand.x + gunDir.x * pistolLen, y: hand.y + gunDir.y * pistolLen };
+        : this.gunPoint(this.sidearmDef?.muzzle || { x: 98, y: 18 }, this.sidearmDef);
       let ready;
       let dir;
       if (this.aimAlpha != null) {
@@ -1060,16 +1076,17 @@ export class Player {
       const gd = this.armLF.getWorldVector(Vec2(0, -1));
       return { x: m.x, y: m.y, dx: gd.x, dy: gd.y };
     }
-    const gunDir = this.armLF.getWorldVector(Vec2(0, -1));
-    const hand = this.armLF.getWorldPoint(Vec2(0, -D.foreArm.h / 2));
-    return {
-      x: hand.x + gunDir.x * 0.22, y: hand.y + gunDir.y * 0.22,
-      dx: gunDir.x, dy: gunDir.y,
-    };
+    const m = this.gunPoint(this.sidearmDef?.muzzle || { x: 98, y: 18 }, this.sidearmDef);
+    return { x: m.x, y: m.y, dx: Math.cos(this.gunAngle), dy: Math.sin(this.gunAngle) };
   }
 
   // ---- 绘制(世界坐标 -> 屏幕由 w2s 提供,ppm 为像素/米)----
   draw(ctx, w2s, ppm, time) {
+    if (this.persistPlayerData && this.useSkin && this._appearanceRevision !== appearanceRevision()) {
+      this.appearance = loadAppearance();
+      this.C = { ...COLOR, ...appearancePalette(this.appearance) };
+      this._appearanceRevision = appearanceRevision();
+    }
     const P = (b) => w2s(b.getPosition().x, b.getPosition().y);
     const R = (b) => -b.getAngle(); // 屏幕 y 翻转,角度取反
 
@@ -1250,30 +1267,35 @@ export class Player {
         ctx.restore();
         return;
       }
-      // 副武器:手枪(锚定手部,x 向枪口)。滑套画在轴线上方(-y),
-      // 朝左时垂直镜像保证滑套永远朝上 —— 不镜像的话往右打手枪会上下颠倒
+      // 副武器：与主武器共享同一种侧视蓝图绘制，配件/涂装会在游戏内真实显示。
+      const g = this.sidearmDef || GUN_PRESETS['Glock 17'];
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(-this.gunAngle);
+      const k = ppm / (g.meterScale || 200);
+      ctx.scale(k, k);
       if (this.gunMirrored) ctx.scale(1, -1);
-      const L = 0.24 * ppm;
-      const sh = 0.07 * ppm;
-      const gw = D.foreArm.h * ppm * 0.8;
-      ctx.fillStyle = this.C.gun;
-      ctx.fillRect(-gw * 0.35, -sh, gw * 0.7 + L * 0.6, sh); // 滑套
-      ctx.fillStyle = '#2f333b';
-      ctx.fillRect(gw * 0.25, -sh * 0.9, L * 0.28, sh * 0.9); // 套筒前段
-      ctx.fillStyle = this.C.wood;
-      ctx.fillRect(-gw * 0.32, 0, gw * 0.52, L * 0.42);       // 握把(轴线下)
-      ctx.strokeStyle = 'rgba(15,12,8,0.5)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(-gw * 0.35, -sh, gw * 0.7 + L * 0.6, sh);
-      ctx.strokeRect(-gw * 0.32, 0, gw * 0.52, L * 0.42);
+      ctx.translate(-g.grips.rear.x, -g.grips.rear.y);
+      const rp = this.reloadT > 0 && this.reloadTotalT > 0
+        ? clamp(1 - this.reloadT / this.reloadTotalT, 0, 1) : 0;
+      for (const part of (g.parts || [])) {
+        ctx.save();
+        if (part.component === 'magazine' && rp >= 0.24 && rp <= 0.78) {
+          const detach = rp < 0.4 ? (rp - 0.24) / 0.16 : rp < 0.58 ? 1 : (0.78 - rp) / 0.20;
+          ctx.translate(0, detach * 13);
+          ctx.rotate((this.gunMirrored ? -1 : 1) * detach * 0.12);
+        }
+        ctx.fillStyle = part.color || '#394451';
+        ctx.beginPath(); ctx.roundRect(part.x, part.y, part.w, part.h, Math.min(3, part.h / 2)); ctx.fill();
+        ctx.strokeStyle = part.attachmentId ? 'rgba(255,177,74,.8)' : 'rgba(15,12,8,.55)';
+        ctx.lineWidth = Math.max(0.7, 1.3 / k); ctx.stroke();
+        ctx.restore();
+      }
       ctx.restore();
     };
 
     // 远侧肢体(暗色)→ 躯干 → 头 → 近侧腿 → 枪 → 近侧臂
-    if (!skinCap(this.armUB, 'upperArm', true)) cap(this.armUB, D.upperArm, this.C.skinDark);
+    if (!skinCap(this.armUB, 'upperArm', true)) cap(this.armUB, D.upperArm, this.C.shirtDark || this.C.skinDark);
     if (!skinCap(this.armLB, 'foreArm', true)) cap(this.armLB, D.foreArm, this.C.skinDark);
     if (!hasSkin('foreArm')) hand(this.armLB);
     if (!skinCap(this.legLB, 'calf', true)) boot(this.legLB, this.C.pantsDark, this.C.bootDark);
@@ -1298,7 +1320,7 @@ export class Player {
           ctx.restore();
         } else {
           const w = D.torso.w * ppm, h = D.torso.h * ppm;
-          ctx.fillStyle = this.C.skin;
+          ctx.fillStyle = this.C.shirt || this.C.skin;
           ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
           // 弹药带
           ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 4;
@@ -1380,27 +1402,55 @@ export class Player {
         ctx.moveTo(0, 0.03 * ppm);
         ctx.lineTo(0, 0.33 * ppm);
         ctx.stroke();
+        const look = this.appearance || { hairStyle: 'short', hairColor: '#202733', faceShape: 'round', eyeColor: '#222222', headwear: 'bandana' };
+        const backX = -this.facing;
+        // 长发/马尾/丸子头位于脸后方绘制，但始终锚定物理头部，转身时不会脱节。
+        ctx.fillStyle = look.hairColor || '#202733';
+        if (look.hairStyle === 'long') {
+          ctx.beginPath(); ctx.moveTo(backX * r * 0.38, -r * 0.62); ctx.quadraticCurveTo(backX * r * 1.18, -r * 0.12, backX * r * 0.96, r * 1.20); ctx.quadraticCurveTo(backX * r * 0.44, r * 1.28, backX * r * 0.34, r * 0.42); ctx.closePath(); ctx.fill();
+        } else if (look.hairStyle === 'ponytail') {
+          ctx.beginPath(); ctx.ellipse(backX * r * 1.08, -r * 0.12, r * 0.28, r * 0.74, backX * -0.23, 0, Math.PI * 2); ctx.fill();
+        } else if (look.hairStyle === 'bun') {
+          ctx.beginPath(); ctx.arc(backX * r * 0.54, -r * 0.72, r * 0.30, 0, Math.PI * 2); ctx.fill();
+        }
+        // 脸型是纯视觉形状；Planck 物理头仍使用原来的圆形碰撞体。
         ctx.fillStyle = this.C.skin;
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-        // 头巾(头顶 2/5)
-        ctx.fillStyle = this.C.bandana;
         ctx.beginPath();
-        ctx.roundRect(-r, -r, r * 2, r * 0.85, [r, r, r * 0.3, r * 0.3]);
-        ctx.fill();
-        // 飘带(脑后,随时间摆动)
-        const flap = Math.sin(time * 8) * 2.5;
-        ctx.strokeStyle = this.C.bandana; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(-this.facing * r * 0.8, -r * 0.4);
-        ctx.quadraticCurveTo(-this.facing * r * 1.7, -r * 0.7 + flap, -this.facing * r * 2.3, -r * 0.15 + flap * 1.6);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-this.facing * r * 0.8, -r * 0.3);
-        ctx.quadraticCurveTo(-this.facing * r * 1.6, -r * 0.1 - flap, -this.facing * r * 2.1, -r * 0.55 - flap);
-        ctx.stroke();
-        // 眼睛
-        ctx.fillStyle = '#222';
-        ctx.beginPath(); ctx.arc(this.facing * r * 0.42, r * 0.05, 1.7, 0, Math.PI * 2); ctx.fill();
+        if (look.faceShape === 'angular') {
+          ctx.moveTo(-r * 0.78, -r * 0.42); ctx.quadraticCurveTo(0, -r * 1.12, r * 0.78, -r * 0.42);
+          ctx.lineTo(r * 0.68, r * 0.30); ctx.lineTo(r * 0.18, r * 0.92); ctx.quadraticCurveTo(0, r * 1.05, -r * 0.22, r * 0.82); ctx.lineTo(-r * 0.74, r * 0.26); ctx.closePath(); ctx.fill();
+        } else if (look.faceShape === 'oval') {
+          ctx.ellipse(0, 0, r * 0.86, r * 1.02, 0, 0, Math.PI * 2); ctx.fill();
+        } else {
+          ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        }
+        // 短发/寸头/侧剃/刺发等均是程序绘制，没有贴图依赖。
+        ctx.fillStyle = look.hairColor || '#202733';
+        if (look.hairStyle === 'spiky') {
+          ctx.beginPath(); ctx.moveTo(-r * 0.94, -r * 0.30); ctx.lineTo(-r * 0.68, -r * 0.98); ctx.lineTo(-r * 0.30, -r * 0.66); ctx.lineTo(r * 0.08, -r * 1.10); ctx.lineTo(r * 0.35, -r * 0.64); ctx.lineTo(r * 0.72, -r * 0.90); ctx.lineTo(r * 0.97, -r * 0.18); ctx.quadraticCurveTo(0, -r * 0.62, -r * 0.94, -r * 0.30); ctx.closePath(); ctx.fill();
+        } else if (look.hairStyle === 'buzz') {
+          ctx.beginPath(); ctx.ellipse(0, -r * 0.38, r * 0.92, r * 0.48, 0, Math.PI, Math.PI * 2); ctx.fill();
+        } else {
+          ctx.beginPath(); ctx.moveTo(-r, -r * 0.02); ctx.quadraticCurveTo(-r * 0.9, -r * 1.05, 0, -r * 0.98); ctx.quadraticCurveTo(r * 0.92, -r * 0.98, r, -r * 0.05); ctx.quadraticCurveTo(r * 0.35, -r * 0.44, -r, -r * 0.02); ctx.closePath(); ctx.fill();
+          if (look.hairStyle === 'undercut') { ctx.fillStyle = this.C.skinDark; ctx.fillRect(backX * r * 0.68 - r * 0.10, -r * 0.10, r * 0.20, r * 0.53); }
+        }
+        if (look.hairStyle === 'bun') { ctx.fillStyle = look.hairColor || '#202733'; ctx.beginPath(); ctx.arc(-this.facing * r * 0.46, -r * 0.78, r * 0.22, 0, Math.PI * 2); ctx.fill(); }
+        // 头带 / 通讯耳机由选项控制；不影响真正装备槽里的头盔属性。
+        if (look.headwear === 'bandana') {
+          ctx.fillStyle = this.C.bandana; ctx.beginPath();
+          ctx.roundRect(-r * 0.98, -r * 0.54, r * 1.96, r * 0.28, [r * 0.2, r * 0.2, r * 0.08, r * 0.08]); ctx.fill();
+          const flap = Math.sin(time * 8) * 1.7;
+          ctx.strokeStyle = this.C.bandana; ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(-this.facing * r * 0.78, -r * 0.40); ctx.quadraticCurveTo(-this.facing * r * 1.55, -r * 0.55 + flap, -this.facing * r * 2.0, -r * 0.12 + flap); ctx.stroke();
+        } else if (look.headwear === 'headset') {
+          ctx.fillStyle = '#252e39'; ctx.beginPath(); ctx.arc(-this.facing * r * 0.78, 0, r * 0.28, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = this.C.accent || '#d99447'; ctx.fillRect(-this.facing * r * 0.92 - 1, -1, 4, 3);
+        }
+        // 侧视只显一只眼：白色眼白 + 可配置虹膜 + 瞳孔，尺寸随屏幕缩放而收敛。
+        const ex = this.facing * r * 0.43, ey = r * 0.08;
+        ctx.fillStyle = '#f5f0e8'; ctx.beginPath(); ctx.ellipse(ex, ey, Math.max(1.25, r * 0.22), Math.max(1.05, r * 0.15), 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = look.eyeColor || '#222222'; ctx.beginPath(); ctx.arc(ex + this.facing * r * 0.045, ey, Math.max(0.85, r * 0.105), 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0b1018'; ctx.beginPath(); ctx.arc(ex + this.facing * r * 0.06, ey, Math.max(0.55, r * 0.06), 0, Math.PI * 2); ctx.fill();
       }
       // 头盔外观层:自绘图(仅戴盔时)优先,否则视觉预设
       if (!(this.loadout.head && skinEquip('helmet'))) drawEquip(this.loadout.head);
@@ -1410,7 +1460,7 @@ export class Player {
     if (!skinCap(this.legLF, 'calf')) boot(this.legLF, this.C.pants, this.C.boot);
     if (!skinCap(this.legUF, 'thigh')) cap(this.legUF, D.thigh, this.C.pants);
     gun();
-    if (!skinCap(this.armUF, 'upperArm')) cap(this.armUF, D.upperArm, this.C.skin);
+    if (!skinCap(this.armUF, 'upperArm')) cap(this.armUF, D.upperArm, this.C.shirt || this.C.skin);
     if (!skinCap(this.armLF, 'foreArm')) cap(this.armLF, D.foreArm, this.C.skin);
     if (!hasSkin('foreArm')) hand(this.armLF);
 

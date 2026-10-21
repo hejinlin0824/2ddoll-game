@@ -1,93 +1,79 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>枪械设计器 — HERO</title>
-    <style>
-      * { box-sizing: border-box; }
-      body {
-        margin: 0; background: #141a26; color: #e8e2d4;
-        font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-        display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 18px;
-      }
-      h1 { font-size: 18px; margin: 0 0 4px; letter-spacing: 1px; }
-      .sub { font-size: 12px; opacity: 0.65; margin-bottom: 12px; }
-      .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
-      select, button {
-        background: rgba(255,255,255,0.08); color: #e8e2d4; border: 1px solid rgba(255,255,255,0.22);
-        border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
-      }
-      button:hover, select:hover { border-color: rgba(232,160,76,0.8); }
-      button.active { background: rgba(232,160,76,0.9); color: #2a1c0c; border-color: transparent; font-weight: 600; }
-      button.primary { background: rgba(232,160,76,0.9); color: #2a1c0c; font-weight: 600; border: none; }
-      canvas { background: #1b2231; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; cursor: crosshair; }
-      .panel { display: flex; gap: 22px; margin-top: 12px; align-items: flex-start; }
-      .props { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; min-height: 34px; }
-      .props label { opacity: 0.7; font-size: 12px; }
-      .props input {
-        width: 58px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.22);
-        color: #e8e2d4; border-radius: 6px; padding: 4px 6px; font-size: 13px;
-      }
-      .props input[type="color"] { padding: 1px; width: 40px; height: 28px; cursor: pointer; }
-      .hint { font-size: 12px; opacity: 0.6; margin-top: 10px; line-height: 1.9; max-width: 900px; }
-      .legend { display: inline-flex; align-items: center; gap: 5px; margin-right: 14px; }
-      .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-      #toast {
-        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-        background: rgba(232,160,76,0.95); color: #2a1c0c; font-weight: 600;
-        border-radius: 999px; padding: 8px 22px; font-size: 14px; opacity: 0; transition: opacity 0.25s;
-        pointer-events: none;
-      }
-      a.back { color: rgba(232,160,76,0.9); font-size: 13px; text-decoration: none; }
-    </style>
-  </head>
-  <body>
-    <h1>武器与装备设计器</h1>
-    <div class="sub">上:用元素拼主武器,标记前后手握点与枪口 · 下:定制头盔/防弹衣,穿上后跟随身体部件 · <a class="back" href="./game.html">← 返回游戏</a></div>
-
-    <div class="bar">
-      <select id="preset"></select>
-      <span style="opacity:0.4">|</span>
-      <span id="palette" style="display:flex;gap:6px;flex-wrap:wrap"></span>
-      <span style="opacity:0.4">|</span>
-      <button id="save" class="primary">💾 保存到游戏</button>
-      <button id="clear">清空</button>
-      <button id="reset">恢复预设</button>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>枪械工作台 — HERO NIGHTFALL</title>
+  <style>
+    :root{--bg:#070c13;--panel:#0d1824;--panel2:#122234;--line:rgba(133,174,213,.2);--text:#e7eff8;--muted:#8da3ba;--amber:#ffb14a;--cyan:#70c8e8;--good:#8fd29b;--bad:#ed8b84}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(ellipse at 15% 0%,#18293b 0%,var(--bg) 50%,#05090e 100%);color:var(--text);font-family:"Noto Sans SC","Microsoft YaHei",sans-serif}body{padding-bottom:35px}
+    button,select,input{font:inherit}button{cursor:pointer;transition:border-color .15s,background .15s,transform .15s}button:hover{border-color:rgba(255,177,74,.68)!important}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+    .topbar{height:66px;display:flex;align-items:center;gap:20px;padding:0 27px;background:rgba(5,10,16,.84);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;backdrop-filter:blur(12px)}.brand{display:flex;align-items:baseline;gap:10px;white-space:nowrap}.brand strong{font-size:27px;letter-spacing:2px;font-style:italic}.brand span{font-size:10px;color:var(--amber);letter-spacing:3px}.head-title{border-left:1px solid var(--line);padding-left:19px}.head-title b{display:block;font-size:14px;letter-spacing:1.5px}.head-title small{font-size:10px;color:var(--muted);letter-spacing:1.2px}.grow{flex:1}.topbar a{font-size:12px;color:#cdd9e6;text-decoration:none;border:1px solid var(--line);border-radius:5px;background:#122033;padding:9px 13px}.save-btn{border:1px solid var(--amber)!important;background:var(--amber)!important;color:#20170b!important;font-weight:800!important;border-radius:5px;padding:10px 15px;font-size:12px}
+    .page{max-width:1500px;margin:0 auto;padding:20px 24px}.page-title{display:flex;align-items:end;justify-content:space-between;gap:20px;margin-bottom:14px}.eyebrow{font-size:10px;letter-spacing:2px;color:var(--cyan)}h1{font-size:25px;margin:4px 0 5px} .page-title p{font-size:12px;color:var(--muted);margin:0;line-height:1.65}.badge{border:1px solid var(--line);color:var(--muted);font-size:10px;padding:8px 11px;border-radius:4px;white-space:nowrap}
+    .gun-picker{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:14px}.gun-card{display:flex;align-items:center;gap:10px;text-align:left;min-width:0;padding:10px 11px;background:rgba(12,23,35,.88);border:1px solid var(--line);color:var(--text);border-radius:6px}.gun-card .gun-mini{width:45px;height:29px;flex:0 0 45px;background:linear-gradient(135deg,#293d52,#111b28);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;color:#b8c9da;font-size:18px;border-radius:4px}.gun-card b{display:block;font-size:11px}.gun-card small{display:block;color:var(--muted);font-size:9px;margin-top:4px}.gun-card.active{border-color:var(--amber);background:rgba(255,177,74,.09);box-shadow:inset 0 -2px var(--amber)}
+    .main-workbench{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,.85fr);gap:13px;align-items:stretch}.card{min-width:0;border:1px solid var(--line);border-radius:7px;background:linear-gradient(150deg,rgba(16,31,46,.96),rgba(8,15,23,.96));box-shadow:0 14px 40px rgba(0,0,0,.18);overflow:hidden}.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line)}.card-head b{font-size:12px;letter-spacing:1px}.card-head small{color:var(--muted);font-size:10px}.preview-zone{padding:12px}.preview-stage{border:1px solid rgba(127,178,255,.12);background:radial-gradient(ellipse at center,#182b3c,#0a121b 72%);position:relative}.preview-stage:before{content:"";position:absolute;inset:0;background:linear-gradient(rgba(120,165,205,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(120,165,205,.05) 1px,transparent 1px);background-size:26px 26px;pointer-events:none}#previewCv{position:relative;z-index:1;width:100%;height:auto;display:block;touch-action:none;cursor:grab}#previewCv:active{cursor:grabbing}.preview-note{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 2px 2px;color:var(--muted);font-size:10px}.preview-controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px}.preview-controls label{display:flex;align-items:center;gap:7px;font-size:10px;color:#bdcddd}.preview-controls input[type=range]{width:100px;accent-color:var(--amber)}.preview-controls input[type=color]{width:25px;height:24px;border:0;padding:0;background:transparent;cursor:pointer}.mini-action{padding:7px 9px;border:1px solid var(--line);background:#122337;color:#cedceb;border-radius:4px;font-size:10px}.current-gun-line{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 12px;background:rgba(5,10,15,.5);border:1px solid var(--line);border-radius:5px}.current-gun-line b{font-size:12px}.current-gun-line span{font-size:10px;color:var(--muted)}
+    .right-panel{display:flex;flex-direction:column}.step-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:9px;border-bottom:1px solid var(--line);background:rgba(5,10,15,.35)}.step-tab{background:transparent;border:1px solid transparent;border-radius:5px;padding:10px 3px;color:#9fb2c7;font-size:11px}.step-tab strong{display:block;font-size:12px;margin-bottom:3px}.step-tab.active{background:rgba(255,177,74,.1);border-color:rgba(255,177,74,.35);color:var(--amber)}.pane{padding:14px;flex:1}.pane[hidden]{display:none}.pane-intro{margin-bottom:13px}.pane-intro b{font-size:13px;display:block;margin-bottom:5px}.pane-intro p{font-size:10px;line-height:1.6;color:var(--muted);margin:0}.filter-row{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:11px}.filter-row button{background:#101f2e;border:1px solid var(--line);border-radius:5px;color:#a9bed3;padding:6px 9px;font-size:10px}.filter-row button.active{background:rgba(255,177,74,.12);border-color:var(--amber);color:#ffd397}
+    #attachmentCatalog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:300px;overflow:auto;padding:1px 3px 1px 1px}.attachment-chip{display:flex;align-items:center;gap:8px;text-align:left;min-width:0;padding:8px;background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:5px;color:var(--text)}.attachment-chip img{flex:0 0 43px;width:43px;height:35px;object-fit:contain;background:#09121b;border-radius:4px}.attachment-chip-copy{min-width:0;display:flex;flex:1;flex-direction:column;gap:4px}.attachment-chip-copy b{font-size:10px;font-weight:700}.attachment-chip-copy small{font-size:9px;color:var(--muted);line-height:1.35}.attachment-check{font-size:9px;color:var(--amber);white-space:nowrap}.attachment-chip.active{border-color:var(--amber);background:rgba(255,177,74,.1)}.attachment-chip:disabled{opacity:.35;cursor:not-allowed}#weaponStatsPreview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:12px}.stat-cell{display:flex;justify-content:space-between;align-items:center;gap:8px;background:rgba(255,255,255,.025);border:1px solid rgba(127,178,255,.1);padding:8px 9px;border-radius:4px}.stat-cell span{font-size:10px;color:var(--muted)}.stat-cell b{font-size:12px;color:#e2ebf5}.attachment-summary{grid-column:1/-1;padding:9px;border:1px dashed rgba(127,178,255,.2);border-radius:4px;font-size:10px;line-height:1.5;color:#a9bed3}
+    .paint-label{font-size:10px;color:#b7c8da}.paint-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:10px 0 16px}.paint-preset{background:#0a1520;border:1px solid var(--line);border-radius:5px;padding:7px;color:#ccd8e5;font-size:10px}.paint-preset .paint-chip{display:flex;gap:3px;margin-bottom:6px}.paint-chip i{display:block;flex:1;height:15px;border-radius:2px;background:var(--c)}.paint-preset.active{border-color:var(--amber)}.paint-row{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:11px 0;border-top:1px solid var(--line)}.paint-row label{font-size:10px;color:#b7c8da;display:flex;align-items:center;gap:7px}.paint-row input[type=color]{width:30px;height:27px;border:0;padding:0;background:transparent;cursor:pointer}.paint-row input[type=text]{min-width:0;width:180px;background:#08121b;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:8px;font-size:11px}.apply-paint{background:#15283b;border:1px solid var(--line);border-radius:4px;padding:7px 10px;font-size:10px;color:var(--text)}
+    .reticle-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:13px;align-items:start}#reticleSample{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:5px;background:#0a131e}.reticle-form{display:grid;gap:12px}.reticle-form label{display:grid;gap:6px;font-size:10px;color:#b7c8da}.reticle-form select{background:#0a1520;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:8px;font-size:11px}.reticle-form input[type=color]{width:40px;height:30px;background:transparent;border:0;padding:0}.reticle-form input[type=range]{width:100%;accent-color:var(--amber)}.reticle-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.reticle-presets button{border:1px solid var(--line);background:#0a1520;border-radius:5px;padding:11px 4px;color:var(--amber);font-size:17px}.reticle-presets small{display:block;color:var(--muted);font-size:9px;margin-top:4px}.reticle-presets button.active{border-color:var(--amber);background:rgba(255,177,74,.1)}.compat-note{margin-top:11px;padding:9px 10px;border-left:2px solid var(--cyan);background:rgba(112,200,232,.05);font-size:10px;line-height:1.6;color:#9fb4c8}
+    .advanced{margin-top:14px;border:1px solid var(--line);border-radius:7px;background:rgba(7,14,21,.8)}.advanced>summary{padding:13px 15px;cursor:pointer;list-style:none;font-size:11px;color:#b2c4d7;display:flex;justify-content:space-between}.advanced>summary::-webkit-details-marker{display:none}.advanced>summary:after{content:"展开高级几何工具＋";color:var(--amber);font-size:10px}.advanced[open]>summary:after{content:"收起高级几何工具－"}.advanced-content{padding:15px;border-top:1px solid var(--line)}#cv{max-width:100%;height:auto;display:block;background:#09131d;border:1px solid var(--line);border-radius:5px}.parts-toolbar{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.parts-toolbar button{background:#102034;color:#d2dfed;border:1px solid var(--line);border-radius:4px;padding:7px;font-size:10px}#palette{display:flex;gap:6px;flex-wrap:wrap}.panel{display:flex;gap:12px;margin-top:12px;align-items:flex-start}#props{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;min-height:34px}#props label{color:var(--muted);font-size:10px}#props input{width:65px;background:#0a1520;border:1px solid var(--line);color:var(--text);border-radius:4px;padding:5px}#props input[type=color]{width:36px;height:27px;padding:1px}.equip-advanced{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}.equip-toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.equip-toolbar button,.equip-toolbar select,.equip-toolbar input{background:#102034;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:7px;font-size:10px}.equip-toolbar button.active{border-color:var(--amber);color:var(--amber)}#eqcv{display:block;max-width:100%;height:auto;background:#101b28;border:1px solid var(--line);border-radius:4px}.hint{color:var(--muted);font-size:10px;line-height:1.7;margin-top:10px}
+    #toast{position:fixed;bottom:22px;left:50%;z-index:40;transform:translate(-50%,8px);opacity:0;pointer-events:none;background:var(--amber);color:#20170a;padding:10px 17px;border-radius:5px;font-size:12px;font-weight:800;transition:.18s}#toast.show{opacity:1;transform:translate(-50%,0)}
+    @media(max-width:1100px){.gun-picker{grid-template-columns:repeat(3,minmax(0,1fr))}.main-workbench{grid-template-columns:minmax(0,1.2fr) minmax(320px,.9fr)}}@media(max-width:850px){.topbar{padding:0 12px;gap:10px}.head-title{display:none}.page{padding:14px 10px}.main-workbench{grid-template-columns:1fr}.right-panel{min-height:500px}.reticle-layout{grid-template-columns:160px 1fr}.gun-picker{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.gun-card{padding:8px 6px;gap:6px}.gun-card .gun-mini{display:none}.reticle-layout{grid-template-columns:1fr}.reticle-layout #reticleSample{max-width:260px}}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+  </style>
+</head>
+<body>
+  <header class="topbar"><div class="brand"><strong>HERO</strong><span>NIGHTFALL</span></div><div class="head-title"><b>枪械装配工作台</b><small>MODULAR WEAPON LAB</small></div><div class="grow"></div><button id="save" class="save-btn" type="button">保存并应用到游戏</button><a href="./game.html">← 返回游戏</a></header>
+  <main class="page">
+    <div class="page-title"><div><div class="eyebrow">BUILD · TUNE · TEST</div><h1>组装一把真正适合你的枪</h1><p>先选枪型，再装配件和涂装，最后调准星。所有选择自动保存草稿；确认后再点右上角应用到游戏。</p></div><div class="badge">模块自动适配枪型 · 每把武器独立保存</div></div>
+    <div id="presetCards" class="gun-picker" aria-label="选择枪型"></div><select id="preset" aria-label="枪械基底" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></select>
+    <div class="main-workbench">
+      <section class="card">
+        <div class="card-head"><b>整枪预览</b><small>拖动旋转 · 滚轮缩放 · 不改变枪械握点</small></div>
+        <div class="preview-zone"><div class="preview-stage"><canvas id="previewCv" width="980" height="340"></canvas></div>
+          <div class="preview-controls"><label>缩放 <input id="viewZoom" type="range" min="50" max="170" value="100" step="5"><span id="zoomValue">100%</span></label><label>旋转 <input id="viewRotation" type="range" min="-180" max="180" value="0" step="1"><span id="rotationValue">0°</span></label><button class="mini-action" id="resetView" type="button">重置视角</button><button class="mini-action" id="reset" type="button">恢复本枪预设</button></div>
+          <div class="current-gun-line"><div><b id="activeWeaponName">当前枪型</b><div><span id="activeWeaponHint">侧视枪械 · 模块和颜色预览</span></div></div><div><span id="activeAttachmentCount">0 个配件</span></div></div>
+          <div class="preview-note"><span>※ 配件装卸、颜色和准星会实时预览；拖动只旋转预览，不会改变实际武器坐标。</span><span>200 px = 1 m</span></div>
+        </div>
+      </section>
+      <section class="card right-panel">
+        <nav class="step-tabs" aria-label="改装步骤"><button class="step-tab active" data-work-tab="modules" type="button"><strong>01</strong>装配件</button><button class="step-tab" data-work-tab="finish" type="button"><strong>02</strong>调涂装</button><button class="step-tab" data-work-tab="reticle" type="button"><strong>03</strong>调准星</button><button class="step-tab" data-work-tab="stats" type="button"><strong>04</strong>看属性</button></nav>
+        <section class="pane" data-work-pane="modules">
+          <div class="pane-intro"><b>选择配件</b><p>只展示当前枪型能安装的模块。每个槽位只能装一件；再次点击已安装配件即可卸下。</p></div>
+          <div class="filter-row" id="attachmentFilters"><button class="active" data-attachment-filter="all" type="button">全部</button><button data-attachment-filter="枪口" type="button">枪口</button><button data-attachment-filter="瞄具" type="button">瞄具</button><button data-attachment-filter="下挂" type="button">下挂 / 护木</button><button data-attachment-filter="弹匣" type="button">弹匣</button><button data-attachment-filter="枪托" type="button">枪托</button><button data-attachment-filter="弹药" type="button">弹药</button></div>
+          <div id="attachmentCatalog"></div><div class="compat-note">配件效果会同步到实际武器：散布、后坐力、弹匣、换弹、伤害或声音传播半径。消音器与制退器属于同一枪口槽，不能同时装备。</div>
+        </section>
+        <section class="pane" data-work-pane="finish" hidden>
+          <div class="pane-intro"><b>武器涂装</b><p>先选一套配色，一键完成整枪主色与点缀；也可分别自定义颜色。</p></div>
+          <div class="paint-label">快速涂装方案</div><div class="paint-presets">
+            <button class="paint-preset" data-paint-profile="night" type="button"><span class="paint-chip"><i style="--c:#303944"></i><i style="--c:#d99447"></i></span>夜幕黑钢</button><button class="paint-preset" data-paint-profile="olive" type="button"><span class="paint-chip"><i style="--c:#46513b"></i><i style="--c:#b5a071"></i></span>橄榄军绿</button><button class="paint-preset" data-paint-profile="arctic" type="button"><span class="paint-chip"><i style="--c:#b6c5ce"></i><i style="--c:#5db8d3"></i></span>极地灰蓝</button><button class="paint-preset" data-paint-profile="desert" type="button"><span class="paint-chip"><i style="--c:#977a52"></i><i style="--c:#d6b77a"></i></span>沙漠黄褐</button>
+          </div>
+          <div class="paint-row"><label>机匣 / 大部件 <input id="paintMain" type="color" value="#566575"></label><button id="applyPaintMain" class="apply-paint" type="button">应用主色</button></div>
+          <div class="paint-row"><label>小件 / 点缀 <input id="paintAccent" type="color" value="#ffb14a"></label><button id="applyPaintAccent" class="apply-paint" type="button">应用点缀</button></div>
+          <div class="paint-row"><label>当前配件颜色 <input id="paintModule" type="color" value="#394756"></label><button id="applyPaintModule" class="apply-paint" type="button">应用到已装配件</button></div>
+          <div class="paint-row"><label>自定义铭牌 / 武器名称 <input id="weaponName" type="text" maxlength="24" placeholder="例如：夜幕-01"></label></div>
+          <div class="compat-note">涂装只改变颜色，不改变弹道、枪械尺寸或握点。配件采用独立的模块颜色，不会被整枪涂装覆盖。</div>
+        </section>
+        <section class="pane" data-work-pane="reticle" hidden>
+          <div class="pane-intro"><b>准星工作台</b><p>选一个易读的准星样式、颜色和间距；右侧样例与左侧整枪预览同步，保存后游戏内使用同一配置。</p></div>
+          <div class="reticle-presets"><button data-reticle-preset="classic" type="button">⊕<small>经典</small></button><button data-reticle-preset="dot" type="button">•<small>红点</small></button><button data-reticle-preset="plus" type="button">＋<small>十字</small></button><button data-reticle-preset="bracket" type="button">⌗<small>角框</small></button></div>
+          <div class="reticle-layout" style="margin-top:12px"><canvas id="reticleSample" width="260" height="190" aria-label="准星预览"></canvas><div class="reticle-form"><label>准星样式<select id="reticleStyle"><option value="classic">经典圆环</option><option value="dot">红点</option><option value="plus">十字</option><option value="bracket">角框</option><option value="circle">圆环点</option></select></label><label>准星颜色<input id="reticleColor" type="color" value="#ffb14a"></label><label>尺寸 <span id="reticleSizeValue">8</span><input id="reticleSize" type="range" min="4" max="18" value="8" step="1"></label><label>中心间距 <span id="reticleGapValue">4</span><input id="reticleGap" type="range" min="2" max="10" value="4" step="1"></label></div></div>
+          <div class="compat-note">准星设置保存到游戏全局配置，不会被切换枪型覆盖。移动、开火扩散等实时游戏逻辑仍由原来的战斗系统计算。</div>
+        </section>
+        <section class="pane" data-work-pane="stats" hidden>
+          <div class="pane-intro"><b>当前枪械属性</b><p>安装和卸下配件后会即时更新。这里显示游戏实际使用的数值，而不是单纯的装饰评分。</p></div><div id="weaponStatsPreview"></div><div class="compat-note">建议先按自己的玩法选择模块：潜行优先消音器，连续交火关注后坐力与弹容量，远距离优先瞄具和射程。</div>
+        </section>
+      </section>
     </div>
-
-    <canvas id="cv" width="520" height="200"></canvas>
-
-    <div class="panel">
-      <div class="props" id="props">
-        <span style="opacity:0.5">点击画布里的部件编辑属性</span>
-      </div>
-    </div>
-
-    <div class="hint">
-      <span class="legend"><span class="dot" style="background:#ff9a3c"></span>前手:副手,握住前握点(护木)</span>
-      <span class="legend"><span class="dot" style="background:#4d9fff"></span>后手:瞄准手(游戏里伸直),握住枪把</span>
-      <span class="legend"><span class="dot" style="background:#ffd24a"></span>枪口:子弹出发点</span>
-      <br />
-      标尺:200px = 1 米,建议整枪长度 130~190px。设计会自动存草稿;点「保存到游戏」后,回到游戏页即可生效(游戏页开着时会自动刷新武器)。
-    </div>
-
-    <div class="bar" style="margin-top:18px">
-      <b style="font-size:15px">🪖 装备定制</b>
-      <button id="eq-slot-head">🪖 头盔</button>
-      <button id="eq-slot-torso">🦺 防弹衣</button>
-      <select id="eq-preset"></select>
-      <label style="font-size:12px;opacity:0.7">防御
-        <input id="eq-defense" type="number" min="0" max="0.8" step="0.05"
-          style="width:58px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.22);color:#e8e2d4;border-radius:6px;padding:4px 6px" />
-      </label>
-      <button id="eq-save" class="primary">💾 穿上</button>
-      <button id="eq-clear">脱下</button>
-    </div>
-    <canvas id="eqcv" width="440" height="200"></canvas>
-    <div class="hint">装备绘制在身体部件的局部空间(200px = 1m):头盔原点 = 头部圆心(半径 30px),防弹衣原点 = 躯干中心(60×104px)。虚线为身体参考轮廓,拖动部件调整,「穿上」后游戏内实时生效。</div>
-    <div id="toast"></div>
-
-    <script type="module" src="/src/designer/editor.js"></script>
-  </body>
+    <details class="advanced"><summary>高级工具：编辑单独零件、枪口/握点、头盔与防弹衣</summary><div class="advanced-content">
+      <div class="pane-intro"><b>几何编辑（给需要精调的人）</b><p>日常 DIY 不需要使用这一区域。这里保留原有几何零件编辑、握点和装备绘制能力。</p></div>
+      <canvas id="cv" width="520" height="200"></canvas><div class="parts-toolbar"><span id="palette"></span><button id="clear" type="button">清空几何零件</button></div><div class="panel"><div id="props"><span style="opacity:.5">点击画布里的部件编辑属性</span></div></div>
+      <div class="hint">前手为副手握点，后手为瞄准手握点，枪口为子弹出发点。若没有特殊的模型需求，通常不需要移动这些点。</div>
+      <div class="equip-advanced"><b style="font-size:12px">装备定制 · 头盔 / 防弹衣</b><div class="equip-toolbar"><button id="eq-slot-head" type="button">头盔</button><button id="eq-slot-torso" type="button">防弹衣</button><select id="eq-preset"></select><label>防御 <input id="eq-defense" type="number" min="0" max="0.8" step="0.05" style="width:60px"></label><button id="eq-save" class="save-btn" type="button">穿上 / 保存</button><button id="eq-clear" type="button">脱下</button></div><canvas id="eqcv" width="440" height="200"></canvas><div class="hint">装备绘制在对应身体部件的局部空间，装备保存后跟随骨骼运动。</div></div>
+    </div></details>
+    <div class="hint">操作提示：拖动中央枪械可旋转，滚轮可缩放。每种枪型独立保存配件与涂装；副武器 Glock 17 不会覆盖主武器存档。点击右上角「保存并应用到游戏」后，当前枪型配置才会成为游戏实际使用的配置。</div>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/src/designer/editor.js"></script>
+</body>
 </html>

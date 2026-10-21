@@ -28,7 +28,7 @@ export function updateStatusPanel(pstate, player) {
   el.pnlVestBar.style.borderColor = bq ? bq.color : 'rgba(244,233,216,0.25)';
   el.pnlHelmText.textContent = h ? `${QLABEL[h.quality]} 盔 ${Math.ceil(h.dur)}` : '无头盔';
   el.pnlVestText.textContent = b ? `${QLABEL[b.quality]} 甲 ${Math.ceil(b.dur)}` : '无护甲';
-  el.pnlMain.textContent = player.weapon === 'rifle' ? (player.gunDef?.name || '主武器') : '手枪';
+  el.pnlMain.textContent = player.weapon === 'rifle' ? (player.gunDef?.customName || player.gunDef?.name || '主武器') : '手枪';
   el.pnlMain.style.opacity = player.weapon === 'rifle' ? 1 : 0.45;
   el.pnlSide.style.opacity = player.weapon === 'pistol' ? 1 : 0.45;
   // 手雷槽:冷却走条(满 = 就绪);读条中灰显 + 秒数(首子节点是文本 "🧨 F")
@@ -106,3 +106,4 @@ export function lootToast(item) {
     setTimeout(() => el.remove(), 320);
   }, 2000);
 }
+

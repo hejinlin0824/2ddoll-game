@@ -71,7 +71,7 @@ export class Dummy {
     // 随机一把枪:不再和玩家用同一把(内置预设池里抽)。
     // hitscan(AWP)必须排除:敌人事件循环不处理 hitscanShot(无伤害无音效的哑火),
     // 且狙击站桩会让敌人永久定在原地 —— 两种都是"假人"
-    const eligible = Object.keys(GUN_PRESETS).filter((n) => n !== this.excludeGun && GUN_PRESETS[n].stats?.mode !== 'hitscan');
+    const eligible = Object.keys(GUN_PRESETS).filter((n) => !GUN_PRESETS[n].isSidearm && n !== this.excludeGun && GUN_PRESETS[n].stats?.mode !== 'hitscan');
     const preferred = this.role === 'rusher'
       ? ['MP5', '霰弹枪']
       : this.role === 'support'

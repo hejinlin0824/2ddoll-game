@@ -155,26 +155,281 @@ export const GUN_PRESETS = {
     grips: { front: { x: 106, y: 29 }, rear: { x: 44, y: 31 } },
     muzzle: { x: 162, y: 22 },
   },
+  // 常备副武器也使用同一套模块/涂装蓝图，但不会进入主武器轮盘或敌人的主武器抽选池。
+  'Glock 17': {
+    name: 'Glock 17', isSidearm: true, meterScale: METER_SCALE,
+    parts: [
+      { x: 24, y: 15, w: 10, h: 8, color: '#303944', r: 2 },
+      { x: 30, y: 12, w: 55, h: 14, color: '#424c59', r: 3 },
+      { x: 36, y: 10, w: 35, h: 3, color: '#647384', r: 1 },
+      { x: 80, y: 16, w: 17, h: 7, color: '#303944', r: 2 },
+      { x: 43, y: 24, w: 35, h: 9, color: '#303944', r: 2 },
+      { x: 43, y: 30, w: 15, h: 24, color: '#242c36', r: 3 },
+      { x: 45, y: 33, w: 11, h: 17, color: '#3b4654', r: 2 },
+      { x: 54, y: 27, w: 18, h: 8, color: '#202731', r: 4 },
+      { x: 67, y: 24, w: 11, h: 3, color: '#7b8997', r: 1 },
+      { x: 82, y: 14, w: 16, h: 4, color: '#687786', r: 1 },
+      { x: 87, y: 10, w: 4, h: 5, color: '#a5b4c2', r: 1 },
+      { x: 47, y: 34, w: 10, h: 18, color: '#3b4654', r: 2, component: 'magazine' },
+    ],
+    grips: { front: { x: 69, y: 24 }, rear: { x: 49, y: 36 } },
+    muzzle: { x: 98, y: 18 },
+  },
 };
 
-// 把词条挂到预设枪上;存档里没词条的按名字回填,对不上给兜底
-for (const [k, g] of Object.entries(GUN_PRESETS)) g.stats = WEAPON_STATS[k] ?? { ...DEFAULT_STATS };
+// 把词条挂到预设枪上;手枪基底使用专属 PISTOL_STATS,其余从武器词条表回填。
+for (const [k, g] of Object.entries(GUN_PRESETS)) g.stats = g.isSidearm ? { ...PISTOL_STATS } : (WEAPON_STATS[k] ?? { ...DEFAULT_STATS });
 
-// 从 localStorage 读取玩家设计的主武器;无效则回退 AK-47。
+// ---- 模块化枪械配件：几何部件进入真实武器渲染，数值修正进入开火属性 ----
+// id 必须稳定，供 contra-gun-primary 存档与枪型兼容判断使用。
+export const GUN_ATTACHMENTS = {
+  suppressor: { id: 'suppressor', label: '通用消音器', slot: '枪口', icon: 'suppressor', compatible: ['AK-47', 'M4A1', 'MP5', 'AWP', 'Glock 17'], bonus: '启用消音后降低声源半径', mods: { suppressionRadiusMul: 0.82, soundIntensityMul: 0.9, damageMul: 0.98 }, canSuppress: true },
+  mp5_integral: { id: 'mp5_integral', label: 'MP5 一体消音器', slot: '枪口', icon: 'suppressor', compatible: ['MP5'], bonus: '消音半径更小，散布略收敛', mods: { suppressionRadiusMul: 0.66, spreadMul: 0.94, damageMul: 0.98 }, canSuppress: true },
+  awp_suppressor: { id: 'awp_suppressor', label: '狙击专用消音器', slot: '枪口', icon: 'suppressor', compatible: ['AWP'], bonus: '大幅降低狙击枪声传播', mods: { suppressionRadiusMul: 0.58, recoilMul: 0.92, damageMul: 0.97 }, canSuppress: true },
+  glock_suppressor: { id: 'glock_suppressor', label: 'Glock 螺纹消音器', slot: '枪口', icon: 'suppressor', compatible: ['Glock 17'], bonus: '消音传播半径降低 38%', mods: { suppressionRadiusMul: 0.62, soundIntensityMul: 0.82, damageMul: 0.98 }, canSuppress: true },
+  red_dot: { id: 'red_dot', label: '红点瞄具', slot: '瞄具', icon: 'red-dot', compatible: ['AK-47', 'M4A1', 'MP5', '霰弹枪', 'Glock 17'], bonus: '散布降低 8%', mods: { spreadMul: 0.92 } },
+  scope_4x: { id: 'scope_4x', label: '4× 光学瞄准镜', slot: '瞄具', icon: 'scope', compatible: ['AWP'], bonus: '有效射程 +22%，散布降低 28%', mods: { rangeMul: 1.22, spreadMul: 0.72 } },
+  angled_grip: { id: 'angled_grip', label: '斜角握把', slot: '护木', icon: 'angled-grip', compatible: ['AK-47', 'M4A1', 'MP5', '霰弹枪'], bonus: '后坐力降低 18%', mods: { recoilMul: 0.82 } },
+  extended_mag: { id: 'extended_mag', label: '扩容弹匣', slot: '弹匣', icon: 'extended-mag', compatible: ['AK-47', 'M4A1', 'MP5'], bonus: '弹匣容量 +12，换弹慢 8%', mods: { magAdd: 12, reloadMul: 1.08 } },
+  pistol_extended_mag: { id: 'pistol_extended_mag', label: '手枪扩容弹匣', slot: '弹匣', icon: 'extended-mag', compatible: ['Glock 17'], bonus: '弹匣容量 +6，换弹慢 5%', mods: { magAdd: 6, reloadMul: 1.05 } },
+  pistol_compensator: { id: 'pistol_compensator', label: '手枪补偿器', slot: '枪口', icon: 'muzzle-brake', compatible: ['Glock 17'], bonus: '后坐力降低 16%，枪声略远', mods: { recoilMul: 0.84, soundRadiusMul: 1.1 } },
+  tactical_stock: { id: 'tactical_stock', label: '战术枪托', slot: '枪托', icon: 'stock', compatible: ['AK-47', 'M4A1', 'MP5'], bonus: '后坐力降低 15%', mods: { recoilMul: 0.85 } },
+  laser_sight: { id: 'laser_sight', label: '激光指示器', slot: '下挂', icon: 'laser', compatible: ['AK-47', 'M4A1', 'MP5', 'AWP', '霰弹枪', 'Glock 17'], bonus: '散布降低 10%', mods: { spreadMul: 0.9 } },
+  flashlight: { id: 'flashlight', label: '战术手电', slot: '下挂', icon: 'flashlight', compatible: ['AK-47', 'M4A1', 'MP5', 'AWP', '霰弹枪', 'Glock 17'], bonus: '暂无直接伤害加成，提供视觉辨识', mods: {} },
+  muzzle_brake: { id: 'muzzle_brake', label: '枪口制退器', slot: '枪口', icon: 'muzzle-brake', compatible: ['AK-47', 'M4A1', 'AWP', '霰弹枪'], bonus: '后坐力降低 26%，枪声传播更远', mods: { recoilMul: 0.74, soundRadiusMul: 1.18 } },
+  ap_round: { id: 'ap_round', label: '穿甲弹', slot: '弹药', icon: 'ap-round', compatible: ['AK-47', 'M4A1', 'MP5', 'AWP', '霰弹枪', 'Glock 17'], bonus: '伤害 +12%', mods: { damageMul: 1.12 } },
+};
+
+export function compatibleAttachments(basePreset) {
+  return Object.values(GUN_ATTACHMENTS).filter((a) => a.compatible.includes(basePreset));
+}
+
+export function attachmentBonusLines(ids = []) {
+  return ids.map((id) => GUN_ATTACHMENTS[id]).filter(Boolean).map((a) => ({ id: a.id, label: a.label, slot: a.slot, bonus: a.bonus }));
+}
+
+function attachmentParts(gun, ids) {
+  // 存档也必须遵守槽位互斥，避免手改 localStorage 后出现双枪口/双瞄具。
+  const idsSafe = [];
+  const usedSlots = new Set();
+  for (const id of (Array.isArray(ids) ? ids : [])) {
+    const def = GUN_ATTACHMENTS[id];
+    if (!def || !def.compatible.includes(gun.basePreset) || usedSlots.has(def.slot)) continue;
+    usedSlots.add(def.slot);
+    idsSafe.push(id);
+  }
+  const rear = gun.grips?.rear || { x: 50, y: 25 };
+  const front = gun.grips?.front || { x: 120, y: 24 };
+  const mx = Number(gun.muzzle?.x) || 170;
+  const my = Number(gun.muzzle?.y) || 24;
+  const minY = Math.min(...(gun.parts || []).map((p) => p.y), my - 2);
+  const maxY = Math.max(...(gun.parts || []).map((p) => p.y + p.h), my + 5);
+  const mid = (rear.x + front.x) / 2;
+  const visual = [];
+  const add = (id, x, y, w, h, color, r = 2) => visual.push({ x, y, w, h, color, r, attachmentId: id });
+  for (const id of idsSafe) {
+    switch (id) {
+      case 'suppressor': add(id, mx - 12, my - 4, 20, 8, '#333c49'); add(id, mx - 10, my - 2, 16, 2, '#8c9aaa'); break;
+      case 'glock_suppressor': add(id, mx - 10, my - 3, 18, 6, '#283441'); add(id, mx - 8, my - 1, 14, 2, '#9aa9b8'); break;
+      case 'mp5_integral': add(id, mx - 10, my - 4, 17, 8, '#293745'); add(id, mx - 8, my - 1, 12, 2, '#758899'); break;
+      case 'awp_suppressor': add(id, mx - 18, my - 5, 28, 10, '#273342'); add(id, mx - 16, my - 2, 24, 2, '#8191a2'); break;
+      case 'red_dot': add(id, mid - 8, minY - 7, 17, 6, '#242d38'); add(id, mid - 4, minY - 10, 8, 4, '#ffb14a'); break;
+      case 'scope_4x': add(id, mid - 17, minY - 10, 34, 9, '#25303e', 4); add(id, mid - 14, minY - 7, 4, 4, '#8fcce8', 2); add(id, mid + 10, minY - 7, 4, 4, '#8fcce8', 2); break;
+      case 'angled_grip': add(id, mid - 5, maxY - 2, 10, 14, '#313b47'); add(id, mid - 3, maxY + 1, 3, 8, '#778594'); break;
+      case 'extended_mag': add(id, mid - 7, maxY - 2, 14, 20, '#424d5a'); add(id, mid - 4, maxY + 1, 2, 14, '#9aa8b5'); break;
+      case 'pistol_extended_mag': add(id, mid - 5, maxY - 2, 10, 16, '#394756'); add(id, mid - 2, maxY + 1, 2, 10, '#a3b0bd'); break;
+      case 'pistol_compensator': add(id, mx - 5, my - 3, 8, 6, '#323e4c'); add(id, mx - 2, my - 2, 2, 4, '#a9b7c4'); break;
+      case 'tactical_stock': add(id, rear.x - 17, rear.y - 7, 18, 14, '#394655'); add(id, rear.x - 19, rear.y - 5, 4, 10, '#8995a1'); break;
+      case 'laser_sight': add(id, front.x - 26, maxY - 1, 12, 6, '#2d3946'); add(id, front.x - 17, maxY + 1, 3, 2, '#db514b'); break;
+      case 'flashlight': add(id, front.x - 32, maxY + 1, 13, 6, '#394653'); add(id, front.x - 21, maxY + 2, 3, 4, '#d6e8ed'); break;
+      case 'muzzle_brake': add(id, mx - 7, my - 4, 9, 8, '#303945'); add(id, mx - 5, my - 3, 2, 6, '#a5b1bd'); break;
+      case 'ap_round': add(id, mid - 3, maxY + 1, 5, 6, '#d46d43'); break;
+    }
+  }
+  return { ids: idsSafe, parts: visual };
+}
+
+export function resolveGunBuild(gun) {
+  const input = gun || GUN_PRESETS['AK-47'];
+  const isPreset = !!input.basePreset && !!GUN_PRESETS[input.basePreset];
+  const basePreset = isPreset ? input.basePreset : (GUN_PRESETS[input.name] ? input.name : null);
+  const baseStats = basePreset === 'Glock 17' ? PISTOL_STATS : (basePreset ? (WEAPON_STATS[basePreset] ?? DEFAULT_STATS) : DEFAULT_STATS);
+  const modParts = attachmentParts({ ...input, basePreset: basePreset || input.name }, input.attachments || []);
+  const mods = {};
+  for (const id of modParts.ids) {
+    for (const [key, value] of Object.entries(GUN_ATTACHMENTS[id].mods || {})) {
+      if (key.endsWith('Mul')) mods[key] = (mods[key] ?? 1) * value;
+      else mods[key] = (mods[key] ?? 0) + value;
+    }
+  }
+  const stats = { ...baseStats };
+  for (const key of ['damage', 'rpm', 'spread', 'reload', 'range', 'recoil']) {
+    const mk = `${key}Mul`;
+    if (mods[mk] != null) stats[key] *= mods[mk];
+  }
+  if (mods.magAdd) stats.mag = Math.max(1, Math.round(stats.mag + mods.magAdd));
+  stats.damage = Math.round(stats.damage * 10) / 10;
+  stats.rpm = Math.round(stats.rpm);
+  stats.spread = +stats.spread.toFixed(3);
+  stats.reload = +stats.reload.toFixed(2);
+  stats.range = Math.round(stats.range);
+  stats.recoil = +stats.recoil.toFixed(3);
+  stats.soundRadiusMul = mods.soundRadiusMul ?? 1;
+  stats.suppressionRadiusMul = mods.suppressionRadiusMul ?? 1;
+  stats.soundIntensityMul = mods.soundIntensityMul ?? 1;
+  const attachmentColors = normalizeAttachmentColors(input.attachmentColors);
+  const coloredIds = new Set();
+  // 每个配件的首个主结构使用自定义色，其余高光/玻璃/螺丝保持对比色，避免整块糊成一个颜色。
+  const visualParts = modParts.parts.map((part) => {
+    const color = attachmentColors[part.attachmentId];
+    if (color && !coloredIds.has(part.attachmentId)) {
+      coloredIds.add(part.attachmentId);
+      return { ...part, color };
+    }
+    return { ...part };
+  });
+  const baseMuzzle = { ...(input.baseMuzzle || input.muzzle || { x: 170, y: 24 }) };
+  const muzzleSuppressor = modParts.ids.some((id) => ['suppressor', 'mp5_integral', 'awp_suppressor', 'glock_suppressor'].includes(id));
+  const runtimeMuzzle = { ...baseMuzzle };
+  if (muzzleSuppressor) runtimeMuzzle.x += modParts.ids.includes('awp_suppressor') ? 21 : modParts.ids.includes('glock_suppressor') ? 16 : modParts.ids.includes('suppressor') ? 14 : 12;
+  return {
+    ...input,
+    name: basePreset || input.name || '自定义主武器',
+    customName: input.customName || '',
+    basePreset: basePreset || input.basePreset || null,
+    attachments: modParts.ids,
+    attachmentColors,
+    baseParts: (input.baseParts || input.parts || []).filter((p) => !p.attachmentId).map((p) => ({ ...p })),
+    baseMuzzle: { ...baseMuzzle },
+    parts: [...(input.baseParts || input.parts || []).filter((p) => !p.attachmentId).map((p) => ({ ...p })), ...visualParts],
+    muzzle: runtimeMuzzle,
+    stats,
+    attachmentBonuses: attachmentBonusLines(modParts.ids),
+    attachmentVisualParts: visualParts,
+  };
+}
+
+export const RETICLE_KEY = 'contra-custom-reticle-v1';
+export const DEFAULT_RETICLE = Object.freeze({ style: 'classic', color: '#ffb14a', size: 8, gap: 4 });
+let reticleCacheRaw;
+let reticleCache = { ...DEFAULT_RETICLE };
+let reticleCacheReady = false;
+export function loadReticleSettings() {
+  if (reticleCacheReady) return reticleCache;
+  let raw = null;
+  try { raw = localStorage.getItem(RETICLE_KEY); } catch { /* ignore */ }
+  reticleCacheRaw = raw;
+  reticleCacheReady = true;
+  try {
+    const o = JSON.parse(raw || '{}') || {};
+    reticleCache = {
+      style: ['classic', 'dot', 'plus', 'bracket', 'circle'].includes(o.style) ? o.style : DEFAULT_RETICLE.style,
+      color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : DEFAULT_RETICLE.color,
+      size: Math.max(4, Math.min(18, Number(o.size) || DEFAULT_RETICLE.size)),
+      gap: Math.max(2, Math.min(10, Number(o.gap) || DEFAULT_RETICLE.gap)),
+    };
+  } catch { reticleCache = { ...DEFAULT_RETICLE }; }
+  return reticleCache;
+}
+if (typeof window !== 'undefined') window.addEventListener('storage', (e) => { if (e.key === RETICLE_KEY || e.key === null) reticleCacheReady = false; });
+
+export function saveReticleSettings(value) {
+  const next = { ...DEFAULT_RETICLE, ...(value || {}) };
+  try { localStorage.setItem(RETICLE_KEY, JSON.stringify(next)); reticleCacheRaw = JSON.stringify(next); reticleCacheReady = true; reticleCache = { ...DEFAULT_RETICLE, ...next }; return true; }
+  catch { return false; }
+}
+
+
+// 每种枪型保留一份独立 DIY 蓝图：换枪不会把上一把的颜色/配件/握点覆盖掉。
+export const GUN_BUILDS_KEY = 'contra-gun-builds-v1';
+const PRIMARY_GUN_KEY = 'contra-gun-primary';
+function validGunBlueprint(g) {
+  return !!g && Array.isArray(g.parts) && g.parts.length > 0
+    && !!g.grips?.front && !!g.grips?.rear && !!g.muzzle && Number(g.meterScale) > 0;
+}
+function normalizeAttachmentColors(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out = {};
+  for (const [id, color] of Object.entries(value)) {
+    if (Object.prototype.hasOwnProperty.call(GUN_ATTACHMENTS, id) && typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) out[id] = color;
+  }
+  return out;
+}
+function toGunBlueprint(gun) {
+  const input = gun || {};
+  const preset = GUN_PRESETS[input.basePreset] ? input.basePreset : (GUN_PRESETS[input.name] ? input.name : null);
+  const rawParts = Array.isArray(input.baseParts) ? input.baseParts : (Array.isArray(input.parts) ? input.parts.filter((p) => !p.attachmentId) : []);
+  return {
+    name: preset || input.name || '自定义主武器',
+    customName: String(input.customName || '').slice(0, 24),
+    basePreset: preset,
+    meterScale: Number(input.meterScale) > 0 ? Number(input.meterScale) : METER_SCALE,
+    parts: rawParts.map((p) => ({ ...p })),
+    grips: { front: { ...(input.grips?.front || { x: 129, y: 27 }) }, rear: { ...(input.grips?.rear || { x: 71, y: 42 }) } },
+    muzzle: { ...(input.baseMuzzle || input.muzzle || { x: 176, y: 27 }) },
+    attachments: Array.isArray(input.attachments) ? [...input.attachments] : [],
+    attachmentColors: normalizeAttachmentColors(input.attachmentColors),
+  };
+}
+function readGunProfiles() {
+  try {
+    const o = JSON.parse(localStorage.getItem(GUN_BUILDS_KEY) || '{}');
+    return o && typeof o === 'object' && !Array.isArray(o) ? o : {};
+  } catch { return {}; }
+}
+export function loadGunBlueprint(basePreset) {
+  const key = GUN_PRESETS[basePreset] ? basePreset : 'AK-47';
+  const profiles = readGunProfiles();
+  const saved = profiles[key];
+  if (validGunBlueprint(saved)) return toGunBlueprint({ ...saved, basePreset: key, name: key });
+  // 迁移旧存档：如果当前主武器就是所选枪型，也把旧的单槽配置识别为该枪型配置。
+  try {
+    const active = JSON.parse(localStorage.getItem(PRIMARY_GUN_KEY) || 'null');
+    const activeBase = active?.basePreset || (GUN_PRESETS[active?.name] ? active.name : null);
+    if (activeBase === key && validGunBlueprint(active)) return toGunBlueprint({ ...active, basePreset: key, name: key });
+  } catch { /* 忽略损坏存档 */ }
+  return toGunBlueprint({ ...GUN_PRESETS[key], basePreset: key, name: key, attachments: [] });
+}
+export function loadGunBuild(basePreset) { return resolveGunBuild(loadGunBlueprint(basePreset)); }
+export function saveGunBuild(gun) {
+  try {
+    const blueprint = toGunBlueprint(gun);
+    if (!blueprint.basePreset || !validGunBlueprint(blueprint)) return false;
+    // 用解析后的兼容列表规范化存档，防止旧存档或手改 JSON 造成同槽重复配件。
+    blueprint.attachments = resolveGunBuild(blueprint).attachments;
+    const profiles = readGunProfiles();
+    profiles[blueprint.basePreset] = blueprint;
+    localStorage.setItem(GUN_BUILDS_KEY, JSON.stringify(profiles));
+    return true;
+  } catch { return false; }
+}
+export function saveActiveGunBuild(gun) {
+  try {
+    const blueprint = toGunBlueprint(gun);
+    if (!blueprint.basePreset || !validGunBlueprint(blueprint)) return false;
+    if (!saveGunBuild(blueprint)) return false;
+    if (blueprint.basePreset === 'Glock 17') return true; // 副武器有独立蓝图，不覆盖主武器槽
+    localStorage.setItem(PRIMARY_GUN_KEY, JSON.stringify(blueprint));
+    return true;
+  } catch { return false; }
+}
+
+// 从 localStorage 读取当前主武器;旧版单槽存档会自动迁移到该枪型的独立蓝图。
 // ⚠️ stats 永远按枪名从 WEAPON_STATS 刷新(旧存档里烤着过时的音效/数值词条;
 //    自定义枪=未知名字 → DEFAULT_STATS 兜底)
 export function loadSavedGun() {
-  const withStats = (g) => ({ ...g, stats: { ...(WEAPON_STATS[g.name] ?? DEFAULT_STATS) } });
   try {
-    const raw = localStorage.getItem('contra-gun-primary');
-    if (!raw) return withStats(GUN_PRESETS['AK-47']);
+    const raw = localStorage.getItem(PRIMARY_GUN_KEY);
+    if (!raw) return loadGunBuild('AK-47');
     const g = JSON.parse(raw);
-    if (!g || !Array.isArray(g.parts) || !g.parts.length || !g.grips?.front || !g.grips?.rear || !g.muzzle || !(g.meterScale > 0)) {
-      return withStats(GUN_PRESETS['AK-47']);
-    }
-    return withStats(g);
+    if (!validGunBlueprint(g) || g.basePreset === 'Glock 17' || g.name === 'Glock 17') return loadGunBuild('AK-47');
+    const normalized = toGunBlueprint({ ...g, basePreset: g.basePreset || (GUN_PRESETS[g.name] ? g.name : null) });
+    const resolved = resolveGunBuild(normalized);
+    // 写入新 profile 存档，方便首次换枪后仍能找回这一把的 DIY 配置。
+    saveGunBuild(normalized);
+    return resolved;
   } catch {
-    return withStats(GUN_PRESETS['AK-47']);
+    return loadGunBuild('AK-47');
   }
 }
 
@@ -319,3 +574,4 @@ export function saveAssets(assets) {
   try { localStorage.setItem('contra-assets', JSON.stringify(assets)); return true; }
   catch { return false; } // 超出 localStorage 配额等
 }
+

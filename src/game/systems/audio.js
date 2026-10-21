@@ -14,6 +14,7 @@ const loopVoices = new Map();
 let ambientVoice = null;
 let ambientScene = '';
 const footstepTimes = new WeakMap();
+const footstepVariants = new WeakMap();
 const impactTimes = new WeakMap();
 const impactTypeLastAt = new Map();
 const radioLastAt = new Map();
@@ -35,7 +36,14 @@ const SFX_FILES = {
   'impact-flesh': 'impact-flesh.wav',
   'ricochet': 'ricochet.wav',
   'footstep-dirt': 'footstep-dirt.wav',
+  'footstep-dirt-2': 'footstep-dirt-2.wav',
+  'footstep-dirt-3': 'footstep-dirt-3.wav',
+  'footstep-concrete': 'footstep-concrete.wav',
+  'footstep-concrete-2': 'footstep-concrete-2.wav',
+  'footstep-concrete-3': 'footstep-concrete-3.wav',
   'footstep-metal': 'footstep-metal.wav',
+  'footstep-metal-2': 'footstep-metal-2.wav',
+  'footstep-metal-3': 'footstep-metal-3.wav',
   'jump': 'jump.wav',
   'land': 'land.wav',
   'reload-rifle-start': 'reload-rifle-start.wav',
@@ -374,19 +382,52 @@ export function playPlayerHurt(opts = {}) {
 export function playFootstep(opts = {}) {
   if (!actx) return;
   const now = actx.currentTime;
-  if (opts.emitter && (typeof opts.emitter === 'object' || typeof opts.emitter === 'function')) {
-    const minGap = opts.source === 'enemy' ? 0.16 : 0.13;
-    const last = footstepTimes.get(opts.emitter) ?? -Infinity;
+  const emitter = opts.emitter;
+  if (emitter && (typeof emitter === 'object' || typeof emitter === 'function')) {
+    // 避免物理步抖动导致脚步音重复触发；脚步节奏由角色步态相位控制。
+    const minGap = opts.source === 'enemy' ? 0.17 : 0.16;
+    const last = footstepTimes.get(emitter) ?? -Infinity;
     if (now - last < minGap) return;
-    footstepTimes.set(opts.emitter, now);
+    footstepTimes.set(emitter, now);
   }
   const scene = opts.scene || (() => { try { return localStorage.getItem('contra-scene') || 'wild'; } catch { return 'wild'; } })();
-  const metal = opts.material === 'metal' || scene === 'roof' || scene === 'room';
-  const name = metal ? 'footstep-metal' : 'footstep-dirt';
-  const vol = opts.volume ?? (opts.source === 'enemy' ? 0.18 : 0.34);
-  if (!playSample(name, { ...opts, volume: vol, maxDistance: opts.maxDistance ?? 21, pitch: randomBetween(0.92, 1.09), distantTail: false })) {
-    noiseBurst(0.035, vol * 0.24, metal ? 3100 : 1300, opts);
+  // 依场景选地面：野外/沙地用泥土，屋顶用柔化金属，室内与剿匪建筑用混凝土。
+  let surface = opts.material;
+  if (!surface) {
+    if (scene === 'roof' || scene === 'port') surface = 'metal';
+    else if (scene === 'room' || scene === 'raid') surface = 'concrete';
+    else surface = 'dirt';
   }
+  if (!['dirt', 'concrete', 'metal'].includes(surface)) surface = 'dirt';
+  const names = surface === 'metal'
+    ? ['footstep-metal', 'footstep-metal-2', 'footstep-metal-3']
+    : surface === 'concrete'
+      ? ['footstep-concrete', 'footstep-concrete-2', 'footstep-concrete-3']
+      : ['footstep-dirt', 'footstep-dirt-2', 'footstep-dirt-3'];
+  let chosen = Math.floor(Math.random() * names.length);
+  // 同一角色不连续重复同一采样，降低机械循环感。
+  if (emitter && names.length > 1) {
+    const previous = footstepVariants.get(emitter);
+    if (names[chosen] === previous) chosen = (chosen + 1 + Math.floor(Math.random() * (names.length - 1))) % names.length;
+    footstepVariants.set(emitter, names[chosen]);
+  }
+  const isEnemy = opts.source === 'enemy';
+  const requested = opts.volume ?? (isEnemy ? 0.18 : 0.22);
+  const sneaking = !!(opts.stealth || opts.crouching || opts.emitter?.crouch);
+  const sneakScale = sneaking ? 0.52 : 1;
+  // 调低基础声压；金属脚步额外削一点，防止齿音刺耳。声音半径也比枪声短很多。
+  const surfaceScale = surface === 'metal' ? 0.86 : 1;
+  const vol = clamp(requested * (isEnemy ? 0.42 : 0.34) * sneakScale * surfaceScale, 0.008, 0.13);
+  const maxDistance = opts.maxDistance ?? (isEnemy ? 13 : 10);
+  // 若文件仍在异步解码中，宁可暂时不播，也不要退回原先粗糙、偏响的宽带噪声。
+  playSample(names[chosen], {
+    ...opts,
+    volume: vol,
+    maxDistance,
+    pitch: randomBetween(0.965, 1.035),
+    distantTail: false,
+    echoTail: false,
+  });
 }
 
 export function playMovementSound(kind = 'land', opts = {}) {
@@ -494,7 +535,7 @@ export function stopAllWorldLoops() {
 
 const AMBIENCE_SCENES = {
   wild: 'ambient-wild', custom: 'ambient-wild', roof: 'ambient-roof',
-  room: 'ambient-room', desert: 'ambient-desert', tropic: 'ambient-tropic',
+  room: 'ambient-room', port: 'ambient-room', desert: 'ambient-desert', tropic: 'ambient-tropic',
 };
 
 // 轻量环境底噪：每次仅有一个场景循环，换图用 0.25~0.4s 交叉淡入淡出。
@@ -509,7 +550,7 @@ export function updateSceneAmbience(scene = 'wild') {
   const old = ambientVoice;
   try {
     const src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
-    const filter = actx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = key === 'room' ? 1750 : 5200;
+    const filter = actx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = key === 'room' ? 1750 : key === 'port' ? 2500 : 5200;
     const gain = actx.createGain(); gain.gain.setValueAtTime(0.0001, actx.currentTime);
     src.connect(filter).connect(gain).connect(outNode());
     const voice = { src, filter, gain, stopping: false };

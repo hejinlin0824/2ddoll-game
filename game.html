@@ -985,6 +985,7 @@
       </header>
 
       <section class="menu-left" aria-label="主菜单">
+        <div class="menu-operator-art" aria-hidden="true"></div>
         <div class="hero-eyebrow"><span class="hero-rule"></span><span>OPERATION NIGHTFALL</span><span class="hero-build">// BUILD 0.5</span></div>
         <h1 class="menu-brand">HERO<span class="brand-cut">.</span></h1>
         <div class="menu-nightsub">夜 幕 突 击</div>
@@ -1012,6 +1013,7 @@
       </section>
 
       <section class="menu-right" aria-label="当前战区情报">
+        <img id="menuThreatArt" class="menu-threat-art" alt="" aria-hidden="true" draggable="false" hidden>
         <div class="menu-hero-number" id="menuSceneNumber" aria-hidden="true">01</div>
         <div class="brief-topline"><span class="brief-live-dot"></span><span>LIVE THEATER INTELLIGENCE</span><span class="brief-code" id="menuSceneCode">OP-01 / WILDERNESS</span></div>
         <div class="mission-kicker">当前任务 / ACTIVE OPERATION</div>
@@ -1182,7 +1184,40 @@
       #corpse .cp-take { background: linear-gradient(180deg, #ffc069, var(--amber-2)); color: var(--amber-dark); border: none; border-radius: 2px;
         padding: 7px 14px; font-weight: 700; font-size: 12px; cursor: pointer; letter-spacing: 2px; }
       #corpse .cp-hint { font-size: 10.5px; opacity: 0.5; line-height: 1.6; margin-top: 4px; letter-spacing: 0.5px; }
-    </style>
+    
+
+      /* Curated art-sheet crops: menu key art + scenario cards + briefing silhouettes.
+         These are deliberately UI-only so they never replace active ragdoll joints or world-scale scrolling backgrounds. */
+      .menu-left { isolation: isolate; }
+      .menu-operator-art {
+        position: absolute; top: -4%; right: -13%; bottom: -2%; width: 69%; z-index: 0;
+        pointer-events: none; opacity: .29;
+        background-image: linear-gradient(90deg, rgba(5,9,16,.98) 0%, rgba(5,9,16,.54) 24%, rgba(5,9,16,.08) 65%, rgba(5,9,16,.38) 100%), url('./art/menu/operator-keyart.webp');
+        background-repeat: no-repeat; background-size: cover; background-position: center right;
+        filter: saturate(.78) contrast(1.07);
+        -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.16) 12%, rgba(0,0,0,.85) 38%, #000 76%, transparent 100%);
+        mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.16) 12%, rgba(0,0,0,.85) 38%, #000 76%, transparent 100%);
+      }
+      .menu-left > :not(.menu-operator-art) { position: relative; z-index: 1; }
+      #menuThreatArt.menu-threat-art {
+        position: absolute !important; right: 0; bottom: -2%; z-index: 0 !important;
+        width: clamp(88px, 12vw, 154px); height: 84%; max-height: 285px;
+        object-fit: contain; object-position: bottom right; pointer-events: none;
+        opacity: .20; filter: grayscale(.22) contrast(1.08) saturate(.78);
+        mix-blend-mode: screen;
+        -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 15%, #000 77%, transparent 100%);
+        mask-image: linear-gradient(180deg, transparent 0%, #000 15%, #000 77%, transparent 100%);
+      }
+      #menuThreatArt[hidden] { display: none !important; }
+      .menu-right > :not(.menu-threat-art) { position: relative; z-index: 1; }
+      .ic-icon.ic-with-art { width: 56px; flex-basis: 56px; overflow: hidden; background: linear-gradient(145deg,rgba(37,50,67,.62),rgba(7,12,21,.94)); }
+      .ic-gun-art { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; box-sizing: border-box;
+        padding: 3px; object-fit: contain; mix-blend-mode: screen; filter: contrast(1.07) brightness(1.04); }
+      @media (max-width: 720px) {
+        .menu-operator-art { right: -10%; width: 88%; top: 0; bottom: 0; opacity: .20; }
+        #menuThreatArt.menu-threat-art { width: 96px; height: 62%; right: -5px; opacity: .12; }
+      }
+</style>
     <div id="help">
       <div class="help-card tac">
         <div class="help-head"><span>操 作 说 明</span><button id="helpClose">✕</button></div>

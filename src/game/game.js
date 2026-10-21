@@ -3,7 +3,7 @@ import { World, Vec2 } from 'planck';
 import { W, H, PPM, STEP } from './core/config.js';
 import { LEVEL, buildLevel, setActiveLayout, setSceneTheme, groundYAt, drawSky, drawParallax, drawBuildingInterior, drawTerrain, drawForeground, destroyRect } from './world/level.js';
 import { Player } from './entities/player.js';
-import { loadSavedGun, loadEquip, QUALITY } from './domain/gunPresets.js';
+import { loadSavedGun, loadEquip, QUALITY, loadReticleSettings } from './domain/gunPresets.js';
 import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID, loadGunAffixes } from './domain/affixes.js';
 import { WeaponWheel } from './ui/wheel.js';
 import { Dummy } from './entities/enemies.js';
@@ -97,6 +97,14 @@ const GARRISONS = {
     { x: 23, y: 1.22, behavior: 'guard' },
     { x: 45, y: 1.17, behavior: 'guard' },
     { x: 55.5, y: 2.97, behavior: 'patrol', min: -1.2, max: 1.2 },
+  ],
+  port: [
+    { x: 14.5, y: 1.6, behavior: 'patrol', min: -1.3, max: 1.3, role: 'rusher' },
+    { x: 25.5, y: 4.7, behavior: 'guard', role: 'support' },
+    { x: 34.5, y: 1.7, behavior: 'guard', role: 'rifleman' },
+    { x: 43.0, y: 3.4, behavior: 'patrol', min: -1.1, max: 1.1, role: 'rifleman' },
+    { x: 53.0, y: 1.6, behavior: 'guard', role: 'veteran' },
+    { x: 68.0, y: 4.8, behavior: 'guard', role: 'support' },
   ],
   desert: [
     { x: 9.5, y: 1.87, behavior: 'patrol', min: -2, max: 2 },
@@ -494,7 +502,7 @@ attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggl
   corpseIsOpen, corpseClose: closeCorpse });
 bindCamera(cam);
 menuInit({ beep, noiseBurst, initAudio, onSceneChange: switchScene, onSlam: () => { addTrauma(0.45); feel.menuFlashT = 0.22; } }); // 主菜单:背景=实时场景,真空门三段式
-bpSetGunInfo(() => ({ main: player.gunDef?.name || '主武器', side: '手枪', weapon: player.weapon }));
+bpSetGunInfo(() => ({ main: player.gunDef?.customName || player.gunDef?.name || '主武器', side: '手枪', weapon: player.weapon }));
 
 // 枪械设计器保存后,游戏页实时换枪/换装(storage 事件跨标签页触发)
 window.addEventListener('storage', (e) => {
@@ -534,7 +542,9 @@ function updateRaidHUD(now) {
   const set = (id, value) => { const el = document.getElementById(id); if (el && el.textContent !== value) el.textContent = value; };
   set('raidMissionStatus', status);
   set('raidFloorText', floorLabel(raidState.floorId));
-  set('raidNoiseText', `声源 ${profile.radius.toFixed(1)}m · ${player.isSuppressorOn() ? '消音器 ON' : '标准枪声'}`);
+  const shotStats = player.stats();
+  const soundMul = player.isSuppressorOn() ? (shotStats.suppressionRadiusMul ?? 1) : (shotStats.soundRadiusMul ?? 1);
+  set('raidNoiseText', `声源 ${(profile.radius * soundMul).toFixed(1)}m · ${player.isSuppressorOn() ? '消音器 ON' : '标准枪声'}`);
   set('raidIncidentText', active ? `支援事件 ${raidState.incidents.length} · ${active.response.toUpperCase()}` : `已清理楼层 ${Object.values(raidState.clearedFloors).filter(Boolean).length}/4`);
   const fill = document.getElementById('raidAlertFill');
   if (fill) fill.style.width = `${Math.round(clamp(raidState.awareness, 0, 1) * 100)}%`;
@@ -631,7 +641,9 @@ function step(dt) {
       }
       if (raidState.enabled) {
         const sound = raidShotProfile(ev.weaponName, !!ev.suppressed, ev.weapon);
-        emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: sound.radius, intensity: sound.intensity, kind: 'gunshot' });
+        const radiusMul = ev.suppressed ? (st.suppressionRadiusMul ?? 1) : (st.soundRadiusMul ?? 1);
+        const intensityMul = ev.suppressed ? (st.soundIntensityMul ?? 1) : 1;
+        emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: sound.radius * radiusMul, intensity: sound.intensity * intensityMul, kind: 'gunshot' });
       } else alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 26); // 传统模式沿用范围传唤
       { const lp = player.torso.getPosition();
         gunSynth(st.sfx, ev.suppressed ? 0.48 : 1, { weaponName: ev.weaponName, x: ev.x, y: ev.y, listenerX: lp.x, listenerY: lp.y, source: 'player', maxDistance: ev.suppressed ? 12 : 28, distantTail: false });
@@ -652,7 +664,9 @@ function step(dt) {
       }
       if (raidState.enabled) {
         const sound = raidShotProfile(ev.weaponName, !!ev.suppressed, ev.weapon);
-        emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: sound.radius, intensity: sound.intensity, kind: 'gunshot' });
+        const radiusMul = ev.suppressed ? (st.suppressionRadiusMul ?? 1) : (st.soundRadiusMul ?? 1);
+        const intensityMul = ev.suppressed ? (st.soundIntensityMul ?? 1) : 1;
+        emitRaidNoise(raidState, { x: ev.x, y: ev.y, floorId: floorForY(ev.y), radius: sound.radius * radiusMul, intensity: sound.intensity * intensityMul, kind: 'gunshot' });
       } else alertEnemiesNear(enemies, { x: ev.x, y: ev.y }, 40); // 狙击枪声更响,传统模式传唤更远
       { const lp = player.torso.getPosition();
         gunSynth(st.sfx, ev.suppressed ? 0.4 : 1, { weaponName: ev.weaponName, x: ev.x, y: ev.y, listenerX: lp.x, listenerY: lp.y, source: 'player', maxDistance: ev.suppressed ? 12 : 28, distantTail: false });
@@ -1279,15 +1293,29 @@ function render(time) {
   const aimP = aimWorld(W, H, PPM);
   if (aimP && cam.scoped < 0.5) {
     const [mx, my] = w2s(aimP.x, aimP.y, W, H, PPM);
-    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(mx, my, 8, 0, Math.PI * 2);
-    ctx.moveTo(mx - 14, my); ctx.lineTo(mx - 4, my);
-    ctx.moveTo(mx + 4, my); ctx.lineTo(mx + 14, my);
-    ctx.moveTo(mx, my - 14); ctx.lineTo(mx, my - 4);
-    ctx.moveTo(mx, my + 4); ctx.lineTo(mx, my + 14);
-    ctx.stroke();
+    const ret = loadReticleSettings();
+    const size = ret.size, gap = ret.gap;
+    ctx.save(); ctx.strokeStyle = ret.color; ctx.fillStyle = ret.color; ctx.lineWidth = 1.5;
+    if (ret.style === 'dot') {
+      ctx.beginPath(); ctx.arc(mx, my, 2, 0, Math.PI * 2); ctx.fill();
+    } else if (ret.style === 'circle') {
+      ctx.beginPath(); ctx.arc(mx, my, size * 0.72, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(mx, my, 1.5, 0, Math.PI * 2); ctx.fill();
+    } else if (ret.style === 'bracket') {
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        ctx.beginPath(); ctx.moveTo(mx + sx * gap, my + sy * gap); ctx.lineTo(mx + sx * gap, my + sy * (gap + size));
+        ctx.moveTo(mx + sx * gap, my + sy * gap); ctx.lineTo(mx + sx * (gap + size), my + sy * gap); ctx.stroke();
+      }
+    } else {
+      if (ret.style === 'classic') { ctx.beginPath(); ctx.arc(mx, my, size, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.beginPath();
+      ctx.moveTo(mx - gap - size, my); ctx.lineTo(mx - gap, my);
+      ctx.moveTo(mx + gap, my); ctx.lineTo(mx + gap + size, my);
+      ctx.moveTo(mx, my - gap - size); ctx.lineTo(mx, my - gap);
+      ctx.moveTo(mx, my + gap); ctx.lineTo(mx, my + gap + size);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   // 狙击放大镜:准星处的圆形倍率视野。

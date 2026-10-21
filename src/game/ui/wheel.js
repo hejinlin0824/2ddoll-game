@@ -5,7 +5,7 @@
 //   轮盘中心留死区;光标隐藏(css cursor:none),方向即选择。
 // - T 键切换 武器/装备 两层;当前在用/穿戴的项带「当前」徽标,
 //   悬停它 = 卸下,悬停其他 = 选中;松开 Tab 应用高亮项,左键立即应用并收起,全部实时生效。
-import { GUN_PRESETS, EQUIP_PRESETS, saveEquip } from '../domain/gunPresets.js';
+import { GUN_PRESETS, EQUIP_PRESETS, saveEquip, loadGunBuild, saveGunBuild, saveActiveGunBuild } from '../domain/gunPresets.js';
 
 const TAU = Math.PI * 2;
 // 未穿戴的显式存档(空 parts):区别于"从没存过"(后者 loadEquip 会回退出厂默认)
@@ -70,14 +70,22 @@ export class WeaponWheel {
   items() {
     const p = this.p;
     if (this.mode === 'weapons') {
-      const list = Object.values(GUN_PRESETS).map((g) => ({
-        name: g.name,
-        sub: g.stats.mode === 'hitscan' ? (`🎯 狙击镜 · ${g.stats.damage} 伤 · 一击必杀`) : (`${g.stats.damage} 伤 · ${g.stats.rpm} 发/分`), // 词条一览
-        src: g, parts: g.parts, kind: 'gun',
-        current: p.weapon === 'rifle' && p.gunDef.name === g.name,
-      }));
+      const activeBase = p.gunDef?.basePreset || p.gunDef?.name;
+      const list = Object.values(GUN_PRESETS).filter((g) => !g.isSidearm).map((g) => {
+        const isLoadedProfile = activeBase === g.name && p.gunDef;
+        const src = isLoadedProfile ? p.gunDef : g;
+        const name = isLoadedProfile && p.gunDef.customName ? p.gunDef.customName : g.name;
+        const stat = isLoadedProfile ? p.gunDef.stats : g.stats;
+        const attachmentCount = isLoadedProfile ? (p.gunDef.attachments?.length || 0) : 0;
+        const sub = stat.mode === 'hitscan' ? (`🎯 狙击镜 · ${stat.damage} 伤 · 一击必杀`) : (`${stat.damage} 伤 · ${stat.rpm} 发/分`);
+        return {
+          name, sub: attachmentCount ? `${sub} · ${attachmentCount} 模块` : sub,
+          src, basePreset: g.name, parts: src.parts || g.parts, kind: 'gun',
+          current: p.weapon === 'rifle' && activeBase === g.name,
+        };
+      });
       list.push({
-        name: '手枪', sub: '常备 · 副武器', src: null, parts: PISTOL_PARTS, kind: 'pistol',
+        name: p.sidearmDef?.customName || '手枪', sub: `常备 · 副武器${p.sidearmDef?.attachments?.length ? ` · ${p.sidearmDef.attachments.length} 模块` : ''}`, src: p.sidearmDef || null, parts: p.sidearmDef?.parts || PISTOL_PARTS, kind: 'pistol',
         current: p.weapon === 'pistol' && !p.shield,
       });
       list.push({
@@ -149,11 +157,15 @@ export class WeaponWheel {
     const deep = (o) => JSON.parse(JSON.stringify(o));
     try {
       if (item.kind === 'gun') {
-        if (item.current) { p.setWeapon('pistol'); this.sfx.off?.(); return; } // 卸下主武器 = 收起,改用常备手枪
-        localStorage.setItem('contra-gun-primary', JSON.stringify(deep(item.src)));
-        // 主武器槽位词缀跟着人走:带到新枪上重新聚合(否则旧枪 mods 静默跨枪继承)
+        if (item.current) { saveGunBuild(p.gunDef); p.setWeapon('pistol'); this.sfx.off?.(); return; } // 卸下主武器 = 收起,改用常备手枪
+        // 先保存当前枪型，再按目标枪型读取独立蓝图；切枪不再把上一把的配件/涂装覆盖掉。
+        if (p.gunDef) saveGunBuild(p.gunDef);
+        const targetBase = item.basePreset || item.src?.basePreset || item.src?.name;
+        const nextGun = loadGunBuild(targetBase);
+        saveActiveGunBuild(nextGun);
+        // 主武器槽位词缀跟着人走:带到新枪上重新聚合(避免旧枪 mods 静默跨枪继承)。
         const affixes = p.gunDef?.affixes || loadGunAffixes() || [];
-        p.gunDef = deep(item.src);
+        p.gunDef = nextGun;
         p.gunDef.affixes = affixes;
         p.gunMods = computeGunMods(affixes);
         p.setWeapon('rifle');
@@ -325,3 +337,4 @@ export class WeaponWheel {
     ctx.restore();
   }
 }
+

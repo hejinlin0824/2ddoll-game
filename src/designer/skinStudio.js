@@ -1,18 +1,202 @@
-// 皮肤工坊 v2:上传手绘(白底)→ 自动抠白/裁边 → 编辑器(标记上下端转正 + 拖动微调 + 缩放)
-// → 组装预览 → 存档(contra-skin v2:src + ox/oy/scale)。
-// 处理管线/尺寸事实源在 domain/skin.js(SKIN_BOX 与游戏共用,不错位的根基);本层只管交互。
+// HERO Character Lab — 轻量外观工坊。程序化外观与旧版自绘部件分离，保留 contra-skin 存档。
 import {
   SKIN_PARTS, SKIN_LABEL, SKIN_BOX, SKIN_END_ANCHORED, skinFitScale, loadSkin, saveSkin, clearSkin, processSkinImage, orientSkinImage,
 } from '../game/domain/skin.js';
+import { loadAppearance, saveAppearance, clearAppearance, DEFAULT_APPEARANCE } from '../game/domain/appearance.js';
 
 const $ = (id) => document.getElementById(id);
 const toastEl = $('toast');
 function toast(msg) {
+  if (!toastEl) return;
   toastEl.textContent = msg;
-  toastEl.style.opacity = 1;
+  toastEl.classList.add('show');
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => (toastEl.style.opacity = 0), 2200);
+  toast._t = setTimeout(() => toastEl.classList.remove('show'), 2200);
 }
+
+// Appearance settings retain the same storage schema used by Player rendering.
+const APP_DRAFT_KEY = 'contra-appearance-draft-v2';
+const APP_PROFILE_KEY = 'contra-appearance-profiles-v1';
+const appPanel = $('appearancePanel');
+const appPreview = $('appearancePreview');
+const appCtx = appPreview?.getContext('2d');
+const appInputs = [...(appPanel?.querySelectorAll('[data-app]') || [])];
+const COLORS = {
+  hairColor: ['#202733','#35271f','#604330','#ad8660','#d5c6a7','#a45a62','#637eaa','#ece6dc'],
+  skinTone: ['#f0cfb2','#d9a781','#c89572','#a66f50','#764a35','#4d332b'],
+  eyeColor: ['#67c9ff','#438e78','#8ea9ff','#7b573d','#b65b48','#252b32'],
+  shirtColor: ['#35495b','#263b2f','#60513a','#2e3138','#554257','#8d3f38','#c2c8c7','#d0b887'],
+  pantsColor: ['#34465a','#2c3a2b','#6b5c41','#232a32','#51424c','#b2a68c'],
+  bootColor: ['#1b222b','#3e352c','#5a4a34','#313c41','#a89b84'],
+  bandanaColor: ['#d96b3b','#34465a','#263b2f','#9e3740','#d0b887','#252b32'],
+  accentColor: ['#d99447','#5db8d3','#7dbf78','#d95c54','#cf69b5','#e4dfd0','#252b32'],
+};
+const PROFILES = {
+  recon: { hairStyle:'undercut', hairColor:'#202733', faceShape:'angular', skinTone:'#c89572', eyeColor:'#67c9ff', shirtColor:'#263b2f', pantsColor:'#2c3a2b', bootColor:'#1b222b', bandanaColor:'#34465a', headwear:'headset', accentColor:'#d99447' },
+  urban: { hairStyle:'short', hairColor:'#35271f', faceShape:'oval', skinTone:'#d9a781', eyeColor:'#438e78', shirtColor:'#2e3138', pantsColor:'#34465a', bootColor:'#1b222b', bandanaColor:'#252b32', headwear:'headset', accentColor:'#5db8d3' },
+  desert: { hairStyle:'buzz', hairColor:'#604330', faceShape:'angular', skinTone:'#a66f50', eyeColor:'#7b573d', shirtColor:'#60513a', pantsColor:'#6b5c41', bootColor:'#5a4a34', bandanaColor:'#d96b3b', headwear:'bandana', accentColor:'#d99447' },
+  jungle: { hairStyle:'ponytail', hairColor:'#202733', faceShape:'oval', skinTone:'#c89572', eyeColor:'#438e78', shirtColor:'#263b2f', pantsColor:'#2c3a2b', bootColor:'#313c41', bandanaColor:'#263b2f', headwear:'bandana', accentColor:'#7dbf78' },
+  night: { hairStyle:'short', hairColor:'#202733', faceShape:'round', skinTone:'#d9a781', eyeColor:'#67c9ff', shirtColor:'#35495b', pantsColor:'#232a32', bootColor:'#1b222b', bandanaColor:'#34465a', headwear:'none', accentColor:'#d99447' },
+};
+const deepCopy = (o) => JSON.parse(JSON.stringify(o));
+function readAppForm() {
+  const out = {};
+  for (const el of appInputs) out[el.dataset.app] = el.value;
+  return { ...DEFAULT_APPEARANCE, ...out };
+}
+function setAppForm(data) {
+  const next = { ...DEFAULT_APPEARANCE, ...(data || {}) };
+  for (const el of appInputs) if (next[el.dataset.app] != null) el.value = next[el.dataset.app];
+  updateAppearanceUi();
+}
+function syncAppearanceChoices() {
+  const a = readAppForm();
+  document.querySelectorAll('[data-app-choice]').forEach((el) => {
+    const selected = a[el.dataset.appChoice] === el.dataset.value;
+    el.classList.toggle('selected', selected);
+    el.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-app-color][data-color]').forEach((el) => {
+    const active = (a[el.dataset.appColor] || '').toLowerCase() === el.dataset.color.toLowerCase();
+    el.classList.toggle('selected', active);
+    el.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-slot-label]').forEach((el) => {
+    const p = readAppProfiles()[el.dataset.slotLabel];
+    el.textContent = p ? (p.name || '已保存') : '空槽';
+  });
+  const currentPreset = Object.entries(PROFILES).find(([, p]) => Object.keys(p).every((k) => p[k] === a[k]))?.[0];
+  document.querySelectorAll('[data-app-profile]').forEach((el) => el.classList.toggle('selected', el.dataset.appProfile === currentPreset));
+}
+function saveAppearanceDraft() {
+  try { localStorage.setItem(APP_DRAFT_KEY, JSON.stringify(readAppForm())); } catch { /* private mode */ }
+}
+function updateAppearanceUi() {
+  syncAppearanceChoices();
+  drawAppearancePreview();
+  saveAppearanceDraft();
+}
+function rr(c, x, y, w, h, r, color) {
+  c.fillStyle = color; c.beginPath(); c.roundRect(x, y, w, h, r); c.fill();
+}
+function drawAppearancePreview() {
+  if (!appCtx || !appPreview) return;
+  const a = readAppForm(), c = appCtx, W = appPreview.width, H = appPreview.height;
+  c.clearRect(0, 0, W, H);
+  const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#17293c'); bg.addColorStop(.58, '#0b1724'); bg.addColorStop(1, '#070d14'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
+  c.strokeStyle = 'rgba(127,178,255,.11)'; c.lineWidth = 1;
+  for (let x = 18; x < W; x += 24) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); }
+  for (let y = 18; y < H; y += 24) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+  c.fillStyle = 'rgba(255,177,74,.06)'; c.fillRect(16, 16, W - 32, H - 32);
+  const cx = W * .50, ground = H * .82;
+  c.strokeStyle = 'rgba(255,177,74,.36)'; c.beginPath(); c.moveTo(28, ground); c.lineTo(W - 28, ground); c.stroke();
+  // Shadow and boots
+  c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(cx + 4, ground + 5, 72, 12, 0, 0, Math.PI * 2); c.fill();
+  rr(c, cx - 40, ground - 22, 35, 15, 4, a.bootColor); rr(c, cx + 14, ground - 22, 36, 15, 4, a.bootColor);
+  // Legs with knees and cargo pockets
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = a.pantsColor; c.lineWidth = 25; c.beginPath(); c.moveTo(cx - 19, ground - 34); c.lineTo(cx - 26, ground - 82); c.lineTo(cx - 16, ground - 130); c.stroke();
+  c.beginPath(); c.moveTo(cx + 28, ground - 34); c.lineTo(cx + 31, ground - 82); c.lineTo(cx + 18, ground - 130); c.stroke();
+  rr(c, cx - 37, ground - 87, 21, 22, 3, a.pantsColor); rr(c, cx + 20, ground - 88, 21, 22, 3, a.pantsColor);
+  c.strokeStyle = 'rgba(235,242,248,.22)'; c.lineWidth = 2; c.beginPath(); c.moveTo(cx - 23, ground - 91); c.lineTo(cx - 21, ground - 75); c.moveTo(cx + 28, ground - 92); c.lineTo(cx + 29, ground - 76); c.stroke();
+  // Torso, oriented to the right like the in-game side view
+  rr(c, cx - 34, ground - 216, 70, 93, 13, a.shirtColor);
+  rr(c, cx - 25, ground - 205, 56, 62, 8, '#263343');
+  rr(c, cx - 21, ground - 199, 49, 20, 4, a.accentColor);
+  rr(c, cx - 20, ground - 173, 22, 20, 3, a.shirtColor); rr(c, cx + 5, ground - 173, 22, 20, 3, a.shirtColor);
+  c.strokeStyle = 'rgba(255,255,255,.23)'; c.lineWidth = 2; c.beginPath(); c.moveTo(cx - 29, ground - 192); c.lineTo(cx + 28, ground - 192); c.stroke();
+  // Arms and gloves
+  c.strokeStyle = a.shirtColor; c.lineWidth = 17; c.beginPath(); c.moveTo(cx - 24, ground - 205); c.lineTo(cx - 44, ground - 163); c.lineTo(cx + 5, ground - 147); c.stroke();
+  c.strokeStyle = a.skinTone; c.lineWidth = 12; c.beginPath(); c.moveTo(cx + 1, ground - 150); c.lineTo(cx + 30, ground - 154); c.stroke();
+  c.strokeStyle = a.shirtColor; c.lineWidth = 17; c.beginPath(); c.moveTo(cx + 28, ground - 205); c.lineTo(cx + 47, ground - 170); c.lineTo(cx + 40, ground - 149); c.stroke();
+  rr(c, cx + 32, ground - 157, 17, 12, 4, '#202a34');
+  // Neck and face
+  rr(c, cx - 10, ground - 251, 26, 27, 6, a.skinTone);
+  const hx = cx + 4, hy = ground - 270;
+  c.fillStyle = a.skinTone; c.beginPath();
+  if (a.faceShape === 'angular') { c.moveTo(hx - 24, hy - 17); c.lineTo(hx - 14, hy - 33); c.lineTo(hx + 15, hy - 31); c.lineTo(hx + 26, hy - 13); c.lineTo(hx + 20, hy + 9); c.lineTo(hx + 4, hy + 23); c.lineTo(hx - 13, hy + 12); c.closePath(); c.fill(); }
+  else c.ellipse(hx, hy, a.faceShape === 'round' ? 25 : 21, 29, 0, 0, Math.PI * 2), c.fill();
+  // Back hair and style details
+  c.fillStyle = a.hairColor;
+  if (a.hairStyle === 'long') { c.beginPath(); c.moveTo(hx - 18, hy - 23); c.quadraticCurveTo(hx - 37, hy + 4, hx - 26, hy + 37); c.lineTo(hx - 14, hy + 36); c.lineTo(hx - 8, hy - 3); c.closePath(); c.fill(); }
+  if (a.hairStyle === 'ponytail') { c.beginPath(); c.ellipse(hx - 28, hy + 8, 8, 25, -.18, 0, Math.PI * 2); c.fill(); }
+  if (a.hairStyle === 'bun') { c.beginPath(); c.arc(hx - 8, hy - 25, 8, 0, Math.PI * 2); c.fill(); }
+  if (a.hairStyle === 'spiky') { c.beginPath(); c.moveTo(hx - 22, hy - 9); c.lineTo(hx - 17, hy - 36); c.lineTo(hx - 4, hy - 25); c.lineTo(hx + 4, hy - 39); c.lineTo(hx + 17, hy - 25); c.lineTo(hx + 23, hy - 11); c.closePath(); c.fill(); }
+  else { c.beginPath(); c.ellipse(hx, hy - 16, 24, a.hairStyle === 'buzz' ? 8 : 15, 0, Math.PI, Math.PI * 2); c.fill(); }
+  if (a.hairStyle === 'undercut') rr(c, hx - 17, hy - 4, 5, 24, 2, '#3c4650');
+  // Eye and brow, side profile
+  c.strokeStyle = '#1a2028'; c.lineWidth = 2; c.beginPath(); c.moveTo(hx + 8, hy - 3); c.lineTo(hx + 17, hy - 4); c.stroke();
+  c.fillStyle = '#f5f0e8'; c.beginPath(); c.ellipse(hx + 12, hy + 3, 5.6, 3.4, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = a.eyeColor; c.beginPath(); c.arc(hx + 14, hy + 3, 2.6, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#0b1018'; c.beginPath(); c.arc(hx + 14.8, hy + 3, 1.2, 0, Math.PI * 2); c.fill();
+  // Headwear
+  if (a.headwear === 'bandana') { rr(c, hx - 22, hy - 18, 44, 8, 3, a.bandanaColor); c.strokeStyle = a.bandanaColor; c.lineWidth = 3; c.beginPath(); c.moveTo(hx - 16, hy - 12); c.quadraticCurveTo(hx - 36, hy - 7, hx - 29, hy + 2); c.stroke(); }
+  else if (a.headwear === 'headset') { c.strokeStyle = '#242e39'; c.lineWidth = 5; c.beginPath(); c.arc(hx - 2, hy - 3, 24, Math.PI * 1.03, Math.PI * 1.9); c.stroke(); rr(c, hx - 23, hy - 1, 9, 18, 4, '#2b3949'); rr(c, hx - 24, hy + 9, 12, 5, 2, a.accentColor); }
+  // Labels
+  c.textAlign = 'left'; c.fillStyle = '#ffb14a'; c.font = '700 12px sans-serif'; c.fillText('OPERATOR / LIVE PREVIEW', 20, 28);
+  c.fillStyle = 'rgba(218,232,246,.72)'; c.font = '10px sans-serif'; c.fillText('程序化外观 · 物理骨架不变', 20, 46);
+  c.textAlign = 'center'; c.fillStyle = '#e8eef5'; c.font = '700 12px sans-serif'; c.fillText(`${hairLabel(a.hairStyle)} / ${faceLabel(a.faceShape)}`, W / 2, H - 34);
+  c.fillStyle = 'rgba(218,232,246,.55)'; c.font = '10px sans-serif'; c.fillText('颜色与造型会同步至游戏内角色', W / 2, H - 18);
+}
+function hairLabel(v) { return ({ short:'短发', buzz:'寸头', ponytail:'马尾', bun:'丸子头', long:'长发', spiky:'碎刺发', undercut:'侧剃' })[v] || '短发'; }
+function faceLabel(v) { return ({ oval:'椭圆脸', round:'圆脸', angular:'棱角脸' })[v] || '椭圆脸'; }
+function readAppProfiles() {
+  try { const o = JSON.parse(localStorage.getItem(APP_PROFILE_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; }
+  catch { return {}; }
+}
+function writeAppProfiles(o) { try { localStorage.setItem(APP_PROFILE_KEY, JSON.stringify(o)); return true; } catch { return false; } }
+function applyProfile(name) { if (!PROFILES[name]) return; setAppForm(PROFILES[name]); toast(`已预览「${({recon:'夜幕侦察',urban:'城市行动',desert:'沙漠突击',jungle:'丛林潜入',night:'标准夜战'})[name]}」`); }
+
+// Simple option buttons mirror the real fields; every selection immediately updates the character preview.
+document.querySelectorAll('[data-app-choice]').forEach((el) => el.addEventListener('click', () => {
+  const target = appInputs.find((input) => input.dataset.app === el.dataset.appChoice);
+  if (!target) return; target.value = el.dataset.value; updateAppearanceUi();
+}));
+document.querySelectorAll('[data-app-profile]').forEach((el) => el.addEventListener('click', () => applyProfile(el.dataset.appProfile)));
+document.querySelectorAll('[data-app-color][data-color]').forEach((el) => el.addEventListener('click', () => {
+  const target = appInputs.find((input) => input.dataset.app === el.dataset.appColor);
+  if (!target) return; target.value = el.dataset.color; updateAppearanceUi();
+}));
+for (const el of appInputs) el.addEventListener('input', updateAppearanceUi);
+document.querySelectorAll('[data-look-tab]').forEach((el) => el.addEventListener('click', () => {
+  const tab = el.dataset.lookTab;
+  document.querySelectorAll('[data-look-tab]').forEach((b) => b.classList.toggle('active', b === el));
+  document.querySelectorAll('[data-look-panel]').forEach((p) => p.hidden = p.dataset.lookPanel !== tab);
+}));
+$('openAppearance')?.addEventListener('click', () => $('appearancePanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+$('appearanceReset')?.addEventListener('click', () => setAppForm(DEFAULT_APPEARANCE));
+$('appearanceSave')?.addEventListener('click', () => {
+  const ok = saveAppearance(readAppForm());
+  if (!ok) { toast('保存失败：浏览器存储不可用'); return; }
+  try { localStorage.removeItem(APP_DRAFT_KEY); } catch { /* ignore */ }
+  toast('外观已应用到游戏角色');
+});
+function randomizeAppearance() {
+  const a = readAppForm();
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  a.hairStyle = pick(['short','buzz','ponytail','bun','long','spiky','undercut']);
+  a.faceShape = pick(['oval','round','angular']); a.headwear = pick(['none','bandana','headset']);
+  for (const k of Object.keys(COLORS)) a[k] = pick(COLORS[k]);
+  setAppForm(a); toast('随机造型已生成，满意后点击「保存并应用」');
+}
+$('appearanceRandom')?.addEventListener('click', randomizeAppearance);
+$('appearanceRandomTop')?.addEventListener('click', randomizeAppearance);
+document.querySelectorAll('[data-slot-save]').forEach((el) => el.addEventListener('click', () => {
+  const slot = el.dataset.slotSave, profiles = readAppProfiles();
+  profiles[slot] = { name: `造型 ${slot}`, appearance: readAppForm() };
+  if (!writeAppProfiles(profiles)) { toast('造型槽保存失败'); return; }
+  syncAppearanceChoices(); toast(`已保存造型 ${slot}`);
+}));
+document.querySelectorAll('[data-slot-load]').forEach((el) => el.addEventListener('click', () => {
+  const slot = el.dataset.slotLoad, p = readAppProfiles()[slot];
+  if (!p?.appearance) { toast(`造型 ${slot} 还是空的`); return; }
+  setAppForm(p.appearance); toast(`已载入造型 ${slot}，点击保存并应用即可进入游戏`);
+}));
+(function initAppearance() {
+  let initial = loadAppearance();
+  try { const draft = JSON.parse(localStorage.getItem(APP_DRAFT_KEY) || 'null'); if (draft && typeof draft === 'object') initial = { ...initial, ...draft }; } catch { /* ignore */ }
+  setAppForm(initial);
+})();
 
 const HINTS = {
   head: '头:画正面或朝右侧面。标记:头顶→下巴',
@@ -446,3 +630,4 @@ window.__skinProcess = (url, opts = {}) => new Promise((resolve) => {
   im.src = url;
 });
 window.__skinSave = () => { document.getElementById('bSave').click(); return localStorage.getItem('contra-skin')?.length || 0; };
+

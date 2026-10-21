@@ -67,6 +67,15 @@ function affixLines(it) {
   }).join('');
 }
 
+// 只给明确匹配的武器材料显示裁切缩略图；AK/M4/霰弹及自定义枪仍用程序图标，避免错枪误导。
+function gunAffixThumbnail(name) {
+  const n = String(name || '').trim();
+  if (/\bAWP\b|狙击枪|狙击/.test(n)) return './art/weapons/sniper-suppressed.png';
+  if (/\bMP5\b|\bP90\b|冲锋枪|\bSMG\b/i.test(n)) return './art/weapons/smg-suppressed.png';
+  if (/手枪|Glock|Pistol/i.test(n)) return './art/weapons/pistol-suppressed.png';
+  return null;
+}
+
 // 物品卡内容(equip 页与工坊列表共用);枪词条材料无耐久概念。
 // 主信息单独包裹，操作栏由 .ic-card 放在下一行，避免按钮挤占词条文本宽度。
 function cardHtml(it) {
@@ -76,8 +85,9 @@ function cardHtml(it) {
   const name = isGun
     ? `${it.gunName || '武器'}词条`
     : itemTitle(it.affixes || [], SLABEL[it.slot] || it.slot);
+  const gunThumbnail = isGun ? gunAffixThumbnail(it.gunName) : null;
   const icon = isGun
-    ? '<div class="ic-gun-shape"></div>'
+    ? (gunThumbnail ? `<img class="ic-gun-art" src="${gunThumbnail}" alt="" draggable="false">` : '<div class="ic-gun-shape"></div>')
     : it.slot === 'head'
       ? '<div class="ic-helm-shape"></div>'
       : '<div class="ic-vest-shape"></div>';
@@ -87,7 +97,7 @@ function cardHtml(it) {
     : `${QLABEL[it.quality] || it.quality} · 耐久 ${Math.ceil(it.dur)}/${Math.ceil(it.maxDur)}`;
   return `
     <div class="ic-main">
-      <div class="ic-icon ${isGun ? 'ic-gun' : it.slot === 'head' ? 'ic-helm' : 'ic-vest'}" style="--qc:${qc.color};border-color:${qc.color}66">${icon}</div>
+      <div class="ic-icon ${isGun ? 'ic-gun' : it.slot === 'head' ? 'ic-helm' : 'ic-vest'}${gunThumbnail ? ' ic-with-art' : ''}" style="--qc:${qc.color};border-color:${qc.color}66">${icon}</div>
       <div class="ic-info">
         <div class="ic-type">${type}</div>
         <div class="ic-name" title="${escapeHTML(name)}" style="color:${qc.color}">${escapeHTML(name)}</div>
@@ -629,5 +639,6 @@ function playBoxAnim(item, box) {
     root.remove();
   };
 }
+
 
 
