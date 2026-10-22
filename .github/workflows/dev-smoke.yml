@@ -1,0 +1,50 @@
+name: Dev smoke checks
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install temporary browser test runtime
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Run Vite and validate game.html console
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx vite --host 127.0.0.1 --port 5199 > vite-smoke.log 2>&1 &
+          VITE_PID=$!
+          cleanup() {
+            kill "$VITE_PID" 2>/dev/null || true
+            if [ -f vite-smoke.log ]; then cat vite-smoke.log; fi
+          }
+          trap cleanup EXIT
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:5199/game.html >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$VITE_PID" 2>/dev/null; then
+              echo "npx vite exited before serving game.html"
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:5199/game.html >/dev/null
+          node tests/browser-smoke.mjs
