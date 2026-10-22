@@ -604,6 +604,36 @@ export function drawBuildingInterior(ctx, w2s, ppm, time = 0, lighting = null) {
 }
 
 export function drawTerrain(ctx, rects, w2s, ppm, time = 0, lighting = null) {
+  // Continuous handrails make the narrow switchback treads read as a deliberate route, not random ledges.
+  const stairGroups = new Map();
+  for (const r of rects) if (r.type === 'stair' && r.stairId) {
+    if (!stairGroups.has(r.stairId)) stairGroups.set(r.stairId, []);
+    stairGroups.get(r.stairId).push(r);
+  }
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const group of stairGroups.values()) {
+    group.sort((a, b) => a.stairStep - b.stairStep);
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      group.forEach((r, i) => {
+        const [x, y] = w2s(r.x + side * Math.max(0.18, r.w * 0.38), r.y + 0.68);
+        if (!i) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = 'rgba(11,20,29,0.88)'; ctx.lineWidth = Math.max(3, ppm * 0.075); ctx.stroke();
+      ctx.strokeStyle = 'rgba(113,137,153,0.75)'; ctx.lineWidth = Math.max(1.2, ppm * 0.028); ctx.stroke();
+    }
+    for (let i = 0; i < group.length; i += 2) {
+      const r = group[i];
+      for (const side of [-1, 1]) {
+        const [x1, y1] = w2s(r.x + side * Math.max(0.18, r.w * 0.38), r.y + 0.10);
+        const [x2, y2] = w2s(r.x + side * Math.max(0.18, r.w * 0.38), r.y + 0.68);
+        ctx.strokeStyle = 'rgba(91,113,128,0.78)'; ctx.lineWidth = Math.max(1, ppm * 0.028);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
   for (const r of rects) {
     const [sx, sy] = w2s(r.x - r.w / 2, r.y + r.h / 2);
     const w = r.w * ppm, h = r.h * ppm;
@@ -707,6 +737,12 @@ export function drawTerrain(ctx, rects, w2s, ppm, time = 0, lighting = null) {
         ctx.strokeStyle = 'rgba(3,10,17,0.52)'; ctx.lineWidth = 1;
         if (w > 6 && h > 4) { for (let rx = sx + w * 0.18; rx < sx + w; rx += Math.max(4, w * 0.28)) { ctx.beginPath(); ctx.moveTo(rx, sy + h * 0.12); ctx.lineTo(rx, sy + h * 0.88); ctx.stroke(); } }
       }
+    } else if (r.type === 'stair') {
+      // Narrow anti-slip steel treads inside each 3.5m stair shaft.
+      ctx.fillStyle = '#283746'; ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#8797a3'; ctx.fillRect(sx, sy, w, Math.max(1.5, Math.min(3, h * 0.22)));
+      ctx.fillStyle = 'rgba(255,177,74,0.78)'; ctx.fillRect(sx + w * 0.08, sy + Math.max(1, h * 0.22), w * 0.84, Math.max(1, h * 0.11));
+      ctx.strokeStyle = 'rgba(6,13,21,0.70)'; ctx.lineWidth = 1; ctx.strokeRect(sx + 0.5, sy + 0.5, Math.max(0, w - 1), Math.max(0, h - 1));
     } else if (r.type === 'concrete') {
       ctx.fillStyle = '#535b63';
       ctx.fillRect(sx, sy, w, h);
@@ -748,6 +784,9 @@ export function drawTerrain(ctx, rects, w2s, ppm, time = 0, lighting = null) {
       const flicker = 0.92 + 0.055 * Math.sin(time * 7.1 + r.x) + 0.025 * Math.sin(time * 13.4 + r.x * 0.3);
       ctx.save();
       ctx.translate(sx + w / 2, sy + h / 2); ctx.rotate(sway * 0.035);
+      // Short suspension stem anchors each fixture to the ceiling beam.
+      ctx.strokeStyle = 'rgba(113,130,143,0.85)'; ctx.lineWidth = Math.max(1, ppm * 0.025);
+      ctx.beginPath(); ctx.moveTo(0, -h * 0.5); ctx.lineTo(0, -h * 1.55); ctx.stroke();
       ctx.fillStyle = '#222f3b'; ctx.fillRect(-w / 2, -h / 2, w, h);
       if (lighting?.powerOn !== false) {
         ctx.fillStyle = `rgba(246,186,108,${Math.max(0.55, flicker)})`; ctx.fillRect(-w * 0.32, -h * 0.30, w * 0.64, h * 0.60);
