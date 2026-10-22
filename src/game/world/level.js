@@ -585,6 +585,83 @@ export function drawBuildingInterior(ctx, w2s, ppm, time = 0, lighting = null) {
       }
     }
   }
+  // Room identities: framed safety placards, faded wall art, ventilation grilles, racks and service monitors.
+  // These are pure set dressing (no fixtures), deliberately varied by floor so the building is readable as places.
+  const roomProps = [
+    [
+      { x: 8.6, label: 'GENERATOR', kind: 'monitor', accent: '#ffb14a' },
+      { x: 21.4, label: 'SECURITY', kind: 'poster', accent: '#b36e49' },
+      { x: 35.4, label: 'OPS  /  A', kind: 'monitor', accent: '#7fb2c9' },
+      { x: 55.8, label: 'ARMORY', kind: 'rack', accent: '#b7a77b' },
+      { x: 68.5, label: 'EXIT  G', kind: 'vent', accent: '#8cce97' },
+    ],
+    [
+      { x: 11.2, label: 'LAB  /  02', kind: 'poster', accent: '#7fb2c9' },
+      { x: 23.2, label: 'STORAGE', kind: 'rack', accent: '#b7a77b' },
+      { x: 34.5, label: 'COMMS', kind: 'monitor', accent: '#7fb2c9' },
+      { x: 46.3, label: 'CAUTION', kind: 'poster', accent: '#ffb14a' },
+      { x: 68.9, label: 'LOCKER', kind: 'vent', accent: '#8cce97' },
+    ],
+    [
+      { x: 9.5, label: 'ARCHIVE', kind: 'rack', accent: '#b7a77b' },
+      { x: 21.2, label: 'CONTROL', kind: 'monitor', accent: '#7fb2c9' },
+      { x: 33.0, label: 'OBSERVATION', kind: 'poster', accent: '#b36e49' },
+      { x: 44.8, label: 'RESTRICTED', kind: 'poster', accent: '#ffb14a' },
+      { x: 56.2, label: 'HVAC', kind: 'vent', accent: '#8cce97' },
+      { x: 67.1, label: 'ROOF ACCESS', kind: 'monitor', accent: '#7fb2c9' },
+    ],
+  ];
+  for (let floor = 0; floor < roomProps.length; floor++) {
+    const base = floor * 3.5;
+    for (const prop of roomProps[floor]) {
+      const x = prop.x;
+      if (prop.kind === 'poster') {
+        rect(x - 0.62, base + 1.72, x + 0.62, base + 2.52, '#070f18');
+        rect(x - 0.54, base + 1.80, x + 0.54, base + 2.44, '#263543');
+        rect(x - 0.45, base + 2.34, x + 0.45, base + 2.38, prop.accent);
+        rect(x - 0.38, base + 1.91, x + 0.28, base + 2.22, '#101d29');
+        rect(x - 0.32, base + 1.96, x + 0.20, base + 2.00, prop.accent);
+        rect(x - 0.08, base + 2.02, x - 0.02, base + 2.18, '#7e929e');
+        rect(x + 0.07, base + 2.04, x + 0.13, base + 2.17, '#7e929e');
+      } else if (prop.kind === 'monitor') {
+        rect(x - 0.72, base + 1.75, x + 0.72, base + 2.43, '#080f17');
+        rect(x - 0.63, base + 1.83, x + 0.63, base + 2.34, '#253a49');
+        rect(x - 0.54, base + 2.23, x + 0.44, base + 2.27, prop.accent);
+        rect(x - 0.48, base + 1.94, x + 0.05, base + 1.98, '#73909f');
+        rect(x - 0.48, base + 2.04, x + 0.32, base + 2.08, '#4d6879');
+        rect(x + 0.42, base + 1.90, x + 0.48, base + 2.12, prop.accent);
+      } else if (prop.kind === 'vent') {
+        rect(x - 0.63, base + 1.95, x + 0.63, base + 2.40, '#09121b');
+        rect(x - 0.56, base + 2.01, x + 0.56, base + 2.34, '#2d3e4c');
+        for (let i = 0; i < 5; i++) rect(x - 0.48, base + 2.05 + i * 0.052, x + 0.48, base + 2.068 + i * 0.052, '#71838e');
+        rect(x + 0.38, base + 2.08, x + 0.47, base + 2.15, prop.accent);
+      } else if (prop.kind === 'rack') {
+        rect(x - 0.64, base + 0.62, x + 0.64, base + 2.48, '#09111a');
+        rect(x - 0.56, base + 0.70, x - 0.49, base + 2.40, '#647583');
+        rect(x + 0.49, base + 0.70, x + 0.56, base + 2.40, '#647583');
+        for (let shelf = 0; shelf < 4; shelf++) {
+          const y = base + 0.78 + shelf * 0.40;
+          rect(x - 0.49, y, x + 0.49, y + 0.045, '#8798a2');
+          for (let item = 0; item < 3; item++) {
+            const ix = x - 0.40 + item * 0.28;
+            rect(ix, y + 0.07, ix + 0.16, y + 0.32, shelf % 2 ? '#344b59' : '#3d4944');
+            rect(ix, y + 0.29, ix + 0.16, y + 0.32, prop.accent);
+          }
+        }
+      }
+      const [tx, ty] = w2s(x, base + (prop.kind === 'rack' ? 2.60 : 1.64));
+      if (tx > -80 && tx < 1360 && ty > -24 && ty < 760) {
+        ctx.save();
+        ctx.font = `700 ${Math.max(7, Math.min(10, ppm * 0.18))}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = prop.accent;
+        ctx.globalAlpha = 0.78;
+        ctx.fillText(prop.label, tx, ty);
+        ctx.restore();
+      }
+    }
+  }
+
   // 屋顶设备基座与矮护墙，屋顶的可视区域保持在建筑风格内。
   rect(0.5, 10.55, 73.5, 13.8, '#111b27');
   rect(0.5, 10.55, 73.5, 10.72, '#3a4652');
