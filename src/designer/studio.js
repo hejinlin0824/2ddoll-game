@@ -592,9 +592,9 @@ $('saveEquip').onclick = () => {
     // 保存时实时取最新裁剪区(图片异步就绪前摆放的零件也能拿到正确 crop)
     const e = croppedImg(it.id);
     const crop = e.ready && e.sw > 0 ? { sx: +e.sx.toFixed(1), sy: +e.sy.toFixed(1), sw: +e.sw.toFixed(1), sh: +e.sh.toFixed(1) } : undefined;
+    const pos = equipmentPartToStorage(it);
     return {
-      ...equipmentPartToStorage(it),
-      img: it.id, x: +equipmentPartToStorage(it).x.toFixed(1), y: +equipmentPartToStorage(it).y.toFixed(1), w: +it.w.toFixed(1), h: +it.h.toFixed(1),
+      img: it.id, x: +pos.x.toFixed(1), y: +pos.y.toFixed(1), w: +it.w.toFixed(1), h: +it.h.toFixed(1),
       rot: it.rot || 0, crop,
     };
   });
