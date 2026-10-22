@@ -25,7 +25,8 @@ let camRef = null;
 export function bindCamera(cam) { camRef = cam; }
 export function toWorld(e, W, H, PPM) {
   const { cx, cy } = toCanvas(e, W, H);
-  return { x: (cx - W / 2) / PPM + camRef.x, y: (H * 0.60 - cy) / PPM + camRef.y };
+  const zoom = Number.isFinite(camRef.zoom) && camRef.zoom > 0 ? camRef.zoom : 1;
+  return { x: (cx - W / 2) / (PPM * zoom) + camRef.x, y: (H * 0.60 - cy) / (PPM * zoom) + camRef.y };
 }
 
 // hooks: { W,H,PPM, canvas, wheel, bpIsOpen, menuIsOpen, menuToggle, getPlayer, resetPlayer, isDebug()|toggleDebug(), initAudio }
@@ -122,9 +123,17 @@ export function attachInput(hooks) {
     if (e.button !== 0) return;
     if (wheel.open) { wheel.confirm(); hooks.initAudio(); return; } // 左键 = 立即应用并收起,不开火
     const p = toWorld(e, hooks.W, hooks.H, hooks.PPM);
+    if (e.ctrlKey) {
+      // Ctrl + left click is reserved for the grappling hook; it must never leak into weapon fire.
+      e.preventDefault();
+      hooks.fireGrapple?.(p);
+      hooks.initAudio();
+      return;
+    }
     mouse.x = p.x; mouse.y = p.y; mouse.active = true;
     input.fire = true;
     hooks.initAudio();
   });
+  canvas.addEventListener('contextmenu', (e) => { if (e.ctrlKey) e.preventDefault(); });
   window.addEventListener('mouseup', (e) => { if (e.button === 0) input.fire = false; });
 }
