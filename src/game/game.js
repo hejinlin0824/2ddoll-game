@@ -1,7 +1,7 @@
 // 魂斗罗风格 2D 布娃娃射击 —— 主循环
 import { World, Vec2 } from 'planck';
 import { W, H, PPM, STEP } from './core/config.js';
-import { LEVEL, buildLevel, setActiveLayout, setSceneTheme, groundYAt, drawSky, drawParallax, drawBuildingInterior, drawTerrain, drawForeground, destroyRect } from './world/level.js';
+import { LEVEL, buildLevel, setActiveLayout, setSceneTheme, groundYAt, drawSky, drawParallax, drawBuildingInterior, drawTerrain, drawForeground, drawRaidFloorplan, destroyRect } from './world/level.js';
 import { Player } from './entities/player.js';
 import { loadSavedGun, loadEquip, QUALITY, loadReticleSettings } from './domain/gunPresets.js';
 import { computeArmorMods, computeGunMods, itemTitle, AFFIX_BY_ID, loadGunAffixes } from './domain/affixes.js';
@@ -23,6 +23,8 @@ import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanD
 import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
 import { lightingState, resetLightingState, updateLighting, drawLighting, lightLevelAt, toggleBuildingPower, toggleNightVision as toggleNightVisionMode, toggleFlashlight as toggleFlashlightMode } from './systems/lighting.js';
 import { raidVisionProfile } from './domain/raidVisibility.js';
+import { resetFogOfWar, updateFogOfWar, drawFogOfWar, isWorldCurrentlyVisible, getFogDiagnostics } from './systems/fogOfWar.js';
+import { createGrappleState, fireGrapple, stepGrapple, drawGrapple, releaseGrapple } from './systems/grapple.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
@@ -70,6 +72,8 @@ function freshPstate() { return { hp: 30, maxHp: 30, deadT: 0 }; }
 const pickups = [];    // 掉落物:金币 / 0 耐久装备
 let respawnFx = null; // 玩家重生/手动复位的轻量战术部署效果(真实时间计时)
 const raidState = createRaidState((localStorage.getItem('contra-scene') || 'wild') === 'raid');
+const grappleState = createGrappleState();
+resetFogOfWar(localStorage.getItem('contra-scene') || 'wild');
 let raidIntro = null; // 剿匪行动：开局/重生的屋顶绳降动画
 const raidInsertionAudioEmitter = { kind: 'raid-insertion' }; // 稳定对象:WebAudio 循环声按发声实体缓存
 let raidInsertionAudioActive = false;
@@ -322,6 +326,8 @@ function switchScene(sceneId) {
   setSceneTheme(sceneId === 'custom' ? 'wild' : sceneId);
   localStorage.setItem('contra-scene', sceneId);
   resetLightingState(sceneId);
+  resetFogOfWar(sceneId);
+  releaseGrapple(grappleState, 0);
   levelBodies = buildLevel(world);
   player = new Player(world, Vec2(LEVEL.spawn.x, LEVEL.spawn.y));
   Object.assign(pstate, freshPstate());
@@ -541,7 +547,16 @@ function drawRaidVision(c, w2sC, ppmZ, time, VW = W, VH = H) {
   }
 }
 
-attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, interact: interactWithRaidDoor, toggleDebug: () => { debugDraw = !debugDraw; },
+attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, interact: interactWithRaidDoor, fireGrapple: (target) => {
+    if (menuIsOpen() || bpIsOpen() || corpseIsOpen() || raidIntro || player.ragdoll) return false;
+    const ok = fireGrapple(grappleState, { player, target, rects: LEVEL.rects });
+    if (ok) {
+      const p = player.torso.getPosition();
+      floaters.push({ x: p.x, y: p.y + 1.2, vy: 0.45, age: 0, text: '钩锁已咬合', color: '#ffcb79', size: 13, bold: true, life: 0.7, max: 0.7 });
+      beep(380, 620, 0.07, 'triangle', 0.035);
+    }
+    return ok;
+  }, toggleDebug: () => { debugDraw = !debugDraw; },
   toggleNightVision: () => {
     const on = toggleNightVisionMode();
     const p = player.torso.getPosition();
@@ -623,6 +638,8 @@ const C = {
 window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }); // 调试句柄
 window.__raid = () => ({ ...raidState, incidents: raidState.incidents.map((i) => ({ ...i })), rappel: !!raidIntro }); // 剿匪行动调试状态
 window.__lighting = () => ({ ...lightingState }); // 调试：光照、电力、夜视与手电状态
+window.__grapple = { state: () => ({ ...grappleState, anchor: grappleState.anchor && { ...grappleState.anchor } }), fire: (target) => fireGrapple(grappleState, { player, target, rects: LEVEL.rects }), release: () => releaseGrapple(grappleState), step: (dt = STEP) => stepGrapple(grappleState, dt, player) };
+window.__fog = { state: getFogDiagnostics, visibleAt: isWorldCurrentlyVisible };
 window.__combat = { spawnBullet, stepBullets, applyHitscanDamage, onEnemyDied, stepPickups, alertEnemiesNear }; // 调试:命中管线直调
 window.__corpse = { nearby: () => corpseNearby(), open: openCorpse, close: closeCorpse, isOpen: corpseIsOpen }; // 调试:搜尸管线直调
 window.__actx = getActx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
@@ -674,6 +691,9 @@ function step(dt) {
   }
   player.update(dt, input);
   if (raidIntro) advanceRaidRappel(dt, !menuIsOpen());
+  if (menuIsOpen() || bpIsOpen() || corpseIsOpen()) releaseGrapple(grappleState, 0.1);
+  stepGrapple(grappleState, dt, player);
+  updateFogOfWar({ scene: localStorage.getItem('contra-scene') || 'wild', player, rects: LEVEL.rects });
   input.jumpPressed = false;
 
   for (const ev of player.events) {
@@ -1346,6 +1366,10 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   }
   // Lighting is part of the world pass so the scope and main view share the same light field.
   drawLighting(c, { state: lightingState, rects: LEVEL.rects, w2s: w2sC, ppm: ppmZ, W: VW, H: VH, time, flash, rings });
+  drawGrapple(c, grappleState, player, w2sC, ppmZ);
+  const activeScene = localStorage.getItem('contra-scene') || 'wild';
+  drawFogOfWar(c, { scene: activeScene, cam: camO, w2s: w2sC, ppm: ppmZ, W: VW, H: VH });
+  if (raidState.enabled) drawRaidFloorplan(c, w2sC, ppmZ, isWorldCurrentlyVisible);
 }
 
 function render(time) {
@@ -1618,7 +1642,7 @@ function frame(now) {
   const defPct = Math.round(Math.min(0.8, player.defense) * 100);
   const ammo = player.ammoInfo();
   const ammoTxt = ammo.reloadT > 0 ? '换弹中…' : `弹药 ${ammo.ammo}/${ammo.mag}`;
-  const hudTxt = `${stateTxt} · ${player.weapon === 'rifle' ? '主武器' : player.shield ? '手枪+盾' : '手枪'} · ${ammoTxt} · HP ${Math.ceil(pstate.hp)} · 盔 ${Math.ceil((invEquipped('head')?.dur) ?? 0)} · 甲 ${Math.ceil((invEquipped('body')?.dur) ?? 0)} · 熟练度 ${Math.round(player.skill * 100)}% · 防御 ${defPct}% · 后坐力 ${heatBar} · ${fps} FPS · R 换弹 · X 消音器 · E 交互/复位 · B 调试视图`;
+  const hudTxt = `${stateTxt} · ${player.weapon === 'rifle' ? '主武器' : player.shield ? '手枪+盾' : '手枪'} · ${ammoTxt} · HP ${Math.ceil(pstate.hp)} · 盔 ${Math.ceil((invEquipped('head')?.dur) ?? 0)} · 甲 ${Math.ceil((invEquipped('body')?.dur) ?? 0)} · 熟练度 ${Math.round(player.skill * 100)}% · 防御 ${defPct}% · 后坐力 ${heatBar} · ${fps} FPS · R 换弹 · X 消音器 · E 交互/复位 · Ctrl+左键 钩锁 · B 调试视图`;
   if (hudTxt !== hud._last) { hud.state.textContent = hudTxt; hud._last = hudTxt; } // 脏检查,避免每帧 DOM 写入
   hud.ragdoll.textContent = player.ragdoll ? '失控倒地 · 按 E 起身' : '';
   hud.ragdoll.style.display = player.ragdoll ? 'block' : 'none';
