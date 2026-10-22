@@ -1395,9 +1395,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
     c.restore();
   }
   drawGrapple(c, grappleState, player, w2sC, ppmZ);
-  const activeScene = localStorage.getItem('contra-scene') || 'wild';
-  drawFogOfWar(c, { scene: activeScene, cam: camO, w2s: w2sC, ppm: ppmZ, W: VW, H: VH });
-  if (raidState.enabled) drawRaidFloorplan(c, w2sC, ppmZ, isWorldCurrentlyVisible);
+  // Fog/floorplan were already drawn behind the player silhouette above.
 }
 
 function render(time) {
