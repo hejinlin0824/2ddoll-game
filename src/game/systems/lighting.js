@@ -166,7 +166,8 @@ function collectSources(state, rects, time, flash, rings) {
 export function lightLevelAt(x, y, rects = [], state = lightingState, { forAI = true } = {}) {
   if (state.scene !== 'raid') return state.scene === 'desert' || state.scene === 'tropic' ? 0.9 : 0.72;
   const floor = floorIdAt(y);
-  let level = state.powerOn ? 0.20 : 0.055;
+  // Readable cool ambient fill when mains power is on; the old baseline made the room feel pre-blackout.
+  let level = state.powerOn ? 0.34 : 0.045;
   for (const r of rects) {
     if (r.type !== 'lamp' || !state.powerOn || r.hp <= 0) continue;
     if ((r.raidFloorId ?? floorIdAt(r.y)) !== floor) continue;
