@@ -21,6 +21,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify production build
+        run: npm run build
       - name: Install temporary browser test runtime
         run: |
           npm install --no-save playwright

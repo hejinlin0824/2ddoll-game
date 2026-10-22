@@ -614,11 +614,12 @@ const C = {
 };
 window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }); // 调试句柄
 window.__raid = () => ({ ...raidState, incidents: raidState.incidents.map((i) => ({ ...i })), rappel: !!raidIntro }); // 剿匪行动调试状态
+window.__lighting = () => ({ ...lightingState }); // 调试：光照、电力、夜视与手电状态
 window.__combat = { spawnBullet, stepBullets, applyHitscanDamage, onEnemyDied, stepPickups, alertEnemiesNear }; // 调试:命中管线直调
 window.__corpse = { nearby: () => corpseNearby(), open: openCorpse, close: closeCorpse, isOpen: corpseIsOpen }; // 调试:搜尸管线直调
 window.__actx = getActx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
 window.__feel = () => ({ ...feel, timeScale, menu: menuIsOpen() }); // 调试:手感层状态
-window.__level = () => LEVEL.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, hp: r.hp ?? null, max: r.maxHp ?? null })); // 调试:地形块耐久
+window.__level = () => LEVEL.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, hp: r.hp ?? null, max: r.maxHp ?? null, type: r.type, doorId: r.doorId ?? null, doorOpen: r.doorOpen ?? false, doorAngle: r.doorAngle ?? 0, breakerId: r.breakerId ?? null })); // 调试:地形/门/配电柜状态
 window.__spawnGunship = (hp = 260) => { // 调试:直接召一架母体机(从右缘飞入)
   enemies.push(new Gunship(world, { x: LEVEL.bounds.right - 2, y: 9.5 }, { enemies, hp }));
 }; // 调试:空中部队管线直调
