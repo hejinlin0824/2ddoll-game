@@ -2,6 +2,7 @@
 import {
   SKIN_PARTS, SKIN_LABEL, SKIN_BOX, SKIN_END_ANCHORED, skinFitScale, loadSkin, saveSkin, clearSkin, processSkinImage, orientSkinImage,
 } from '../game/domain/skin.js';
+import { RIG_DIMS, RIG_ANCHORS, DEFAULT_RIG_POSE, segmentCenterFromCanvasTop, segmentTipFromCanvasTop } from '../game/domain/rigGeometry.js';
 import { loadAppearance, saveAppearance, clearAppearance, DEFAULT_APPEARANCE } from '../game/domain/appearance.js';
 
 const $ = (id) => document.getElementById(id);
@@ -612,12 +613,13 @@ function drawAssembled() {
   const W = acv.width, H = acv.height;
   actx.clearRect(0, 0, W, H);
   const cx = W / 2, cy = H / 2 - 4;
+  const ppm = PPM2;
   const drawPart = (x, y, angle, part, dark) => {
     const box = SKIN_BOX[part];
     actx.save();
     actx.translate(x, y);
     actx.rotate(-angle);
-    const bw = box.w * PPM2, bh = box.h * PPM2;
+    const bw = box.w * ppm, bh = box.h * ppm;
     actx.strokeStyle = 'rgba(232,160,76,0.5)';
     actx.setLineDash([4, 3]);
     actx.strokeRect(-bw / 2, -bh / 2, bw, bh);
@@ -626,11 +628,11 @@ function drawAssembled() {
     if (im && im.complete && im.naturalWidth) {
       const xf = slots[part];
       const f = skinFitScale(part, im.naturalWidth, im.naturalHeight);
-      const dw = im.naturalWidth * f.sx * PPM2 * (xf.scale || 1);
-      const dh = im.naturalHeight * f.sy * PPM2 * (xf.scale || 1);
-      const dy = SKIN_END_ANCHORED[part] ? (SKIN_BOX[part].h / 2 - (SKIN_BOX[part].tip || 0)) * PPM2 - dh : -dh / 2;
+      const dw = im.naturalWidth * f.sx * ppm * (xf.scale || 1);
+      const dh = im.naturalHeight * f.sy * ppm * (xf.scale || 1);
+      const dy = SKIN_END_ANCHORED[part] ? (SKIN_BOX[part].h / 2 - (SKIN_BOX[part].tip || 0)) * ppm - dh : -dh / 2;
       if (dark) actx.filter = 'brightness(0.72) saturate(0.85)';
-      actx.drawImage(im, -dw / 2 + (xf.ox || 0) * PPM2, dy + (xf.oy || 0) * PPM2, dw, dh);
+      actx.drawImage(im, -dw / 2 + (xf.ox || 0) * ppm, dy + (xf.oy || 0) * ppm, dw, dh);
       actx.filter = 'none';
     } else {
       actx.fillStyle = 'rgba(244,233,216,0.14)';
@@ -638,23 +640,54 @@ function drawAssembled() {
     }
     actx.restore();
   };
-  const sway = 0.14;
-  drawPart(cx - 0.10 * PPM2, cy - 0.07 * PPM2, sway, 'upperArm', true);
-  drawPart(cx - 0.115 * PPM2, cy + 0.15 * PPM2, sway, 'foreArm', true);
-  drawPart(cx - 0.075 * PPM2, cy + 0.38 * PPM2, 0, 'thigh', true);
-  drawPart(cx - 0.075 * PPM2, cy + 0.65 * PPM2, 0, 'calf', true);
-  drawPart(cx, cy, 0, 'torso', false);
-  drawPart(cx, cy - 0.53 * PPM2, 0, 'head', false);
-  drawPart(cx + 0.075 * PPM2, cy + 0.38 * PPM2, 0, 'thigh', false);
-  drawPart(cx + 0.075 * PPM2, cy + 0.65 * PPM2, 0, 'calf', false);
-  drawPart(cx + 0.10 * PPM2, cy - 0.07 * PPM2, -sway, 'upperArm', false);
-  drawPart(cx + 0.115 * PPM2, cy + 0.15 * PPM2, -sway, 'foreArm', false);
-  drawPart(cx, cy - 0.53 * PPM2, 0, 'helmet', false); // 装备外观层:叠在头/躯干外
-  drawPart(cx, cy, 0, 'vest', false);
+
+  // Same anchor chain as Player.build(): the old preview shifted left/right limbs by
+  // arbitrary ±0.075–0.115m offsets, so a correctly aligned part appeared misplaced.
+  const joint = (x, y) => ({ x: cx + x * ppm, y: cy - y * ppm });
+  const segment = (root, angle, length) => segmentCenterFromCanvasTop(root, angle, length, ppm);
+  const tip = (root, angle, length) => segmentTipFromCanvasTop(root, angle, length, ppm);
+  const pose = DEFAULT_RIG_POSE;
+  const shoulder = joint(RIG_ANCHORS.shoulder.x, RIG_ANCHORS.shoulder.y);
+  const hip = joint(RIG_ANCHORS.hip.x, RIG_ANCHORS.hip.y);
+  const headCenter = joint(0, RIG_ANCHORS.neck.y + 0.08 + RIG_DIMS.headR);
+
+  const farUpper = segment(shoulder, pose.shB, RIG_DIMS.upperArm.h);
+  const farElbow = tip(shoulder, pose.shB, RIG_DIMS.upperArm.h);
+  const farForeAngle = pose.shB + pose.elB;
+  const farFore = segment(farElbow, farForeAngle, RIG_DIMS.foreArm.h);
+  const nearUpper = segment(shoulder, pose.shF, RIG_DIMS.upperArm.h);
+  const nearElbow = tip(shoulder, pose.shF, RIG_DIMS.upperArm.h);
+  const nearForeAngle = pose.shF + pose.elF;
+  const nearFore = segment(nearElbow, nearForeAngle, RIG_DIMS.foreArm.h);
+
+  const farThigh = segment(hip, pose.hipB, RIG_DIMS.thigh.h);
+  const farKnee = tip(hip, pose.hipB, RIG_DIMS.thigh.h);
+  const farCalfAngle = pose.hipB + pose.kneeB;
+  const farCalf = segment(farKnee, farCalfAngle, RIG_DIMS.calf.h);
+  const nearThigh = segment(hip, pose.hipF, RIG_DIMS.thigh.h);
+  const nearKnee = tip(hip, pose.hipF, RIG_DIMS.thigh.h);
+  const nearCalfAngle = pose.hipF + pose.kneeF;
+  const nearCalf = segment(nearKnee, nearCalfAngle, RIG_DIMS.calf.h);
+
+  // Draw order mirrors the game: far-side parts, torso + vest, head + helmet,
+  // near-side legs, then the near-side arms.
+  drawPart(farUpper.x, farUpper.y, pose.shB, 'upperArm', true);
+  drawPart(farFore.x, farFore.y, farForeAngle, 'foreArm', true);
+  drawPart(farCalf.x, farCalf.y, farCalfAngle, 'calf', true);
+  drawPart(farThigh.x, farThigh.y, pose.hipB, 'thigh', true);
+  drawPart(cx, cy, pose.torso, 'torso', false);
+  drawPart(cx, cy, pose.torso, 'vest', false);
+  drawPart(headCenter.x, headCenter.y, pose.neck, 'head', false);
+  drawPart(headCenter.x, headCenter.y, pose.neck, 'helmet', false);
+  drawPart(nearCalf.x, nearCalf.y, nearCalfAngle, 'calf', false);
+  drawPart(nearThigh.x, nearThigh.y, pose.hipF, 'thigh', false);
+  drawPart(nearUpper.x, nearUpper.y, pose.shF, 'upperArm', false);
+  drawPart(nearFore.x, nearFore.y, nearForeAngle, 'foreArm', false);
+
   actx.strokeStyle = 'rgba(126,201,126,0.3)';
   actx.beginPath();
-  actx.moveTo(20, cy + 0.78 * PPM2);
-  actx.lineTo(W - 20, cy + 0.78 * PPM2);
+  actx.moveTo(20, cy + 0.80 * ppm);
+  actx.lineTo(W - 20, cy + 0.80 * ppm);
   actx.stroke();
 }
 
