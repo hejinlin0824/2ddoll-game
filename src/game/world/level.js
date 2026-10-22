@@ -653,6 +653,38 @@ export function drawBuildingInterior(ctx, w2s, ppm, time = 0, lighting = null) {
     }
   }
 
+  // Stairway identity plates: tell the player which floor is reachable before committing to a drop.
+  const stairSigns = [
+    { x: 49.6, base: 0, label: 'UP  /  LEVEL 02', direction: 1 },
+    { x: 49.6, base: 3.5, label: 'DOWN  /  GROUND', direction: -1 },
+    { x: 29.7, base: 3.5, label: 'UP  /  LEVEL 03', direction: 1 },
+    { x: 29.7, base: 7, label: 'DOWN  /  LEVEL 02', direction: -1 },
+    { x: 15.9, base: 7, label: 'UP  /  ROOF', direction: 1 },
+  ];
+  for (const sign of stairSigns) {
+    const y0 = sign.base + 1.72, y1 = sign.base + 2.34;
+    rect(sign.x - 0.98, y0, sign.x + 0.98, y1, '#07111a');
+    rect(sign.x - 0.91, y0 + 0.07, sign.x + 0.91, y1 - 0.07, '#1d2b38');
+    rect(sign.x - 0.87, y0 + 0.08, sign.x - 0.82, y1 - 0.08, '#ffb14a');
+    const [sx, sy] = w2s(sign.x + 0.65, sign.base + 2.03);
+    ctx.save();
+    ctx.strokeStyle = '#ffb14a';
+    ctx.lineWidth = Math.max(1.2, ppm * 0.025);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy + sign.direction * ppm * 0.075);
+    ctx.lineTo(sx, sy - sign.direction * ppm * 0.075);
+    ctx.moveTo(sx - ppm * 0.055, sy - sign.direction * ppm * 0.015);
+    ctx.lineTo(sx, sy - sign.direction * ppm * 0.075);
+    ctx.lineTo(sx + ppm * 0.055, sy - sign.direction * ppm * 0.015);
+    ctx.stroke();
+    ctx.font = `700 ${Math.max(7, Math.min(9, ppm * 0.17))}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#d6e0e8';
+    ctx.globalAlpha = 0.94;
+    ctx.fillText(sign.label, sx - ppm * 0.54, sy + ppm * 0.10);
+    ctx.restore();
+  }
+
   // 屋顶设备基座与矮护墙，屋顶的可视区域保持在建筑风格内。
   rect(0.5, 10.55, 73.5, 13.8, '#111b27');
   rect(0.5, 10.55, 73.5, 10.72, '#3a4652');
@@ -660,6 +692,19 @@ export function drawBuildingInterior(ctx, w2s, ppm, time = 0, lighting = null) {
     rect(x, 10.78, x + 1.8, 11.42, '#222f3b');
     rect(x + 0.12, 10.94, x + 1.68, 11.00, '#647887');
   }
+  // Rooftop stair landing marker, mounted above the stair opening rather than painted on the floor slab.
+  rect(18.55, 11.34, 20.52, 12.02, '#07111a');
+  rect(18.63, 11.42, 20.44, 11.94, '#1d2b38');
+  rect(18.68, 11.48, 18.74, 11.88, '#ffb14a');
+  const [roofSignX, roofSignY] = w2s(19.58, 11.70);
+  ctx.save();
+  ctx.font = `700 ${Math.max(7, Math.min(9, ppm * 0.17))}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#d6e0e8';
+  ctx.globalAlpha = 0.94;
+  ctx.fillText('DOWN / LEVEL 03', roofSignX, roofSignY);
+  ctx.restore();
+
   // 房间内的微弱环境反光/尘埃是固定少量 primitive，不用粒子系统持续造粒子。
   ctx.save();
   ctx.globalAlpha = 0.18;
