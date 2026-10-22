@@ -11,6 +11,7 @@ import { loadSavedGun, loadEquip, loadAssets, loadGunBuild, GUN_PRESETS, PISTOL_
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
 import { skinImg, skinXf, skinFitScale, SKIN_END_ANCHORED, SKIN_BOX } from '../domain/skin.js';
 import { loadAppearance, appearancePalette, appearanceRevision } from '../domain/appearance.js';
+import { equipmentPartCenter } from '../domain/equipmentGeometry.js';
 
 const D = {
   torso: { w: 0.30, h: 0.52 },
@@ -1194,7 +1195,10 @@ export class Player {
           const im = assetImage(p.img);
           if (im && im.complete && im.naturalWidth) {
             ctx.save();
-            ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+            // New payloads store top-left; legacy studio image payloads stored center x/y.
+            // Resolve through one shared helper so existing player equipment stays aligned.
+            const pivot = equipmentPartCenter(eq, p);
+            ctx.translate(pivot.x, pivot.y);
             ctx.rotate(p.rot || 0);
             const cr = p.crop;
             if (cr && cr.sw > 0 && cr.sh > 0) ctx.drawImage(im, cr.sx, cr.sy, cr.sw, cr.sh, -p.w / 2, -p.h / 2, p.w, p.h);
