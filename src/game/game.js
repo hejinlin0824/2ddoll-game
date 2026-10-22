@@ -21,7 +21,8 @@ import { input, mouse, attachInput, bindCamera } from './systems/input.js';
 import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
 import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups, damageTerrain } from './systems/combat.js';
 import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
-import { lightingState, resetLightingState, updateLighting, drawLighting, toggleBuildingPower, toggleNightVision as toggleNightVisionMode, toggleFlashlight as toggleFlashlightMode } from './systems/lighting.js';
+import { lightingState, resetLightingState, updateLighting, drawLighting, lightLevelAt, toggleBuildingPower, toggleNightVision as toggleNightVisionMode, toggleFlashlight as toggleFlashlightMode } from './systems/lighting.js';
+import { raidVisionProfile } from './domain/raidVisibility.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
@@ -446,6 +447,9 @@ function drawRaidVision(c, w2sC, ppmZ, time, VW = W, VH = H) {
   // 所有射线/楼层坐标先在 save() 之前计算，Canvas 状态不会被错误数据污染。
   try {
     const RAY_STEPS = 14;
+    const playerPos = player.torso.getPosition();
+    const playerFloorId = floorForY(playerPos.y);
+    const illumination = lightLevelAt(playerPos.x, playerPos.y + 0.32, LEVEL.rects, lightingState, { forAI: true });
     const blockersByFloor = new Map(RAID_FLOORS.map((floor) => [floor.id, LEVEL.rects.filter((r) =>
       r && Number.isFinite(r.x) && Number.isFinite(r.y) && Number.isFinite(r.w) && Number.isFinite(r.h)
       && r.y + r.h / 2 >= floor.top - 0.30 && r.y - r.h / 2 <= floor.top + 3.30
@@ -469,7 +473,7 @@ function drawRaidVision(c, w2sC, ppmZ, time, VW = W, VH = H) {
         if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
         const floorId = Number.isInteger(e.raidFloorId) ? e.raidFloorId : floorForY(p.y);
         const floor = RAID_FLOORS.find((f) => f.id === floorId);
-        if (!floor) continue;
+        if (!floor || floorId !== playerFloorId) continue;
 
         const floorBottom = floor.top + 0.035;
         const floorCeiling = floor.top + 3.0;
@@ -479,9 +483,13 @@ function drawRaidVision(c, w2sC, ppmZ, time, VW = W, VH = H) {
         const clipBottom = Math.min(VH, Math.max(clipY0, clipY1));
         if (![clipTop, clipBottom].every(Number.isFinite) || clipBottom <= clipTop) continue;
 
-        const range = (e.sightRange || 10.5) * (e.suspicious ? 1 : 0.88);
+        const profile = raidVisionProfile({
+          sightRange: e.sightRange || 10.5, suspicious: e.suspicious,
+          crouch: player.crouch, illumination,
+        });
+        const range = profile.range;
         const centerAngle = (e.face || -1) > 0 ? 0 : Math.PI;
-        const spread = e.suspicious ? 0.48 : 0.34;
+        const spread = profile.halfAngle;
         const origin = { x: p.x, y: p.y + 0.42 };
         const [ox, oy] = w2sC(origin.x, origin.y);
         if (![ox, oy].every(Number.isFinite)) continue;
@@ -505,11 +513,11 @@ function drawRaidVision(c, w2sC, ppmZ, time, VW = W, VH = H) {
       c.save();
       try {
         c.beginPath(); c.rect(0, view.clipTop, VW, view.clipBottom - view.clipTop); c.clip();
-        c.fillStyle = view.e.suspicious ? 'rgba(255,177,74,0.12)' : 'rgba(255,205,122,0.055)';
+        c.fillStyle = view.e.suspicious ? 'rgba(255,177,74,0.075)' : 'rgba(255,205,122,0.014)';
         c.beginPath(); c.moveTo(view.ox, view.oy);
         for (const [px, py] of view.points) c.lineTo(px, py);
         c.closePath(); c.fill();
-        c.strokeStyle = view.e.suspicious ? 'rgba(255,177,74,0.34)' : 'rgba(255,205,122,0.10)';
+        c.strokeStyle = view.e.suspicious ? 'rgba(255,177,74,0.26)' : 'rgba(255,205,122,0.055)';
         c.lineWidth = 1;
         c.beginPath();
         c.moveTo(view.ox, view.oy); c.lineTo(view.points[0][0], view.points[0][1]);
