@@ -15,12 +15,13 @@ export function raidFloorBand(floorId) {
   };
 }
 
-export function rectIntersectsRaidFloor(rect, floorId, pad = 0.04) {
+export function rectIntersectsRaidFloor(rect, floorId, pad = 0.01) {
   if (!rect || !Number.isFinite(rect.y) || !Number.isFinite(rect.h)) return false;
   const band = raidFloorBand(floorId);
   const bottom = rect.y - Math.max(0, rect.h) / 2;
   const top = rect.y + Math.max(0, rect.h) / 2;
-  return top >= band.minY - pad && bottom <= band.maxY + pad;
+  // Mere contact with a floor boundary is not overlap; this prevents floor-edge walls leaking across stories.
+  return top > band.minY + pad && bottom < band.maxY - pad;
 }
 
 export function raidVisionProfile({
