@@ -14,7 +14,6 @@ const loopVoices = new Map();
 let ambientVoice = null;
 let ambientScene = '';
 const footstepTimes = new WeakMap();
-const footstepVariants = new WeakMap();
 const impactTimes = new WeakMap();
 const impactTypeLastAt = new Map();
 const radioLastAt = new Map();
@@ -35,15 +34,9 @@ const SFX_FILES = {
   'impact-armor': 'impact-armor.wav',
   'impact-flesh': 'impact-flesh.wav',
   'ricochet': 'ricochet.wav',
+  // Keep every runtime request tied to a checked-in file. Surface character is refined by pitch/volume.
   'footstep-dirt': 'footstep-dirt.wav',
-  'footstep-dirt-2': 'footstep-dirt-2.wav',
-  'footstep-dirt-3': 'footstep-dirt-3.wav',
-  'footstep-concrete': 'footstep-concrete.wav',
-  'footstep-concrete-2': 'footstep-concrete-2.wav',
-  'footstep-concrete-3': 'footstep-concrete-3.wav',
   'footstep-metal': 'footstep-metal.wav',
-  'footstep-metal-2': 'footstep-metal-2.wav',
-  'footstep-metal-3': 'footstep-metal-3.wav',
   'jump': 'jump.wav',
   'land': 'land.wav',
   'reload-rifle-start': 'reload-rifle-start.wav',
@@ -399,18 +392,9 @@ export function playFootstep(opts = {}) {
     else surface = 'dirt';
   }
   if (!['dirt', 'concrete', 'metal'].includes(surface)) surface = 'dirt';
-  const names = surface === 'metal'
-    ? ['footstep-metal', 'footstep-metal-2', 'footstep-metal-3']
-    : surface === 'concrete'
-      ? ['footstep-concrete', 'footstep-concrete-2', 'footstep-concrete-3']
-      : ['footstep-dirt', 'footstep-dirt-2', 'footstep-dirt-3'];
-  let chosen = Math.floor(Math.random() * names.length);
-  // 同一角色不连续重复同一采样，降低机械循环感。
-  if (emitter && names.length > 1) {
-    const previous = footstepVariants.get(emitter);
-    if (names[chosen] === previous) chosen = (chosen + 1 + Math.floor(Math.random() * (names.length - 1))) % names.length;
-    footstepVariants.set(emitter, names[chosen]);
-  }
+  // 当前仓库只有泥土/金属两个原始采样；混凝土复用泥土采样并降低音高，避免请求不存在的变体文件。
+  const names = surface === 'metal' ? ['footstep-metal'] : ['footstep-dirt'];
+  const chosen = 0;
   const isEnemy = opts.source === 'enemy';
   const requested = opts.volume ?? (isEnemy ? 0.18 : 0.22);
   const sneaking = !!(opts.stealth || opts.crouching || opts.emitter?.crouch);
@@ -424,7 +408,7 @@ export function playFootstep(opts = {}) {
     ...opts,
     volume: vol,
     maxDistance,
-    pitch: randomBetween(0.965, 1.035),
+    pitch: surface === 'concrete' ? randomBetween(0.90, 0.99) : randomBetween(0.93, 1.08),
     distantTail: false,
     echoTail: false,
   });
