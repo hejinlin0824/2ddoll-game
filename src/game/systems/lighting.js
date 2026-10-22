@@ -294,6 +294,53 @@ function paintSource(ctx, source, rects, w2s, ppm, W, H, mode, floorScoped = fal
   ctx.restore();
 }
 
+function drawVolumetricShafts(ctx, state, rects, w2s, ppm, W, H, time) {
+  if (!state.powerOn || state.nightVision) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const lamp of rects) {
+    if (lamp.type !== 'lamp' || lamp.hp <= 0) continue;
+    const floor = lamp.raidFloorId ?? floorIdAt(lamp.y);
+    const x = lamp.x;
+    const topY = lamp.y - 0.12;
+    const bottomY = floor * RAID_FLOOR_HEIGHT + 0.48;
+    const [sx, sy] = w2s(x, topY);
+    const [lx, ly] = w2s(x - 0.72, bottomY);
+    const [rx] = w2s(x + 0.72, bottomY);
+    if (![sx, sy, lx, ly, rx].every(Number.isFinite) || sy < -40 || ly > H + 40 || sx < -90 || sx > W + 90) continue;
+
+    // A narrow, warm shaft widens toward the floor. It is intentionally subtle: silhouette
+    // readability and the fog-of-war edge must remain stronger than the decorative light.
+    const pulse = 0.82 + 0.06 * Math.sin(time * 2.1 + x * 0.7);
+    const gradient = ctx.createLinearGradient(sx, sy, sx, ly);
+    gradient.addColorStop(0, `rgba(255,198,128,${0.105 * pulse})`);
+    gradient.addColorStop(0.35, `rgba(255,178,106,${0.055 * pulse})`);
+    gradient.addColorStop(1, 'rgba(255,164,96,0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(sx - Math.max(1.5, ppm * 0.055), sy);
+    ctx.lineTo(sx + Math.max(1.5, ppm * 0.055), sy);
+    ctx.lineTo(rx, ly);
+    ctx.lineTo(lx, ly);
+    ctx.closePath();
+    ctx.fill();
+
+    // Deterministic dust motes catch the beam without per-frame randomness or allocations beyond
+    // the small gradient/path objects already required by Canvas.
+    for (let i = 0; i < 4; i++) {
+      const phase = (time * (0.12 + i * 0.018) + x * 0.31 + i * 0.23) % 1;
+      const px = sx + Math.sin(time * 0.42 + x + i * 1.7) * ppm * 0.22;
+      const py = sy + (ly - sy) * phase;
+      const alpha = (1 - phase) * 0.18;
+      ctx.fillStyle = `rgba(255,219,166,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(0.65, ppm * 0.012), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 export function drawLighting(ctx, { state = lightingState, rects = [], w2s, ppm, W, H, time = 0, flash, rings = [] } = {}) {
   if (!w2s || !Number.isFinite(ppm) || ppm <= 0) return;
   const raid = state.scene === 'raid';
@@ -326,6 +373,7 @@ export function drawLighting(ctx, { state = lightingState, rects = [], w2s, ppm,
     ctx.fillRect(0, 0, W, H);
   }
   ctx.restore();
+  drawVolumetricShafts(ctx, state, rects, w2s, ppm, W, H, time);
   for (const source of sources) {
     // Night vision should read as a single clean image, not green plus every lamp/flashlight bloom.
     if (state.nightVision && ['lamp', 'emergency', 'flashlight'].includes(source.type)) continue;
