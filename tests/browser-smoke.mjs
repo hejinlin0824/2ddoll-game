@@ -142,22 +142,29 @@ try {
     }
   });
   await page.waitForTimeout(450);
-  const canvasBox = await page.locator('#game').boundingBox();
-  const aimPoint = await page.evaluate(() => {
-    const { cam } = window.__game();
-    const cx = (30 - cam.x) * 52 * cam.zoom + 640 + (cam.oX || 0);
-    const cy = 432 - (1.0 - cam.y) * 52 * cam.zoom + (cam.oY || 0);
-    return { cx, cy };
+  // Dispatch the real canvas input path at an exact world-space target. This avoids test flakiness
+  // from moving the OS cursor while the follow camera is still easing after the deterministic teleport.
+  const grappleCheck = await page.evaluate(() => {
+    const canvas = document.getElementById('game');
+    const rect = canvas.getBoundingClientRect();
+    const scale = Math.max(rect.width / 1280, rect.height / 720);
+    const { cam, input } = window.__game();
+    const target = { x: 30, y: 1.0 };
+    const cx = (target.x - cam.x) * 52 * cam.zoom + 640 + (cam.oX || 0);
+    const cy = 432 - (target.y - cam.y) * 52 * cam.zoom + (cam.oY || 0);
+    const clientX = rect.left + (rect.width - 1280 * scale) / 2 + cx * scale;
+    const clientY = rect.top + (rect.height - 720 * scale) / 2 + cy * scale;
+    input.fire = false;
+    canvas.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true, cancelable: true, button: 0, ctrlKey: true, clientX, clientY,
+    }));
+    const state = window.__grapple.state();
+    const fireHeld = input.fire;
+    window.__grapple.release();
+    return { ...state, fireHeld, target, clientX, clientY, cam: { x: cam.x, y: cam.y, zoom: cam.zoom } };
   });
-  const scale = Math.max(canvasBox.width / 1280, canvasBox.height / 720);
-  const clickX = canvasBox.x + (canvasBox.width - 1280 * scale) / 2 + aimPoint.cx * scale;
-  const clickY = canvasBox.y + (canvasBox.height - 720 * scale) / 2 + aimPoint.cy * scale;
-  await page.mouse.click(clickX, clickY, { modifiers: ['Control'] });
-  await page.waitForFunction(() => window.__grapple.state().active, undefined, { timeout: 1200 });
-  const grappleCheck = await page.evaluate(() => ({ active: window.__grapple.state().active, fireHeld: window.__game().input.fire }));
-  assert(grappleCheck.active, 'Ctrl-click did not latch the grappling hook');
+  assert(grappleCheck.active, `Ctrl-click did not latch the grappling hook: ${JSON.stringify(grappleCheck)}`);
   assert(!grappleCheck.fireHeld, 'Ctrl-click accidentally fired the weapon');
-  await page.evaluate(() => window.__grapple.release());
 
   // Move beside the main breaker and verify E toggles the same power state the renderer uses.
   await page.evaluate(() => {
