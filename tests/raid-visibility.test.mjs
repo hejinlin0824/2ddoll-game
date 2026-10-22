@@ -21,12 +21,13 @@ test('raid floor bands are finite, adjacent, and non-overlapping', () => {
 });
 
 test('floor clipping keeps short partitions local but tall outer walls block every intersected floor', () => {
-  const secondFloorPartition = { y: 4.8, h: 2.65 };
+  const secondFloorPartition = { y: 4.825, h: 2.65 };
   const outerWall = { y: 5.25, h: 10.5 };
   assert.equal(rectIntersectsRaidFloor(secondFloorPartition, 1), true);
   assert.equal(rectIntersectsRaidFloor(secondFloorPartition, 0), false);
   assert.equal(rectIntersectsRaidFloor(outerWall, 0), true);
-  assert.equal(rectIntersectsRaidFloor(outerWall, 3), true);
+  assert.equal(rectIntersectsRaidFloor(outerWall, 2), true);
+  assert.equal(rectIntersectsRaidFloor(outerWall, 3), false);
 });
 
 test('vision range uses the same illumination and crouch multipliers for AI and its overlay', () => {
