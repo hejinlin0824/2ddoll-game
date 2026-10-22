@@ -43,7 +43,7 @@ export function toggleFlashlight() {
   return lightingState.flashlightOn;
 }
 
-export function updateLighting(dt, { scene, player } = {}) {
+export function updateLighting(dt, { scene, player, aim } = {}) {
   if (scene && scene !== lightingState.scene) resetLightingState(scene);
   const d = Number.isFinite(dt) ? Math.max(0, dt) : 0;
   if (lightingState.flashlightOn) {
@@ -56,8 +56,13 @@ export function updateLighting(dt, { scene, player } = {}) {
     const p = player.torso.getPosition();
     lightingState.flashlightX = p.x;
     lightingState.flashlightY = p.y + 0.1;
-    // Player facing is stable and predictable even when the mouse is outside the canvas.
-    lightingState.flashlightAngle = player.facing < 0 ? Math.PI : 0;
+    // Aim the flashlight toward the cursor; use facing as a safe fallback before the first mouse move.
+    if (aim?.active && Number.isFinite(aim.x) && Number.isFinite(aim.y)
+      && Math.hypot(aim.x - lightingState.flashlightX, aim.y - lightingState.flashlightY) > 0.15) {
+      lightingState.flashlightAngle = Math.atan2(aim.y - lightingState.flashlightY, aim.x - lightingState.flashlightX);
+    } else {
+      lightingState.flashlightAngle = player.facing < 0 ? Math.PI : 0;
+    }
   }
 }
 
@@ -275,6 +280,9 @@ export function drawLighting(ctx, { state = lightingState, rects = [], w2s, ppm,
   const sources = collectSources(state, rects, time, flash, rings);
   // Outdoor scenes keep their current ambient grade; lights from weapons/explosions still bloom.
   if (!raid) {
+    if (state.nightVision) {
+      ctx.save(); ctx.fillStyle = 'rgba(91,143,77,0.10)'; ctx.fillRect(0, 0, W, H); ctx.restore();
+    }
     for (const source of sources) {
       if (source.type === 'lamp' || source.type === 'emergency') continue;
       paintSource(ctx, source, rects, w2s, ppm, W, H, 'glow');

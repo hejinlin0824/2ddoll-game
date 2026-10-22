@@ -72,6 +72,8 @@ export function attachInput(hooks) {
     if ((e.code === 'KeyW' || e.code === 'ArrowUp') && !e.repeat) input.jumpPressed = true;
     if (e.code === 'KeyW' || e.code === 'ArrowUp' || e.code === 'Space') e.preventDefault();
     if (e.repeat) return;
+    if (e.code === 'KeyN') { hooks.toggleNightVision?.(); hooks.initAudio(); return; } // N: 夜视仪
+    if (e.code === 'KeyL') { hooks.toggleFlashlight?.(); hooks.initAudio(); return; } // L: 战术手电筒
     if (e.code === 'KeyV') hooks.getPlayer().melee(); // 近战:枪托/盾牌冲撞
     if (e.code === 'KeyF') { // 手雷:朝鼠标位置抛(冷却中静默失败,HUD 上看得到读条)
       const ok = hooks.getPlayer().grenade?.({ x: mouse.x, y: mouse.y });

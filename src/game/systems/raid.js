@@ -1,6 +1,7 @@
 // 剿匪行动：局部警戒、视野/听力、消音器声源、无线电增援与楼层清剿。
 // 本模块不创建物理实体；所有增援仍由 game.js 装配，避免 systems 反向依赖装配根。
 import { hasLOS } from './combat.js';
+import { lightLevelAt, lightingState } from './lighting.js';
 
 export const RAID_FLOORS = [
   { id: 0, name: '一层 / GROUND', top: 0 },
@@ -155,8 +156,10 @@ function hearingFloorScale(sourceFloor, guardFloor) {
   return delta === 0 ? 1 : delta === 1 ? 0.38 : 0.12;
 }
 
-function isFloorLit(rects, floorId, x) {
-  return rects.some((r) => r.type === 'lamp' && r.raidFloorId === floorId && Math.abs(r.x - x) < 8.5);
+function floorIllumination(rects, floorId, x, y) {
+  // Use the player's actual world-space brightness: blackouts, failed bulbs and walls
+  // affect the same value used by the renderer instead of a separate lamp-radius shortcut.
+  return lightLevelAt(x, y, rects, lightingState, { forAI: true });
 }
 
 export function updateRaid(dt, opts = {}) {
@@ -181,8 +184,9 @@ export function updateRaid(dt, opts = {}) {
     const dxSight = pp.x - ep.x, dySight = pp.y - ep.y;
     const sightDist = Math.hypot(dxSight, dySight);
     const baseRange = e.sightRange || 10.5;
-    const lit = isFloorLit(rects, floorId, pp.x);
-    const sightRange = baseRange * (lit ? 1 : 0.72) * (player.crouch ? 0.62 : 1);
+    const illumination = floorIllumination(rects, floorId, pp.x, pp.y + 0.32);
+    // Darkness reduces real detection distance continuously; nearby lamps and the player's flashlight raise it.
+    const sightRange = baseRange * (0.58 + illumination * 0.52) * (player.crouch ? 0.62 : 1);
     const facing = e.face || -1;
     const inCone = dxSight * facing >= -sightDist * 0.18 && Math.abs(dySight) < Math.max(1.25, sightDist * 0.55);
     // A real visual contact requires same storey, facing cone, range AND an
@@ -224,7 +228,7 @@ export function updateRaid(dt, opts = {}) {
       const dist = sightDist;
       const nearFactor = 0.24 + (1 - dist / sightRange) * 0.86;
       const crouchMul = player.crouch ? 0.42 : 1;
-      e.suspicion = clamp((e.suspicion || 0) + dt * nearFactor * crouchMul, 0, 1);
+      e.suspicion = clamp((e.suspicion || 0) + dt * nearFactor * crouchMul * clamp(illumination, 0.15, 1), 0, 1);
       e.lastKnown = { x: pp.x, y: pp.y };
       e.searchT = Math.max(e.searchT || 0, 1.6);
       if (e.suspicion > 0.22) e.suspicious = true;

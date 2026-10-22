@@ -21,7 +21,7 @@ import { input, mouse, attachInput, bindCamera } from './systems/input.js';
 import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
 import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups, damageTerrain } from './systems/combat.js';
 import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
-import { lightingState, resetLightingState, updateLighting, drawLighting, toggleBuildingPower } from './systems/lighting.js';
+import { lightingState, resetLightingState, updateLighting, drawLighting, toggleBuildingPower, toggleNightVision as toggleNightVisionMode, toggleFlashlight as toggleFlashlightMode } from './systems/lighting.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
@@ -533,7 +533,23 @@ function drawRaidVision(c, w2sC, ppmZ, time, VW = W, VH = H) {
   }
 }
 
-attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, interact: interactWithRaidDoor, toggleDebug: () => { debugDraw = !debugDraw; }, initAudio,
+attachInput({ W, H, PPM, canvas, wheel, bpIsOpen, helpIsOpen, helpClose, bpToggle, menuIsOpen, menuToggle, getPlayer: () => player, resetPlayer, interact: interactWithRaidDoor, toggleDebug: () => { debugDraw = !debugDraw; },
+  toggleNightVision: () => {
+    const on = toggleNightVisionMode();
+    const p = player.torso.getPosition();
+    floaters.push({ x: p.x, y: p.y + 1.45, vy: 0.3, age: 0, text: on ? '夜视仪已启动' : '夜视仪已关闭', color: on ? '#a8e59c' : '#bdc8d7', size: 14, bold: true, life: 1, max: 1 });
+    beep(on ? 520 : 350, on ? 760 : 240, 0.08, 'sine', 0.04);
+  },
+  toggleFlashlight: () => {
+    const wasOn = lightingState.flashlightOn;
+    const empty = !wasOn && lightingState.flashlightBattery <= 0.5;
+    const on = toggleFlashlightMode();
+    const p = player.torso.getPosition();
+    const message = empty ? '手电电量耗尽' : on ? '战术手电已开启' : '战术手电已关闭';
+    floaters.push({ x: p.x, y: p.y + 1.45, vy: 0.3, age: 0, text: message, color: empty ? '#ff756b' : on ? '#cfe8ff' : '#bdc8d7', size: 13, bold: true, life: 1, max: 1 });
+    beep(on ? 410 : 270, on ? 560 : 170, 0.07, 'triangle', 0.035);
+  },
+  initAudio,
   corpseNearby: () => !!corpseNearby(), corpseOpen: () => { const c = corpseNearby(); if (c) openCorpse(c); },
   corpseIsOpen, corpseClose: closeCorpse });
 bindCamera(cam);
@@ -619,7 +635,7 @@ function corpseNearby() {
 }
 
 function step(dt) {
-  updateLighting(dt, { scene: localStorage.getItem('contra-scene') || 'wild', player });
+  updateLighting(dt, { scene: localStorage.getItem('contra-scene') || 'wild', player, aim: mouse });
   updateRaidDoorAnimations(dt);
   input.aim = aimWorld(W, H, PPM);
   // 屋顶插入时复用声音系统已有的运输机循环声；暂停菜单时静音并在离开场景时清理。
