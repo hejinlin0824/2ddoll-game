@@ -2,10 +2,14 @@ import { chromium } from 'playwright';
 
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const failures = [];
+const badResponses = [];
+const failedRequests = [];
 const assert = (condition, message) => { if (!condition) failures.push(message); };
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on('pageerror', (error) => failures.push(`pageerror: ${error.stack || error.message}`));
+  page.on('response', (response) => { if (response.status() >= 400) badResponses.push({ status: response.status(), url: response.url() }); });
+  page.on('requestfailed', (request) => failedRequests.push({ url: request.url(), error: request.failure()?.errorText || 'unknown' }));
   page.on('console', (message) => {
     if (message.type() === 'error') failures.push(`console.error: ${message.text()}`);
   });
@@ -16,7 +20,7 @@ try {
   });
   assert(!!response && response.status() === 200, `game.html response status: ${response?.status() ?? 'no response'}`);
   await page.waitForSelector('canvas', { timeout: 10000 });
-  await page.waitForFunction(() => typeof window.__game === 'function' && typeof window.__lighting === 'function', { timeout: 10000 });
+  await page.waitForFunction(() => typeof window.__game === 'function' && typeof window.__lighting === 'function', undefined, { timeout: 10000 });
   await page.waitForTimeout(800);
   const boot = await page.evaluate(() => ({
     title: document.title,
@@ -104,7 +108,9 @@ try {
       failures.push(`${key}: ${JSON.stringify(finalState[key])}`);
     }
   }
-  console.log('HERO browser smoke diagnostics:', JSON.stringify({ boot, finalState }, null, 2));
+  if (badResponses.length) failures.push(`HTTP errors: ${JSON.stringify(badResponses)}`);
+  if (failedRequests.length) failures.push(`Failed requests: ${JSON.stringify(failedRequests)}`);
+  console.log('HERO browser smoke diagnostics:', JSON.stringify({ boot, finalState, badResponses, failedRequests }, null, 2));
   if (failures.length) throw new Error(failures.join('\n'));
   console.log('PASS: production build; npx vite /game.html; zero page/console errors; NVG, flashlight, door and breaker interactions.');
 } finally {
