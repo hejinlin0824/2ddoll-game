@@ -1,5 +1,7 @@
 import { chromium } from 'playwright';
+import { mkdir } from 'node:fs/promises';
 
+await mkdir('artifacts', { recursive: true });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const baseURL = process.env.BASE_URL || 'http://127.0.0.1:5199';
 const failures = [];
