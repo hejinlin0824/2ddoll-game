@@ -6,6 +6,10 @@ on:
     paths:
       - "src/game/domain/equipmentGeometry.js"
       - "src/game/domain/rigGeometry.js"
+      - "src/game/domain/raidVisibility.js"
+      - "src/game/systems/lighting.js"
+      - "src/game/systems/raid.js"
+      - "src/game/game.js"
       - "src/game/entities/player.js"
       - "src/designer/studio.js"
       - "src/designer/skinStudio.js"
@@ -42,7 +46,7 @@ jobs:
       - name: Install project dependencies
         run: npm ci
 
-      - name: Test canonical equipment coordinate contract
+      - name: Test gameplay geometry and equipment contracts
         run: node --test tests/*.test.mjs
 
       - name: Build production pages
