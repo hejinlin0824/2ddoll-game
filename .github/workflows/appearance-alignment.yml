@@ -7,9 +7,15 @@ on:
       - "src/game/domain/equipmentGeometry.js"
       - "src/game/domain/rigGeometry.js"
       - "src/game/domain/raidVisibility.js"
+      - "src/game/domain/raidLayout.js"
       - "src/game/systems/lighting.js"
       - "src/game/systems/raid.js"
+      - "src/game/systems/fogOfWar.js"
+      - "src/game/systems/grapple.js"
+      - "src/game/systems/input.js"
+      - "src/game/world/level.js"
       - "src/game/game.js"
+      - "AGENT.md"
       - "src/game/entities/player.js"
       - "src/designer/studio.js"
       - "src/designer/skinStudio.js"
@@ -46,7 +52,7 @@ jobs:
       - name: Install project dependencies
         run: npm ci
 
-      - name: Test gameplay geometry and equipment contracts
+      - name: Test gameplay geometry, traversal, visibility, and equipment contracts
         run: node --test tests/*.test.mjs
 
       - name: Build production pages
