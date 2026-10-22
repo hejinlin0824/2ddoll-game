@@ -36,7 +36,7 @@ function ensureCanvases() {
 
 function isVisionBlocker(r) {
   if (!r || !Number.isFinite(r.x + r.y + r.w + r.h)) return false;
-  if (r.type === 'door' && (r.doorOpen || (r.doorAngle || 0) > 0.10)) return false;
+  // Keep all doors in the cache; whether a door blocks sight changes as it animates.
   return r.type === 'wall' || r.type === 'door' || r.type === 'steel'
     || r.type === 'crate' || r.type === 'cover' || r.type === 'sandbag'
     || r.type === 'timber' || r.type === 'container' || r.type === 'container-red'
@@ -82,6 +82,7 @@ function makeVisibilityPolygon(player, rects) {
     const dx = Math.cos(angle), dy = Math.sin(angle);
     let distance = VIEW_RADIUS;
     for (const r of blocking) {
+      if (r.type === 'door' && (r.doorOpen || (r.doorAngle || 0) > 0.10)) continue;
       const hit = rayAABB(p.x, p.y + 0.12, dx, dy, r);
       if (hit > 0.045 && hit < distance) distance = Math.max(0.08, hit - 0.035);
     }
