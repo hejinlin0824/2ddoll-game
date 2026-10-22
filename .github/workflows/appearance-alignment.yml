@@ -1,0 +1,97 @@
+name: Appearance and Equipment Alignment
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "src/game/domain/equipmentGeometry.js"
+      - "src/game/entities/player.js"
+      - "src/designer/studio.js"
+      - "src/designer/skinStudio.js"
+      - "skin-studio.html"
+      - "game.html"
+      - "asset-studio.html"
+      - "tests/**"
+      - ".github/workflows/appearance-alignment.yml"
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appearance-alignment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout dev revision
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Test canonical equipment coordinate contract
+        run: node --test tests/equipment-geometry.test.mjs
+
+      - name: Build production pages
+        run: npm run build
+
+      - name: Install Chromium test runner
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Verify npx vite starts and serves game.html
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx vite --host 127.0.0.1 --port 5199 > /tmp/hero-vite-dev.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:5199/game.html -o /dev/null; then
+              echo "PASS: npx vite serves /game.html"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/hero-vite-dev.log
+          echo "FAIL: Vite dev server did not serve /game.html" >&2
+          exit 1
+
+      - name: Chromium browser smoke against production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx vite preview --host 127.0.0.1 --port 4173 > /tmp/hero-vite-preview.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:4173/game.html -o /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:4173 node tests/browser-smoke.mjs
+
+      - name: Upload browser screenshots and server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appearance-equipment-browser-smoke
+          path: |
+            artifacts/*.png
+            /tmp/hero-vite-dev.log
+            /tmp/hero-vite-preview.log
+          if-no-files-found: warn
