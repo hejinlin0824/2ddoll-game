@@ -1,6 +1,6 @@
 // 输入系统:键盘/鼠标状态与坐标换算。监听器在 attach 时安装,
 // 游戏对象(轮盘/背包/菜单/玩家)通过 hooks 回调访问 —— 输入层不 import 业务模块。
-export const input = { left: false, right: false, down: false, fire: false, jumpPressed: false };
+export const input = { left: false, right: false, down: false, fire: false, jumpPressed: false, jumpHeld: false };
 export const mouse = { x: 0, y: 0, cx: 0, cy: 0, active: false };
 
 const KEYMAP = {
@@ -70,6 +70,7 @@ export function attachInput(hooks) {
       if (e.code === 'Space') e.preventDefault();
       input[KEYMAP[e.code]] = true;
     }
+    if (e.code === 'KeyW' || e.code === 'ArrowUp') input.jumpHeld = true;
     if ((e.code === 'KeyW' || e.code === 'ArrowUp') && !e.repeat) input.jumpPressed = true;
     if (e.code === 'KeyW' || e.code === 'ArrowUp' || e.code === 'Space') e.preventDefault();
     if (e.repeat) return;
@@ -106,9 +107,10 @@ export function attachInput(hooks) {
   window.addEventListener('keyup', (e) => {
     if (e.code === 'Tab') { if (wheel.open) wheel.release(); return; }
     if (KEYMAP[e.code]) input[KEYMAP[e.code]] = false;
+    if (e.code === 'KeyW' || e.code === 'ArrowUp') input.jumpHeld = false;
   });
   window.addEventListener('blur', () => {
-    input.left = input.right = input.down = input.fire = false;
+    input.left = input.right = input.down = input.fire = input.jumpHeld = false;
     wheel.forceClose(); // 失焦必须收起,否则子弹时间卡住
   });
 
