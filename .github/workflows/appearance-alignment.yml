@@ -5,6 +5,7 @@ on:
     branches: [dev]
     paths:
       - "src/game/domain/equipmentGeometry.js"
+      - "src/game/domain/rigGeometry.js"
       - "src/game/entities/player.js"
       - "src/designer/studio.js"
       - "src/designer/skinStudio.js"
@@ -42,7 +43,7 @@ jobs:
         run: npm ci
 
       - name: Test canonical equipment coordinate contract
-        run: node --test tests/equipment-geometry.test.mjs
+        run: node --test tests/*.test.mjs
 
       - name: Build production pages
         run: npm run build
