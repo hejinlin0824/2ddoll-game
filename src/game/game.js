@@ -1308,9 +1308,11 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   // ragdoll darkened the player's own hands/arms and made the screen feel like a dirty lens.
   // Lighting and fog are environmental passes: apply them to the world, never to the player's
   // own silhouette. This keeps hands/weapon readable while darkness still affects the room.
-  drawLighting(c, { state: lightingState, rects: LEVEL.rects, w2s: w2sC, ppm: ppmZ, W: VW, H: VH, time, flash, rings });
   const activeScene = localStorage.getItem('contra-scene') || 'wild';
+  // Compose exploration fog first, then let physical light sources lift the darkness.
+  // This keeps lamp shafts and flashlight spill visible instead of burying them under the fog texture.
   drawFogOfWar(c, { scene: activeScene, cam: camO, w2s: w2sC, ppm: ppmZ, W: VW, H: VH });
+  drawLighting(c, { state: lightingState, rects: LEVEL.rects, w2s: w2sC, ppm: ppmZ, W: VW, H: VH, time, flash, rings });
   if (raidState.enabled) drawRaidFloorplan(c, w2sC, ppmZ, isWorldCurrentlyVisible);
 
 
