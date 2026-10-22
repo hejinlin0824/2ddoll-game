@@ -312,7 +312,7 @@ export function drawLighting(ctx, { state = lightingState, rects = [], w2s, ppm,
   if (!mctx) return;
   mctx.setTransform(1, 0, 0, 1, 0, 0);
   mctx.clearRect(0, 0, W, H);
-  const darkness = state.nightVision ? 0.13 : state.powerOn ? 0.54 : 0.79;
+  const darkness = state.nightVision ? 0.13 : state.powerOn ? 0.30 : 0.82;
   mctx.fillStyle = `rgba(2,6,11,${darkness})`;
   mctx.fillRect(0, 0, W, H);
   for (const source of sources) paintSource(mctx, source, rects, w2s, ppm, W, H, 'erase', true);
