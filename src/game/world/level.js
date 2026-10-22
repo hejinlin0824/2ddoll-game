@@ -167,6 +167,14 @@ export const LAYOUTS = {
       raidFloorId: Math.round(floorTop / 3.5), interactive: true, destructible: true, hp: 8, maxHp: 8,
     });
     const crate = (x, floorTop, type = 'crate') => ({ x, y: floorTop + 0.52, w: 1.0, h: 1.04, type, destructible: true });
+    // Seven overlapping treads turn each offset drop shaft into a traversable switchback stair.
+    // Floors remain solid collision surfaces everywhere else, so falling down is possible but not a soft-lock.
+    const stairRun = (xHigh, xLow, lowerTop, id, steps = 7) => Array.from({ length: steps }, (_, i) => {
+      const pitch = (xHigh - xLow) / steps;
+      const top = lowerTop + ((i + 1) * 3.5) / steps;
+      return { x: xHigh - (i + 0.5) * pitch, y: top - 0.08, w: pitch + 0.08, h: 0.16,
+        type: 'stair', stairId: id, stairStep: i, destructible: false };
+    });
     return [
       ground90(),
       // 主配电柜位于地面入口侧；传感器刚体仅用于交互定位，不会挡住玩家。
@@ -186,6 +194,10 @@ export const LAYOUTS = {
       ...[4, 19, 34, 50, 67].map((x, i) => lamp(x, 0, `g-lamp-${i}`)),
       ...[6, 28, 48, 66].map((x, i) => lamp(x, 3.5, `f1-lamp-${i}`)),
       ...[6, 31, 51, 68].map((x, i) => lamp(x, 7, `f2-lamp-${i}`)),
+      // G→L02 shaft (x 48..52), L02→L03 shaft (x 28..32), L03→roof shaft (x 14..18).
+      ...stairRun(52, 48, 0, 'stair-ground-level02'),
+      ...stairRun(32, 28, 3.5, 'stair-level02-level03'),
+      ...stairRun(18, 14, 7, 'stair-level03-roof'),
       ...[crate(7, 0), crate(36, 0, 'steel'), crate(54, 0), crate(9, 3.5, 'steel'), crate(28, 3.5), crate(48, 3.5), crate(9, 7), crate(34, 7, 'steel'), crate(54, 7)],
     ];
   })(),
