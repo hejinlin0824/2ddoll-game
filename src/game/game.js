@@ -1304,6 +1304,10 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   c.globalAlpha = 1;
   c.textAlign = 'left';
 
+  // Fog belongs between the world/environment and the player silhouette. Drawing it after the
+  // ragdoll darkened the player's own hands/arms and made the screen feel like a dirty lens.
+  // Fog/floorplan intentionally render before the player so the player's own limbs stay crisp.
+
   // 复活先出现短促的战术重部署扫描，再让角色从淡影进入实态。
   if (respawnFx) drawRespawnFx(c, w2sC, ppmZ, time, false);
   c.save();
