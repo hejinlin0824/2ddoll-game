@@ -1035,6 +1035,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   const zl = ppmZ / PPM; // 像素尺寸随倍率缩放
   const z = zl;
   const w2sC = makeW2S(camO, VW, VH, PPM); // 与 camera.js 同一份公式(狙击镜内视图也走这里)
+  const liveVisible = (x, y) => !raidState.enabled || isWorldCurrentlyVisible(x, y);
   drawSky(c, VW, VH);
   drawParallax(c, VW, VH, camO.x, PPM);
   if (raidState.enabled) drawBuildingInterior(c, w2sC, ppmZ, time, lightingState);
@@ -1081,6 +1082,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 地面痕迹:弹孔(带亮边)/ 血渍(暗红椭圆),后半段生命淡出
   for (const d of decals) {
+    if (!liveVisible(d.x, d.y)) continue;
     const [dx, dy] = w2sC(d.x, d.y);
     const fade = clamp(d.life / d.max * 1.8, 0, 1);
     c.save();
@@ -1116,6 +1118,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 掉落物:品质光柱 + 金币(旋转金闪)/ 迷你盔甲(具体形状,非文字)
   for (const pk of pickups) {
+    if (!liveVisible(pk.x, pk.y)) continue;
     const [px, py] = w2sC(pk.x, pk.y);
     const qc = QUALITY[pk.quality]?.color ?? '#9fb0c4';
 
@@ -1180,13 +1183,14 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
     c.fill();
   }
 
-  // 敌人
-  for (const e of enemies) e.draw(c, w2sC, ppmZ, time);
-  drawEnemyBars(c, enemies, w2sC, PPM * camO.zoom);
+  // 敌人只在当前可视区绘制；已探索区保留的只是房间结构，不暴露敌兵位置。
+  const visibleEnemies = raidState.enabled ? enemies.filter((e) => liveVisible(e.x, e.y + 0.28)) : enemies;
+  for (const e of visibleEnemies) e.draw(c, w2sC, ppmZ, time);
+  drawEnemyBars(c, visibleEnemies, w2sC, PPM * camO.zoom);
   drawGrenades(c, w2sC, ppmZ, time); // 手雷(引信读秒弧 + 红灯急闪)
 
   // 可搜尸体标记:还有战利品没拿走的尸体,头顶一枚下沉闪烁的三角(不抢眼,找得到)
-  for (const e of enemies) {
+  for (const e of visibleEnemies) {
     if (e.alive || e.destroyed || e.airUnit || !e.loot) continue;
     const left = ['gun', 'head', 'body'].filter((k) => e.loot[k] && !e.lootTaken[k]).length;
     if (!left) continue;
@@ -1206,6 +1210,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 子弹曳光:沿速度反向的渐变拖尾,越快越长(主武器更粗更长;火箭弹粗橙尾焰)
   for (const b of bullets) {
+    if (!liveVisible(b.x, b.y)) continue;
     const sp = Math.hypot(b.vx, b.vy) || 1;
     const len = Math.min(sp * 0.055, b.rocket ? 2.6 : b.rifle ? 2.2 : 1.6);
     const [x1, y1] = w2sC(b.x - (b.vx / sp) * len, b.y - (b.vy / sp) * len);
@@ -1232,6 +1237,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 爆炸冲击波环:外环亮 + 内环淡,随扩张变粗后消散
   for (const r of rings) {
+    if (!liveVisible(r.x, r.y)) continue;
     const a = r.life / r.max;
     const [rx, ry] = w2sC(r.x, r.y);
     c.strokeStyle = `rgba(${r.color},${(a * 0.75).toFixed(2)})`;
@@ -1244,6 +1250,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 狙击 hitscan 光束:亮蓝白三层,快速衰减(很有动感的那种)
   for (const bm of beams) {
+    if (!liveVisible((bm.x1 + bm.x2) / 2, (bm.y1 + bm.y2) / 2)) continue;
     const a = bm.life / bm.max;
     const [x1, y1] = w2sC(bm.x1, bm.y1), [x2, y2] = w2sC(bm.x2, bm.y2);
     c.lineCap = 'round';
@@ -1260,6 +1267,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 受击数字(漫画果冻风:弹出过冲→回弹→淡出,描边)
   for (const f of floaters) {
+    if (!liveVisible(f.x, f.y)) continue;
     const [fx, fy] = w2sC(f.x, f.y);
     const a = f.age / f.max;
     let sc;
@@ -1340,6 +1348,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // 粒子
   for (const p of particles) {
+    if (!liveVisible(p.x, p.y)) continue;
     const [x, y] = w2sC(p.x, p.y);
     c.globalAlpha = clamp(p.life * 3, 0, 1);
     c.fillStyle = p.color;
@@ -1349,6 +1358,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   c.globalAlpha = 1;
   // 护甲碎片
   for (const d2 of debris) {
+    if (!liveVisible(d2.x, d2.y)) continue;
     const [x, y] = w2sC(d2.x, d2.y);
     c.save();
     c.translate(x, y);
