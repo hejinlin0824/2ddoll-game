@@ -2,6 +2,7 @@
 // 素材存 localStorage 'contra-assets'(id -> dataURL);穿戴走 contra-equip-head/torso,
 // parts 支持 {img: 素材id, x, y, w, h, rot} 图片零件(坐标 = 身体局部空间,200px = 1m)。
 import { loadAssets, saveAssets, loadEquip, saveEquip } from '../game/domain/gunPresets.js';
+import { EQUIPMENT_COORDINATE_SPACE, equipmentPartToStudio, equipmentPartToStorage } from '../game/domain/equipmentGeometry.js';
 
 const $ = (id) => document.getElementById(id);
 const toastEl = $('toast');
@@ -592,14 +593,15 @@ $('saveEquip').onclick = () => {
     const e = croppedImg(it.id);
     const crop = e.ready && e.sw > 0 ? { sx: +e.sx.toFixed(1), sy: +e.sy.toFixed(1), sw: +e.sw.toFixed(1), sh: +e.sh.toFixed(1) } : undefined;
     return {
-      img: it.id, x: +it.x.toFixed(1), y: +it.y.toFixed(1), w: +it.w.toFixed(1), h: +it.h.toFixed(1),
+      ...equipmentPartToStorage(it),
+      img: it.id, x: +equipmentPartToStorage(it).x.toFixed(1), y: +equipmentPartToStorage(it).y.toFixed(1), w: +it.w.toFixed(1), h: +it.h.toFixed(1),
       rot: it.rot || 0, crop,
     };
   });
   const label = slot === 'head' ? '头盔' : '防弹衣';
   saveEquip(slot, {
     slot, name: `工坊${label}`, defense: parseFloat($('defense').value) || 0,
-    meterScale: 200, parts,
+    meterScale: 200, coordinateSpace: EQUIPMENT_COORDINATE_SPACE, parts,
   });
   toast(parts.length ? `已穿上工坊${label}!切回游戏页即可看到` : `已保存(空)—— 相当于脱下${label}`);
 };
@@ -618,7 +620,7 @@ function loadCurrent() {
       const raw = localStorage.getItem(`contra-equip-${s}`);
       if (!raw) continue;
       const eq = JSON.parse(raw);
-      placed[s] = (eq?.parts || []).filter((pt) => pt.img).map((pt) => ({ ...pt }));
+      placed[s] = (eq?.parts || []).filter((pt) => pt.img).map((pt) => equipmentPartToStudio(eq, pt));
     } catch { /* 忽略 */ }
   }
 }
