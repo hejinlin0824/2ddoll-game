@@ -525,7 +525,7 @@ const PPM_FG = 52 * 1.15;
 
 // 剿匪行动室内底图：实体墙之前绘制，房间有窗带、结构柱、线槽与墙板，不再是空旷平台。
 // 装饰只用基本 Canvas primitives，不创建离屏图层/渐变，不增加每帧 GC 压力。
-export function drawBuildingInterior(ctx, w2s, ppm, time = 0) {
+export function drawBuildingInterior(ctx, w2s, ppm, time = 0, lighting = null) {
   if (themeId !== 'raid') return;
   const rect = (x0, y0, x1, y1, color) => {
     const [sx, sy] = w2s(x0, y1);
@@ -562,8 +562,12 @@ export function drawBuildingInterior(ctx, w2s, ppm, time = 0) {
     const activeLamps = LEVEL.rects.filter((r) => r.type === 'lamp' && r.raidFloorId === floor);
     for (const lamp of activeLamps) {
       const pulse = 0.84 + Math.sin(time * 2.6 + lamp.x) * 0.04;
-      rect(lamp.x - 0.8, base + 2.78, lamp.x + 0.8, base + 2.84, `rgba(255,174,86,${0.10 * pulse})`);
-      rect(lamp.x - 0.30, base + 2.78, lamp.x + 0.30, base + 2.82, `rgba(255,190,116,${0.58 * pulse})`);
+      if (lighting?.powerOn !== false) {
+        rect(lamp.x - 0.8, base + 2.78, lamp.x + 0.8, base + 2.84, `rgba(255,174,86,${0.10 * pulse})`);
+        rect(lamp.x - 0.30, base + 2.78, lamp.x + 0.30, base + 2.82, `rgba(255,190,116,${0.58 * pulse})`);
+      } else {
+        rect(lamp.x - 0.3, base + 2.78, lamp.x + 0.3, base + 2.82, 'rgba(95,28,34,0.42)');
+      }
     }
   }
   // 屋顶设备基座与矮护墙，屋顶的可视区域保持在建筑风格内。
@@ -584,7 +588,7 @@ export function drawBuildingInterior(ctx, w2s, ppm, time = 0) {
   ctx.restore();
 }
 
-export function drawTerrain(ctx, rects, w2s, ppm) {
+export function drawTerrain(ctx, rects, w2s, ppm, time = 0, lighting = null) {
   for (const r of rects) {
     const [sx, sy] = w2s(r.x - r.w / 2, r.y + r.h / 2);
     const w = r.w * ppm, h = r.h * ppm;
@@ -707,15 +711,44 @@ export function drawTerrain(ctx, rects, w2s, ppm) {
         ctx.strokeRect(sx + 1, sy + 1, w - 2, h - 2);
       }
     } else if (r.type === 'door') {
-      ctx.fillStyle = '#253646'; ctx.fillRect(sx, sy, w, h);
-      ctx.strokeStyle = '#7f8f9a'; ctx.lineWidth = Math.max(1, ppm * 0.035); ctx.strokeRect(sx + 1, sy + 1, w - 2, h - 2);
-      ctx.fillStyle = '#405567'; ctx.fillRect(sx + w * 0.15, sy + h * 0.08, w * 0.7, h * 0.84);
-      ctx.fillStyle = '#d99a4b'; ctx.fillRect(sx + w * 0.77, sy + h * 0.47, Math.max(2, w * 0.04), Math.max(2, h * 0.08));
-      ctx.fillStyle = 'rgba(255,177,74,0.14)'; ctx.fillRect(sx + w * 0.06, sy + h * 0.12, w * 0.08, h * 0.76);
+      // A closed door fills the opening. While swinging, perspective compresses its width around the hinge.
+      const angle = Math.max(0, Math.min(Math.PI / 2, r.doorAngle || 0));
+      const openWidth = Math.max(2, w * Math.cos(angle));
+      const hingeLeft = r.hingeSide !== 'right';
+      const hx = hingeLeft ? sx : sx + w;
+      const edgeX = hingeLeft ? hx + openWidth : hx - openWidth;
+      const skew = Math.sin(angle) * h * 0.10;
+      const topEdgeY = sy + skew;
+      ctx.fillStyle = '#253646';
+      ctx.beginPath(); ctx.moveTo(hx, sy); ctx.lineTo(edgeX, topEdgeY); ctx.lineTo(edgeX, sy + h - skew); ctx.lineTo(hx, sy + h); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#7f8f9a'; ctx.lineWidth = Math.max(1, ppm * 0.035); ctx.stroke();
+      ctx.strokeStyle = '#405567'; ctx.lineWidth = Math.max(2, ppm * 0.08);
+      ctx.beginPath(); ctx.moveTo(hx + (hingeLeft ? 1 : -1), sy + h * 0.1); ctx.lineTo(edgeX, topEdgeY + h * 0.1); ctx.stroke();
+      const handleX = hx + (edgeX - hx) * 0.78;
+      const handleY = sy + h * 0.50;
+      ctx.fillStyle = '#d99a4b'; ctx.fillRect(handleX - Math.max(1, ppm * 0.025), handleY, Math.max(2, ppm * 0.055), Math.max(2, ppm * 0.085));
+      if (angle < 0.08) { ctx.fillStyle = 'rgba(255,177,74,0.14)'; ctx.fillRect(sx + w * 0.06, sy + h * 0.12, w * 0.08, h * 0.76); }
     } else if (r.type === 'lamp') {
-      ctx.fillStyle = '#222f3b'; ctx.fillRect(sx, sy, w, h);
-      ctx.fillStyle = '#f6ba6c'; ctx.fillRect(sx + w * 0.18, sy + h * 0.20, w * 0.64, h * 0.5);
-      ctx.fillStyle = 'rgba(255,180,86,0.18)'; ctx.fillRect(sx - w * 0.45, sy - h * 0.65, w * 1.9, h * 1.2);
+      const sway = Math.sin(time * 1.65 + r.x * 0.73);
+      const flicker = 0.92 + 0.055 * Math.sin(time * 7.1 + r.x) + 0.025 * Math.sin(time * 13.4 + r.x * 0.3);
+      ctx.save();
+      ctx.translate(sx + w / 2, sy + h / 2); ctx.rotate(sway * 0.035);
+      ctx.fillStyle = '#222f3b'; ctx.fillRect(-w / 2, -h / 2, w, h);
+      if (lighting?.powerOn !== false) {
+        ctx.fillStyle = `rgba(246,186,108,${Math.max(0.55, flicker)})`; ctx.fillRect(-w * 0.32, -h * 0.30, w * 0.64, h * 0.60);
+        ctx.fillStyle = `rgba(255,180,86,${0.18 * flicker})`; ctx.fillRect(-w * 0.95, -h * 1.0, w * 1.9, h * 1.2);
+      } else {
+        ctx.fillStyle = 'rgba(110,48,52,0.48)'; ctx.fillRect(-w * 0.32, -h * 0.30, w * 0.64, h * 0.60);
+      }
+      ctx.restore();
+    } else if (r.type === 'breaker') {
+      ctx.fillStyle = '#1c2935'; ctx.fillRect(sx, sy, w, h);
+      ctx.strokeStyle = '#8196a4'; ctx.lineWidth = Math.max(1, ppm * 0.025); ctx.strokeRect(sx + 1, sy + 1, w - 2, h - 2);
+      ctx.fillStyle = lighting?.powerOn === false ? '#ff665d' : '#ffb14a';
+      ctx.fillRect(sx + w * 0.18, sy + h * 0.16, w * 0.64, h * 0.13);
+      ctx.fillStyle = '#526575'; ctx.fillRect(sx + w * 0.2, sy + h * 0.4, w * 0.6, h * 0.45);
+      ctx.fillStyle = lighting?.powerOn === false ? '#ff665d' : '#8cce97';
+      ctx.fillRect(sx + w * 0.56, sy + h * 0.44, w * 0.16, h * 0.34);
     } else if (r.type === 'rock') {
       ctx.fillStyle = '#665e52';
       ctx.fillRect(sx, sy, w, h);

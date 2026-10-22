@@ -21,6 +21,7 @@ import { input, mouse, attachInput, bindCamera } from './systems/input.js';
 import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
 import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups, damageTerrain } from './systems/combat.js';
 import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
+import { lightingState, resetLightingState, updateLighting, drawLighting } from './systems/lighting.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
@@ -319,6 +320,7 @@ function switchScene(sceneId) {
 
   setSceneTheme(sceneId === 'custom' ? 'wild' : sceneId);
   localStorage.setItem('contra-scene', sceneId);
+  resetLightingState(sceneId);
   levelBodies = buildLevel(world);
   player = new Player(world, Vec2(LEVEL.spawn.x, LEVEL.spawn.y));
   Object.assign(pstate, freshPstate());
@@ -583,6 +585,7 @@ function corpseNearby() {
 }
 
 function step(dt) {
+  updateLighting(dt, { scene: localStorage.getItem('contra-scene') || 'wild', player });
   input.aim = aimWorld(W, H, PPM);
   // 屋顶插入时复用声音系统已有的运输机循环声；暂停菜单时静音并在离开场景时清理。
   const insertionListener = player.torso.getPosition();
@@ -956,7 +959,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   drawParallax(c, VW, VH, camO.x, PPM);
   if (raidState.enabled) drawBuildingInterior(c, w2sC, ppmZ, time);
   if (raidState.enabled) drawRaidVision(c, w2sC, ppmZ, time, VW, VH);
-  drawTerrain(c, LEVEL.rects, w2sC, ppmZ);
+  drawTerrain(c, LEVEL.rects, w2sC, ppmZ, time, lightingState);
   if (raidIntro) {
     const rp = player.torso.getPosition();
     const u = clamp(raidIntro.t / raidIntro.duration, 0, 1);
@@ -1281,6 +1284,8 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
     }
     c.restore();
   }
+  // Lighting is part of the world pass so the scope and main view share the same light field.
+  drawLighting(c, { state: lightingState, rects: LEVEL.rects, w2s: w2sC, ppm: ppmZ, W: VW, H: VH, time, flash, rings });
 }
 
 function render(time) {
