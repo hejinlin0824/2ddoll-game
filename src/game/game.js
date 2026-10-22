@@ -703,7 +703,7 @@ function step(dt) {
   if (raidIntro) advanceRaidRappel(dt, !menuIsOpen());
   if (menuIsOpen() || bpIsOpen() || corpseIsOpen()) releaseGrapple(grappleState, 0.1);
   stepGrapple(grappleState, dt, player);
-  updateFogOfWar({ scene: localStorage.getItem('contra-scene') || 'wild', player, rects: LEVEL.rects });
+  updateFogOfWar({ scene: localStorage.getItem('contra-scene') || 'wild', player, rects: LEVEL.rects, dt });
   input.jumpPressed = false;
 
   for (const ev of player.events) {
