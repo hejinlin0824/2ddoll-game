@@ -72,7 +72,7 @@ try {
   });
   assert(!!response && response.status() === 200, `game.html response status: ${response?.status() ?? 'no response'}`);
   await page.waitForSelector('canvas', { timeout: 10000 });
-  await page.waitForFunction(() => typeof window.__game === 'function' && typeof window.__lighting === 'function', undefined, { timeout: 10000 });
+  await page.waitForFunction(() => typeof window.__game === 'function' && typeof window.__lighting === 'function' && typeof window.__fog === 'object' && typeof window.__grapple === 'object', undefined, { timeout: 10000 });
   await page.waitForTimeout(800);
   const boot = await page.evaluate(() => ({
     title: document.title,
@@ -82,8 +82,12 @@ try {
     renderLayerErrors: window.__renderLayerErrors || null,
     raidVisionError: window.__raidVisionError || null,
     frameError: window.__lastFrameError?.msg || null,
+    fog: window.__fog.state(),
+    stairCount: window.__level().filter((r) => r.type === 'stair').length,
   }));
   assert(boot.canvases >= 1, 'game canvas was not created');
+  assert(boot.fog?.scene === 'raid' && boot.fog.visiblePixelCount > 100, 'raid fog of war did not reveal a local visibility region');
+  assert(boot.stairCount === 21, `raid traversal stairs missing: ${boot.stairCount}`);
   assert(boot.scene === 'raid', `raid scene did not initialize: ${boot.scene}`);
   for (const key of ['renderError', 'renderLayerErrors', 'raidVisionError', 'frameError']) {
     if (boot[key] && (key !== 'renderLayerErrors' || Object.keys(boot[key]).length)) {
@@ -126,6 +130,35 @@ try {
   assert(openDoor?.doorOpen === true, 'E did not open the nearest raid door');
   assert((openDoor?.doorAngle || 0) > 0.8, 'door opening animation did not advance');
 
+  // Ctrl-click should launch a grappling hook toward the cursor and must not fire the weapon.
+  await page.evaluate(() => {
+    const player = window.__game().player;
+    const dx = 20 - player.torso.getPosition().x, dy = 1.0 - player.torso.getPosition().y;
+    for (const body of player.allBodies) {
+      const q = body.getPosition();
+      body.setTransform({ x: q.x + dx, y: q.y + dy }, body.getAngle());
+      body.setLinearVelocity({ x: 0, y: 0 });
+      body.setAngularVelocity(0);
+    }
+  });
+  await page.waitForTimeout(450);
+  const canvasBox = await page.locator('#game').boundingBox();
+  const aimPoint = await page.evaluate(() => {
+    const { cam } = window.__game();
+    const cx = (30 - cam.x) * 52 * cam.zoom + 640 + (cam.oX || 0);
+    const cy = 432 - (1.0 - cam.y) * 52 * cam.zoom + (cam.oY || 0);
+    return { cx, cy };
+  });
+  const scale = Math.max(canvasBox.width / 1280, canvasBox.height / 720);
+  const clickX = canvasBox.x + (canvasBox.width - 1280 * scale) / 2 + aimPoint.cx * scale;
+  const clickY = canvasBox.y + (canvasBox.height - 720 * scale) / 2 + aimPoint.cy * scale;
+  await page.mouse.click(clickX, clickY, { modifiers: ['Control'] });
+  await page.waitForFunction(() => window.__grapple.state().active, undefined, { timeout: 1200 });
+  const grappleCheck = await page.evaluate(() => ({ active: window.__grapple.state().active, fireHeld: window.__game().input.fire }));
+  assert(grappleCheck.active, 'Ctrl-click did not latch the grappling hook');
+  assert(!grappleCheck.fireHeld, 'Ctrl-click accidentally fired the weapon');
+  await page.evaluate(() => window.__grapple.release());
+
   // Move beside the main breaker and verify E toggles the same power state the renderer uses.
   await page.evaluate(() => {
     const player = window.__game().player;
@@ -150,6 +183,9 @@ try {
   await page.waitForTimeout(500);
   const finalState = await page.evaluate(() => ({
     lighting: window.__lighting(),
+    fog: window.__fog.state(),
+    grapple: window.__grapple.state(),
+    stairCount: window.__level().filter((r) => r.type === 'stair').length,
     renderError: window.__lastRenderError?.msg || null,
     renderLayerErrors: window.__renderLayerErrors || null,
     raidVisionError: window.__raidVisionError || null,
@@ -167,7 +203,7 @@ try {
   await page.screenshot({ path: 'artifacts/game.png', fullPage: true });
   await appearancePage.close();
   await equipmentPage.close();
-  console.log('PASS: appearance preview/apply; legacy equipment pivot migration; versioned save; game console/frame checks; NVG, flashlight, door and breaker interactions.');
+  console.log('PASS: appearance preview/apply; equipment migration; production game render; raid FOW, stair route, Ctrl-click grapple, NVG, flashlight, door and breaker interactions.');
 } finally {
   await browser.close();
 }
