@@ -2,12 +2,13 @@
 // 本模块不创建物理实体；所有增援仍由 game.js 装配，避免 systems 反向依赖装配根。
 import { hasLOS } from './combat.js';
 import { lightLevelAt, lightingState } from './lighting.js';
+import { RAID_FLOOR_HEIGHT, raidVisionProfile, isInRaidVisionCone } from '../domain/raidVisibility.js';
 
 export const RAID_FLOORS = [
   { id: 0, name: '一层 / GROUND', top: 0 },
-  { id: 1, name: '二层 / LEVEL 02', top: 3.5 },
-  { id: 2, name: '三层 / LEVEL 03', top: 7 },
-  { id: 3, name: '屋顶 / ROOFTOP', top: 10.5 },
+  { id: 1, name: '二层 / LEVEL 02', top: RAID_FLOOR_HEIGHT },
+  { id: 2, name: '三层 / LEVEL 03', top: RAID_FLOOR_HEIGHT * 2 },
+  { id: 3, name: '屋顶 / ROOFTOP', top: RAID_FLOOR_HEIGHT * 3 },
 ];
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -186,9 +187,11 @@ export function updateRaid(dt, opts = {}) {
     const baseRange = e.sightRange || 10.5;
     const illumination = floorIllumination(rects, floorId, pp.x, pp.y + 0.32);
     // Darkness reduces real detection distance continuously; nearby lamps and the player's flashlight raise it.
-    const sightRange = baseRange * (0.58 + illumination * 0.52) * (player.crouch ? 0.62 : 1);
+    const { range: sightRange, halfAngle } = raidVisionProfile({
+      sightRange: baseRange, suspicious: e.suspicious, crouch: player.crouch, illumination,
+    });
     const facing = e.face || -1;
-    const inCone = dxSight * facing >= -sightDist * 0.18 && Math.abs(dySight) < Math.max(1.25, sightDist * 0.55);
+    const inCone = isInRaidVisionCone(dxSight, dySight, facing, halfAngle);
     // A real visual contact requires same storey, facing cone, range AND an
     // unobstructed line segment. Audio may alert a guard, but never grants vision.
     e.raidVisualContact = !!(sameFloor && sightDist <= sightRange && inCone &&
