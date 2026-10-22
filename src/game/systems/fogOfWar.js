@@ -1,6 +1,7 @@
 // World-space fog of war for the multi-storey raid.
 // Unseen geometry is rendered as a quiet floorplan; dynamic units only render inside live sight.
-const WORLD = Object.freeze({ minX: -12, maxX: 78, minY: -4, maxY: 17, pixelsPerMeter: 12 });
+// Low-resolution world-space mask is intentionally upscaled with smoothing; it keeps the fog soft and inexpensive.
+const WORLD = Object.freeze({ minX: -12, maxX: 78, minY: -4, maxY: 17, pixelsPerMeter: 6 });
 const VIEW_RADIUS = 8.0;
 const RAY_COUNT = 88;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
