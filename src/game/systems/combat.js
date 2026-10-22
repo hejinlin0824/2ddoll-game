@@ -45,6 +45,7 @@ export function spawnBullet(x, y, dx, dy, st, damage, faction = 'player') {
 
 function hitTerrainRect(x, y) {
   for (const r of LEVEL.rects) {
+    if (r.type === 'door' && (r.doorOpen || (r.doorAngle || 0) > 0.10)) continue;
     if (Math.abs(x - r.x) < r.w / 2 && Math.abs(y - r.y) < r.h / 2) return r;
   }
   return null;
@@ -113,6 +114,7 @@ export function rayAABB(x, y, dx, dy, r) {
 export function castRay(x, y, dx, dy, range) {
   let best = range;
   for (const r of LEVEL.rects) {
+    if (r.type === 'door' && (r.doorOpen || (r.doorAngle || 0) > 0.10)) continue;
     const t = rayAABB(x, y, dx, dy, r);
     if (t < best) best = t;
   }
@@ -125,6 +127,7 @@ export function castRay(x, y, dx, dy, range) {
 export function hasLOS(x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
   for (const r of LEVEL.rects) {
+    if (r.type === 'door' && (r.doorOpen || (r.doorAngle || 0) > 0.10)) continue;
     const t = rayAABB(x0, y0, dx, dy, r);
     if (t > 0.02 && t < 1) return false; // 交点落在线段内 = 被挡
   }

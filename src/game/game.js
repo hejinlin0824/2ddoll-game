@@ -21,7 +21,7 @@ import { input, mouse, attachInput, bindCamera } from './systems/input.js';
 import { cam, w2s, makeW2S, aimWorld, updateCamera, camKick, clamp, lerp } from './systems/camera.js';
 import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanDamage, stepBullets, onEnemyDied, stepPickups, damageTerrain } from './systems/combat.js';
 import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
-import { lightingState, resetLightingState, updateLighting, drawLighting } from './systems/lighting.js';
+import { lightingState, resetLightingState, updateLighting, drawLighting, toggleBuildingPower } from './systems/lighting.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
 
 // webfont 预载:canvas 里的伤害数字/横幅要用,首帧前触发下载(失败静默回退系统字体)
@@ -341,25 +341,59 @@ function switchScene(sceneId) {
   return true;
 }
 
+function setDoorSensor(door, sensor) {
+  const fixture = door?.body?.getFixtureList?.();
+  if (fixture?.setSensor) fixture.setSensor(!!sensor);
+  door.doorSensor = !!sensor;
+}
+
+function updateRaidDoorAnimations(dt) {
+  if (!raidState.enabled) return;
+  const p = player.torso.getPosition();
+  for (const door of LEVEL.rects) {
+    if (door.type !== 'door' || !door.body) continue;
+    let angle = door.doorAngle || 0;
+    angle = door.doorOpen ? Math.min(Math.PI / 2, angle + dt * 2.8) : Math.max(0, angle - dt * 2.8);
+    if (!door.doorOpen && angle < 0.09) {
+      const occupiesOpening = Math.abs(p.x - door.x) < door.w * 0.5 + 0.22
+        && Math.abs(p.y - door.y) < door.h * 0.5 + 0.25;
+      if (occupiesOpening) angle = 0.12; // Do not close a solid door through the player's body.
+      else angle = 0;
+    }
+    door.doorAngle = angle;
+    setDoorSensor(door, door.doorOpen || angle > 0.09);
+    if (angle === 0) door.body.setTransform(Vec2(door.x, door.y), 0);
+  }
+}
+
 function interactWithRaidDoor() {
   if (!raidState.enabled) return false;
   const p = player.torso.getPosition();
   let nearest = null, best = Infinity;
   for (const r of LEVEL.rects) {
-    if (r.type !== 'door' || !r.body) continue;
+    if (!['door', 'breaker'].includes(r.type) || !r.body) continue;
     const d = Math.hypot(p.x - r.x, (p.y - r.y) * 0.72);
     if (d < best) { best = d; nearest = r; }
   }
   if (nearest && best < 1.85) {
-    const x = nearest.x, y = nearest.y;
-    destroyRect(nearest);
-    emitRaidNoise(raidState, { x, y, floorId: floorForY(y), radius: 4.6, intensity: 0.24, kind: 'door', faction: 'player' });
-    floaters.push({ x, y: y + 0.9, vy: 0.55, age: 0, text: '门锁解除', color: '#ffcb79', size: 16, bold: true, life: 0.9, max: 0.9 });
-    beep(190, 310, 0.09, 'triangle', 0.045);
+    const { x, y } = nearest;
+    if (nearest.type === 'breaker') {
+      const powerOn = toggleBuildingPower();
+      emitRaidNoise(raidState, { x, y, floorId: floorForY(y), radius: 7.5, intensity: 0.42, kind: 'breaker', faction: 'player' });
+      floaters.push({ x, y: y + 0.9, vy: 0.55, age: 0, text: powerOn ? '主电源恢复 · 主照明启动' : '主电源切断 · 应急照明启动', color: powerOn ? '#ffcb79' : '#ff756b', size: 15, bold: true, life: 1.25, max: 1.25 });
+      beep(powerOn ? 310 : 210, powerOn ? 520 : 120, 0.14, 'triangle', 0.06);
+      return true;
+    }
+    nearest.doorOpen = !nearest.doorOpen;
+    nearest.doorAngle = nearest.doorAngle || 0;
+    if (nearest.doorOpen) setDoorSensor(nearest, true);
+    emitRaidNoise(raidState, { x, y, floorId: floorForY(y), radius: nearest.doorOpen ? 5.2 : 4.6, intensity: 0.30, kind: 'door', faction: 'player' });
+    floaters.push({ x, y: y + 0.9, vy: 0.55, age: 0, text: nearest.doorOpen ? '门正在开启' : '门正在关闭', color: '#ffcb79', size: 16, bold: true, life: 0.9, max: 0.9 });
+    beep(nearest.doorOpen ? 190 : 250, nearest.doorOpen ? 310 : 170, 0.11, 'triangle', 0.045);
   } else {
-    floaters.push({ x: p.x, y: p.y + 1.2, vy: 0.35, age: 0, text: '附近没有可交互的门', color: '#bdc8d7', size: 12, life: 0.75, max: 0.75 });
+    floaters.push({ x: p.x, y: p.y + 1.2, vy: 0.35, age: 0, text: '附近没有可交互的门或配电箱', color: '#bdc8d7', size: 12, life: 0.75, max: 0.75 });
   }
-  // 剿匪行动里 E 专用于门交互，避免在没有门时意外把玩家重置回屋顶。
+  // 剿匪行动里 E 专用于门/配电箱交互，避免误把玩家重置回屋顶。
   return true;
 }
 
@@ -586,6 +620,7 @@ function corpseNearby() {
 
 function step(dt) {
   updateLighting(dt, { scene: localStorage.getItem('contra-scene') || 'wild', player });
+  updateRaidDoorAnimations(dt);
   input.aim = aimWorld(W, H, PPM);
   // 屋顶插入时复用声音系统已有的运输机循环声；暂停菜单时静音并在离开场景时清理。
   const insertionListener = player.torso.getPosition();
@@ -957,7 +992,7 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
   const w2sC = makeW2S(camO, VW, VH, PPM); // 与 camera.js 同一份公式(狙击镜内视图也走这里)
   drawSky(c, VW, VH);
   drawParallax(c, VW, VH, camO.x, PPM);
-  if (raidState.enabled) drawBuildingInterior(c, w2sC, ppmZ, time);
+  if (raidState.enabled) drawBuildingInterior(c, w2sC, ppmZ, time, lightingState);
   if (raidState.enabled) drawRaidVision(c, w2sC, ppmZ, time, VW, VH);
   drawTerrain(c, LEVEL.rects, w2sC, ppmZ, time, lightingState);
   if (raidIntro) {

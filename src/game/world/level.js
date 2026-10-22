@@ -160,7 +160,7 @@ export const LAYOUTS = {
       wall(x - 1.35, floorTop, 0.28, 2.65),
       wall(x + 1.35, floorTop, 0.28, 2.65),
       { x, y: floorTop + 2.9, w: 3.0, h: 0.45, type: 'wall', destructible: true },
-      { x, y: floorTop + 1.02, w: 2.42, h: 2.04, type: 'door', doorId: id, interactive: true, destructible: true, hp: 130, maxHp: 130 },
+      { x, y: floorTop + 1.02, w: 2.42, h: 2.04, type: 'door', doorId: id, interactive: true, destructible: true, hp: 130, maxHp: 130, doorOpen: false, doorAngle: 0, hingeSide: 'left' },
     ];
     const lamp = (x, floorTop, id) => ({
       x, y: floorTop + 3.05, w: 0.68, h: 0.18, type: 'lamp', lampId: id,
@@ -169,6 +169,8 @@ export const LAYOUTS = {
     const crate = (x, floorTop, type = 'crate') => ({ x, y: floorTop + 0.52, w: 1.0, h: 1.04, type, destructible: true });
     return [
       ground90(),
+      // 主配电柜位于地面入口侧；传感器刚体仅用于交互定位，不会挡住玩家。
+      { x: 2.5, y: 1.15, w: 0.46, h: 0.82, type: 'breaker', breakerId: 'main', raidFloorId: 0, interactive: true, destructible: false, sensor: true },
       // 屋顶(10.5m)：在 x≈16 留垂降井；下面两层的落井口交错，防止一次直穿整栋楼。
       floor(7, 10.25, 14), floor(46, 10.25, 56),
       // 三层(7m)：靠左落井；右段为可清理的独立房间。
@@ -234,6 +236,7 @@ export function buildLevel(world) {
     ensureRectHp(r);
     const b = world.createBody({ type: 'static', position: Vec2(r.x, r.y) });
     b.createFixture(new Box(r.w / 2, r.h / 2), {
+      isSensor: !!r.sensor,
       friction: 0.4,
       filterCategoryBits: CAT.GROUND,
       filterMaskBits: 0xffff,
