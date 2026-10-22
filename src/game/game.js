@@ -340,7 +340,7 @@ function switchScene(sceneId) {
 
   cam.x = sceneId === 'raid' ? 4.2 : 0; cam.y = sceneId === 'raid' ? 12.1 : 3.4; cam.zoom = 1; cam.scoped = 0;
   cam.oX = 0; cam.oY = 0; cam.oR = 0; cam.kx = 0; cam.ky = 0;
-  input.left = input.right = input.down = input.fire = input.jumpPressed = false;
+  input.left = input.right = input.down = input.fire = input.jumpPressed = input.jumpHeld = false;
   mouse.active = false;
   respawnFx = { x: LEVEL.spawn.x, y: LEVEL.spawn.y + 1, t: 0, duration: 0.85 };
   acc = 0;
@@ -688,6 +688,16 @@ function step(dt) {
   if (raidIntro) {
     input.left = input.right = input.down = input.fire = false;
     input.jumpPressed = false;
+  }
+  // Stair-only auto-hop: holding W/Up while moving on a raid stair flight repeats a jump on each landed tread.
+  // Normal ground/platform jumps remain edge-triggered; this only assists the deliberately narrow return route.
+  if (raidState.enabled && input.jumpHeld && player.grounded && !player.ragdoll && !raidIntro) {
+    const p = player.torso.getPosition();
+    const footY = p.y - (player.crouched ? 0.48 : 0.78);
+    const onStair = LEVEL.rects.some((r) => r.type === 'stair'
+      && Math.abs(p.x - r.x) <= r.w / 2 + 0.34
+      && Math.abs(footY - (r.y + r.h / 2)) <= 0.28);
+    if (onStair) input.jumpPressed = true;
   }
   player.update(dt, input);
   if (raidIntro) advanceRaidRappel(dt, !menuIsOpen());
