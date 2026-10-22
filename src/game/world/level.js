@@ -680,6 +680,57 @@ export function drawBuildingInterior(ctx, w2s, ppm, time = 0, lighting = null) {
   ctx.restore();
 }
 
+// Fog-only structural schematic: characters/furniture disappear outside current vision,
+ // while floor openings, room partitions and stair shafts remain navigable from their outline.
+export function drawRaidFloorplan(ctx, w2s, ppm, isVisible = () => false) {
+  if (themeId !== 'raid' || typeof w2s !== 'function') return;
+  const drawSegment = (x0, y0, x1, y1) => {
+    const length = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(1, Math.ceil(length / 0.26));
+    ctx.beginPath();
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps, t1 = (i + 1) / steps, tm = (t0 + t1) / 2;
+      const wx = x0 + (x1 - x0) * tm, wy = y0 + (y1 - y0) * tm;
+      if (isVisible(wx, wy)) continue;
+      const [ax, ay] = w2s(x0 + (x1 - x0) * t0, y0 + (y1 - y0) * t0);
+      const [bx, by] = w2s(x0 + (x1 - x0) * t1, y0 + (y1 - y0) * t1);
+      ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    }
+    ctx.stroke();
+  };
+  ctx.save();
+  ctx.globalAlpha = 0.66;
+  ctx.strokeStyle = '#8daebe';
+  ctx.lineWidth = Math.max(1, ppm * 0.018);
+  const floors = [
+    { y: 10.5, spans: [[0, 14], [18, 74]], partitions: [] },
+    { y: 7, spans: [[0, 28], [32, 74]], partitions: [23, 43, 62] },
+    { y: 3.5, spans: [[0, 48], [52, 74]], partitions: [17, 37, 58] },
+    { y: 0, spans: [[0, 74]], partitions: [11, 29, 45, 61] },
+  ];
+  for (const floor of floors) {
+    for (const [x0, x1] of floor.spans) drawSegment(x0, floor.y, x1, floor.y);
+    for (const x of floor.partitions) {
+      drawSegment(x - 1.35, floor.y, x - 1.35, floor.y + 2.65);
+      drawSegment(x + 1.35, floor.y, x + 1.35, floor.y + 2.65);
+      drawSegment(x - 1.21, floor.y, x - 1.21, floor.y + 2.04);
+      drawSegment(x + 1.21, floor.y, x + 1.21, floor.y + 2.04);
+      drawSegment(x - 1.21, floor.y + 2.04, x + 1.21, floor.y + 2.04);
+      ctx.strokeStyle = '#bea575';
+      ctx.globalAlpha = 0.72;
+      drawSegment(x - 1.21, floor.y + 0.10, x + 1.21, floor.y + 0.10);
+      ctx.strokeStyle = '#8daebe';
+      ctx.globalAlpha = 0.66;
+    }
+  }
+  // Ghost the stair treads too, so a player can locate the return route through darkness.
+  for (const r of LEVEL.rects) {
+    if (r.type !== 'stair' || isVisible(r.x, r.y)) continue;
+    drawSegment(r.x - r.w / 2, r.y + r.h / 2, r.x + r.w / 2, r.y + r.h / 2);
+  }
+  ctx.restore();
+}
+
 export function drawTerrain(ctx, rects, w2s, ppm, time = 0, lighting = null) {
   // Continuous handrails make the narrow switchback treads read as a deliberate route, not random ledges.
   const stairGroups = new Map();
