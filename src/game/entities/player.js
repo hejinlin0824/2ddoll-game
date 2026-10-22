@@ -12,23 +12,9 @@ import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../
 import { skinImg, skinXf, skinFitScale, SKIN_END_ANCHORED, SKIN_BOX } from '../domain/skin.js';
 import { loadAppearance, appearancePalette, appearanceRevision } from '../domain/appearance.js';
 import { equipmentPartCenter } from '../domain/equipmentGeometry.js';
+import { RIG_DIMS as D, RIG_ANCHORS as A, DEFAULT_RIG_POSE } from '../domain/rigGeometry.js';
 
-const D = {
-  torso: { w: 0.30, h: 0.52 },
-  headR: 0.15,
-  upperArm: { w: 0.09, h: 0.26 },
-  foreArm: { w: 0.08, h: 0.24 },
-  thigh: { w: 0.115, h: 0.28 },
-  calf: { w: 0.095, h: 0.26 },
-  gunLen: 0.36,
-};
-
-// 骨架锚点(躯干局部坐标,朝右为 +x)
-const A = {
-  shoulder: { x: 0, y: 0.20 },
-  neck: { x: 0, y: 0.30 },
-  hip: { x: 0, y: -0.24 },
-};
+// Rig dimensions/anchors are shared with the skin-studio preview.
 
 const COLOR = {
   skin: '#e2b088', skinDark: '#b8885f',
@@ -243,8 +229,7 @@ export class Player {
         this.shieldHp = 100;
       }
     }
-    this.pose = { torso: 0, neck: 0, shF: 0.15, elF: 0.55, shB: -0.2, elB: 0.5,
-      hipF: 0.05, kneeF: -0.08, hipB: -0.05, kneeB: -0.12 };
+    this.pose = { ...DEFAULT_RIG_POSE };
   }
 
   // 当前武器的属性(基础词条 + 主武器词缀聚合);手枪不 tgt 主武器词缀。
