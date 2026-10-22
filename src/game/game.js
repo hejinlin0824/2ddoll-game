@@ -1306,7 +1306,13 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
 
   // Fog belongs between the world/environment and the player silhouette. Drawing it after the
   // ragdoll darkened the player's own hands/arms and made the screen feel like a dirty lens.
-  // Fog/floorplan intentionally render before the player so the player's own limbs stay crisp.
+  // Lighting and fog are environmental passes: apply them to the world, never to the player's
+  // own silhouette. This keeps hands/weapon readable while darkness still affects the room.
+  drawLighting(c, { state: lightingState, rects: LEVEL.rects, w2s: w2sC, ppm: ppmZ, W: VW, H: VH, time, flash, rings });
+  const activeScene = localStorage.getItem('contra-scene') || 'wild';
+  drawFogOfWar(c, { scene: activeScene, cam: camO, w2s: w2sC, ppm: ppmZ, W: VW, H: VH });
+  if (raidState.enabled) drawRaidFloorplan(c, w2sC, ppmZ, isWorldCurrentlyVisible);
+
 
   // 复活先出现短促的战术重部署扫描，再让角色从淡影进入实态。
   if (respawnFx) drawRespawnFx(c, w2sC, ppmZ, time, false);
@@ -1388,8 +1394,6 @@ function drawWorld(c, camO, VW, VH, ppmZ, time) {
     }
     c.restore();
   }
-  // Lighting is part of the world pass so the scope and main view share the same light field.
-  drawLighting(c, { state: lightingState, rects: LEVEL.rects, w2s: w2sC, ppm: ppmZ, W: VW, H: VH, time, flash, rings });
   drawGrapple(c, grappleState, player, w2sC, ppmZ);
   const activeScene = localStorage.getItem('contra-scene') || 'wild';
   drawFogOfWar(c, { scene: activeScene, cam: camO, w2s: w2sC, ppm: ppmZ, W: VW, H: VH });
