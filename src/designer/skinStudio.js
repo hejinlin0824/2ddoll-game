@@ -75,68 +75,154 @@ function updateAppearanceUi() {
   syncAppearanceChoices();
   drawAppearancePreview();
   saveAppearanceDraft();
+  setAppearanceStageStatus('预览已更新 · 尚未应用', 'draft');
+}
+function setAppearanceStageStatus(label, state = 'saved') {
+  const el = $('appearanceStageStatus');
+  if (!el) return;
+  el.dataset.state = state;
+  const text = el.querySelector('span');
+  if (text) text.textContent = label;
 }
 function rr(c, x, y, w, h, r, color) {
   c.fillStyle = color; c.beginPath(); c.roundRect(x, y, w, h, r); c.fill();
 }
 function drawAppearancePreview() {
   if (!appCtx || !appPreview) return;
-  const a = readAppForm(), c = appCtx, W = appPreview.width, H = appPreview.height;
+  const a = readAppForm(), c = appCtx;
+  const W = appPreview.width, H = appPreview.height;
   c.clearRect(0, 0, W, H);
-  const bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#17293c'); bg.addColorStop(.58, '#0b1724'); bg.addColorStop(1, '#070d14'); c.fillStyle = bg; c.fillRect(0, 0, W, H);
-  c.strokeStyle = 'rgba(127,178,255,.11)'; c.lineWidth = 1;
-  for (let x = 18; x < W; x += 24) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); }
-  for (let y = 18; y < H; y += 24) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
-  c.fillStyle = 'rgba(255,177,74,.06)'; c.fillRect(16, 16, W - 32, H - 32);
-  const cx = W * .50, ground = H * .82;
-  c.strokeStyle = 'rgba(255,177,74,.36)'; c.beginPath(); c.moveTo(28, ground); c.lineTo(W - 28, ground); c.stroke();
-  // Shadow and boots
-  c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(cx + 4, ground + 5, 72, 12, 0, 0, Math.PI * 2); c.fill();
-  rr(c, cx - 40, ground - 22, 35, 15, 4, a.bootColor); rr(c, cx + 14, ground - 22, 36, 15, 4, a.bootColor);
-  // Legs with knees and cargo pockets
-  c.lineCap = 'round'; c.lineJoin = 'round';
-  c.strokeStyle = a.pantsColor; c.lineWidth = 25; c.beginPath(); c.moveTo(cx - 19, ground - 34); c.lineTo(cx - 26, ground - 82); c.lineTo(cx - 16, ground - 130); c.stroke();
-  c.beginPath(); c.moveTo(cx + 28, ground - 34); c.lineTo(cx + 31, ground - 82); c.lineTo(cx + 18, ground - 130); c.stroke();
-  rr(c, cx - 37, ground - 87, 21, 22, 3, a.pantsColor); rr(c, cx + 20, ground - 88, 21, 22, 3, a.pantsColor);
-  c.strokeStyle = 'rgba(235,242,248,.22)'; c.lineWidth = 2; c.beginPath(); c.moveTo(cx - 23, ground - 91); c.lineTo(cx - 21, ground - 75); c.moveTo(cx + 28, ground - 92); c.lineTo(cx + 29, ground - 76); c.stroke();
-  // Torso, oriented to the right like the in-game side view
-  rr(c, cx - 34, ground - 216, 70, 93, 13, a.shirtColor);
-  rr(c, cx - 25, ground - 205, 56, 62, 8, '#263343');
-  rr(c, cx - 21, ground - 199, 49, 20, 4, a.accentColor);
-  rr(c, cx - 20, ground - 173, 22, 20, 3, a.shirtColor); rr(c, cx + 5, ground - 173, 22, 20, 3, a.shirtColor);
-  c.strokeStyle = 'rgba(255,255,255,.23)'; c.lineWidth = 2; c.beginPath(); c.moveTo(cx - 29, ground - 192); c.lineTo(cx + 28, ground - 192); c.stroke();
-  // Arms and gloves
-  c.strokeStyle = a.shirtColor; c.lineWidth = 17; c.beginPath(); c.moveTo(cx - 24, ground - 205); c.lineTo(cx - 44, ground - 163); c.lineTo(cx + 5, ground - 147); c.stroke();
-  c.strokeStyle = a.skinTone; c.lineWidth = 12; c.beginPath(); c.moveTo(cx + 1, ground - 150); c.lineTo(cx + 30, ground - 154); c.stroke();
-  c.strokeStyle = a.shirtColor; c.lineWidth = 17; c.beginPath(); c.moveTo(cx + 28, ground - 205); c.lineTo(cx + 47, ground - 170); c.lineTo(cx + 40, ground - 149); c.stroke();
-  rr(c, cx + 32, ground - 157, 17, 12, 4, '#202a34');
-  // Neck and face
-  rr(c, cx - 10, ground - 251, 26, 27, 6, a.skinTone);
-  const hx = cx + 4, hy = ground - 270;
-  c.fillStyle = a.skinTone; c.beginPath();
-  if (a.faceShape === 'angular') { c.moveTo(hx - 24, hy - 17); c.lineTo(hx - 14, hy - 33); c.lineTo(hx + 15, hy - 31); c.lineTo(hx + 26, hy - 13); c.lineTo(hx + 20, hy + 9); c.lineTo(hx + 4, hy + 23); c.lineTo(hx - 13, hy + 12); c.closePath(); c.fill(); }
-  else c.ellipse(hx, hy, a.faceShape === 'round' ? 25 : 21, 29, 0, 0, Math.PI * 2), c.fill();
-  // Back hair and style details
-  c.fillStyle = a.hairColor;
-  if (a.hairStyle === 'long') { c.beginPath(); c.moveTo(hx - 18, hy - 23); c.quadraticCurveTo(hx - 37, hy + 4, hx - 26, hy + 37); c.lineTo(hx - 14, hy + 36); c.lineTo(hx - 8, hy - 3); c.closePath(); c.fill(); }
-  if (a.hairStyle === 'ponytail') { c.beginPath(); c.ellipse(hx - 28, hy + 8, 8, 25, -.18, 0, Math.PI * 2); c.fill(); }
-  if (a.hairStyle === 'bun') { c.beginPath(); c.arc(hx - 8, hy - 25, 8, 0, Math.PI * 2); c.fill(); }
-  if (a.hairStyle === 'spiky') { c.beginPath(); c.moveTo(hx - 22, hy - 9); c.lineTo(hx - 17, hy - 36); c.lineTo(hx - 4, hy - 25); c.lineTo(hx + 4, hy - 39); c.lineTo(hx + 17, hy - 25); c.lineTo(hx + 23, hy - 11); c.closePath(); c.fill(); }
-  else { c.beginPath(); c.ellipse(hx, hy - 16, 24, a.hairStyle === 'buzz' ? 8 : 15, 0, Math.PI, Math.PI * 2); c.fill(); }
-  if (a.hairStyle === 'undercut') rr(c, hx - 17, hy - 4, 5, 24, 2, '#3c4650');
-  // Eye and brow, side profile
-  c.strokeStyle = '#1a2028'; c.lineWidth = 2; c.beginPath(); c.moveTo(hx + 8, hy - 3); c.lineTo(hx + 17, hy - 4); c.stroke();
-  c.fillStyle = '#f5f0e8'; c.beginPath(); c.ellipse(hx + 12, hy + 3, 5.6, 3.4, 0, 0, Math.PI * 2); c.fill();
-  c.fillStyle = a.eyeColor; c.beginPath(); c.arc(hx + 14, hy + 3, 2.6, 0, Math.PI * 2); c.fill();
-  c.fillStyle = '#0b1018'; c.beginPath(); c.arc(hx + 14.8, hy + 3, 1.2, 0, Math.PI * 2); c.fill();
-  // Headwear
-  if (a.headwear === 'bandana') { rr(c, hx - 22, hy - 18, 44, 8, 3, a.bandanaColor); c.strokeStyle = a.bandanaColor; c.lineWidth = 3; c.beginPath(); c.moveTo(hx - 16, hy - 12); c.quadraticCurveTo(hx - 36, hy - 7, hx - 29, hy + 2); c.stroke(); }
-  else if (a.headwear === 'headset') { c.strokeStyle = '#242e39'; c.lineWidth = 5; c.beginPath(); c.arc(hx - 2, hy - 3, 24, Math.PI * 1.03, Math.PI * 1.9); c.stroke(); rr(c, hx - 23, hy - 1, 9, 18, 4, '#2b3949'); rr(c, hx - 24, hy + 9, 12, 5, 2, a.accentColor); }
-  // Labels
-  c.textAlign = 'left'; c.fillStyle = '#ffb14a'; c.font = '700 12px sans-serif'; c.fillText('OPERATOR / LIVE PREVIEW', 20, 28);
-  c.fillStyle = 'rgba(218,232,246,.72)'; c.font = '10px sans-serif'; c.fillText('程序化外观 · 物理骨架不变', 20, 46);
-  c.textAlign = 'center'; c.fillStyle = '#e8eef5'; c.font = '700 12px sans-serif'; c.fillText(`${hairLabel(a.hairStyle)} / ${faceLabel(a.faceShape)}`, W / 2, H - 34);
-  c.fillStyle = 'rgba(218,232,246,.55)'; c.font = '10px sans-serif'; c.fillText('颜色与造型会同步至游戏内角色', W / 2, H - 18);
+  c.save(); c.scale(W / 420, H / 600);
+
+  // Hangar-like character presentation stage, deliberately asset-free.
+  const bg = c.createLinearGradient(0, 0, 0, 600);
+  bg.addColorStop(0, '#122435'); bg.addColorStop(.48, '#0a1723'); bg.addColorStop(1, '#060b12');
+  c.fillStyle = bg; c.fillRect(0, 0, 420, 600);
+  const glow = c.createRadialGradient(218, 270, 8, 218, 270, 250);
+  glow.addColorStop(0, 'rgba(105,146,174,.22)'); glow.addColorStop(.58, 'rgba(64,99,126,.07)'); glow.addColorStop(1, 'rgba(4,9,15,0)');
+  c.fillStyle = glow; c.fillRect(0, 0, 420, 600);
+  c.strokeStyle = 'rgba(126,171,205,.065)'; c.lineWidth = 1;
+  for (let x = 20; x < 420; x += 24) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 600); c.stroke(); }
+  for (let y = 24; y < 600; y += 24) { c.beginPath(); c.moveTo(0, y); c.lineTo(420, y); c.stroke(); }
+  c.fillStyle = 'rgba(4,9,15,.38)';
+  c.beginPath(); c.moveTo(0,0); c.lineTo(72,0); c.lineTo(101,445); c.lineTo(0,485); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(420,0); c.lineTo(356,0); c.lineTo(330,440); c.lineTo(420,485); c.closePath(); c.fill();
+  c.fillStyle = 'rgba(255,177,74,.16)'; c.fillRect(24,66,45,2); c.fillRect(351,66,45,2);
+  c.strokeStyle = 'rgba(129,168,198,.15)'; c.beginPath(); c.moveTo(0,482); c.lineTo(420,482); c.moveTo(0,510); c.lineTo(420,510); c.moveTo(40,600); c.lineTo(154,482); c.moveTo(380,600); c.lineTo(276,482); c.stroke();
+  const floor = c.createLinearGradient(0,482,0,600); floor.addColorStop(0,'rgba(24,40,53,.65)'); floor.addColorStop(1,'rgba(5,10,16,.95)');
+  c.fillStyle=floor; c.fillRect(0,482,420,118);
+  c.strokeStyle='rgba(255,177,74,.24)'; c.beginPath(); c.moveTo(22,512); c.lineTo(398,512); c.stroke();
+  c.fillStyle='rgba(255,177,74,.10)'; c.fillRect(29,519,48,2); c.fillRect(343,519,48,2);
+  c.strokeStyle='rgba(127,178,255,.10)';
+  for(const r of [86,118,151]){c.beginPath();c.ellipse(218,280,r*.66,r,0,0,Math.PI*2);c.stroke();}
+  c.setLineDash([3,7]); c.strokeStyle='rgba(255,177,74,.19)'; c.beginPath(); c.moveTo(218,80); c.lineTo(218,501); c.stroke(); c.setLineDash([]);
+
+  const box=(x,y,w,h,r,fill,stroke,lw=1)=>{
+    c.beginPath();c.roundRect(x,y,w,h,r);if(fill){c.fillStyle=fill;c.fill();}
+    if(stroke){c.strokeStyle=stroke;c.lineWidth=lw;c.stroke();}
+  };
+  const path=(fn,fill,stroke='#101923',lw=3)=>{
+    c.beginPath();fn();c.fillStyle=fill;c.fill();
+    if(stroke){c.strokeStyle=stroke;c.lineWidth=lw;c.lineJoin='round';c.lineCap='round';c.stroke();}
+  };
+  const line=(x1,y1,x2,y2,color,width=1)=>{
+    c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.strokeStyle=color;c.lineWidth=width;c.lineCap='round';c.stroke();
+  };
+  const stroke=(fn,color,width)=>{
+    c.beginPath();fn();c.strokeStyle=color;c.lineWidth=width;c.lineCap='round';c.lineJoin='round';c.stroke();
+  };
+  const apparel=(base,x1=165,x2=250)=>{
+    const g=c.createLinearGradient(x1,0,x2,0);
+    g.addColorStop(0,'rgba(0,0,0,.30)');g.addColorStop(.42,base);g.addColorStop(.72,'rgba(255,255,255,.10)');g.addColorStop(1,'rgba(0,0,0,.23)');return g;
+  };
+  const pants=apparel(a.pantsColor,164,247), shirt=apparel(a.shirtColor,172,244);
+  const skin=c.createLinearGradient(197,0,247,0);
+  skin.addColorStop(0,'rgba(35,17,11,.30)');skin.addColorStop(.42,a.skinTone);skin.addColorStop(.70,'rgba(255,226,194,.20)');skin.addColorStop(1,'rgba(46,24,16,.26)');
+  const dark='#0a121a', plate='#273744', plateHi='#3b4e5c';
+
+  // Ground contact and far leg.
+  c.fillStyle='rgba(0,0,0,.46)';c.beginPath();c.ellipse(218,507,82,12,0,0,Math.PI*2);c.fill();
+  path(()=>{c.moveTo(183,326);c.quadraticCurveTo(200,329,211,344);c.lineTo(201,386);c.quadraticCurveTo(190,419,198,478);c.lineTo(180,488);c.quadraticCurveTo(169,449,174,416);c.lineTo(166,369);c.closePath();},pants,dark,4);
+  path(()=>{c.moveTo(207,329);c.quadraticCurveTo(226,330,235,350);c.lineTo(239,386);c.quadraticCurveTo(235,415,239,475);c.lineTo(218,486);c.quadraticCurveTo(210,442,211,415);c.lineTo(198,369);c.closePath();},pants,dark,4);
+  // Utility pockets, knee pads, gaiters, treaded boots.
+  box(169,381,25,30,3,'#293b4a',dark,2);box(216,379,25,31,3,'#324452',dark,2);
+  line(173,388,190,388,'rgba(213,226,235,.25)',1.2);line(220,387,237,387,'rgba(213,226,235,.26)',1.2);
+  line(181,395,181,405,'rgba(4,9,14,.5)',1);line(228,394,228,405,'rgba(4,9,14,.5)',1);
+  box(169,420,22,22,5,'#1a2835',dark,2);box(211,421,24,24,5,'#192734',dark,2);
+  line(172,425,188,425,'rgba(255,255,255,.13)',1);line(214,426,232,426,'rgba(255,255,255,.14)',1);
+  box(177,467,23,22,4,'#17232e',dark,3);box(218,466,25,23,4,'#17232e',dark,3);
+  path(()=>{c.moveTo(169,484);c.lineTo(197,481);c.lineTo(208,491);c.lineTo(206,501);c.lineTo(169,501);c.lineTo(163,496);c.closePath();},'#253541','#080f16',3);
+  path(()=>{c.moveTo(215,483);c.lineTo(240,481);c.lineTo(258,491);c.lineTo(259,501);c.lineTo(216,501);c.lineTo(209,496);c.closePath();},'#293a47','#080f16',3);
+  line(165,500,207,500,'#080d12',3);line(211,500,260,500,'#080d12',3);
+  for(let i=0;i<3;i++){line(178+i*5,488,182+i*5,492,'rgba(224,233,239,.55)',1.2);line(225+i*5,488,229+i*5,492,'rgba(224,233,239,.55)',1.2);}
+  box(175,489,12,3,1,a.accentColor,null);box(226,489,13,3,1,a.accentColor,null);
+
+  // Neck, combat shirt and layered plate carrier.
+  box(201,177,23,31,5,skin,dark,2.5);
+  path(()=>{c.moveTo(197,199);c.lineTo(218,197);c.quadraticCurveTo(235,202,241,220);c.lineTo(235,267);c.quadraticCurveTo(234,291,221,330);c.lineTo(183,331);c.quadraticCurveTo(176,300,174,274);c.lineTo(174,230);c.quadraticCurveTo(179,209,197,199);c.closePath();},shirt,dark,4);
+  path(()=>{c.moveTo(184,208);c.lineTo(198,201);c.lineTo(213,207);c.lineTo(210,219);c.lineTo(193,223);c.lineTo(181,218);c.closePath();},'#3b4d5c',dark,2.5);
+  path(()=>{c.moveTo(198,201);c.lineTo(214,202);c.lineTo(224,212);c.lineTo(215,219);c.lineTo(203,214);c.closePath();},'#222f3b',dark,2.5);
+  line(191,208,204,216,'rgba(226,235,242,.27)',1.4);
+  path(()=>{c.moveTo(190,216);c.lineTo(213,214);c.lineTo(229,225);c.lineTo(230,270);c.lineTo(218,292);c.lineTo(190,286);c.lineTo(183,263);c.closePath();},plate,dark,3);
+  path(()=>{c.moveTo(194,220);c.lineTo(211,220);c.lineTo(223,230);c.lineTo(222,262);c.lineTo(213,276);c.lineTo(194,271);c.lineTo(189,247);c.closePath();},plateHi,'#172530',2);
+  line(195,225,217,229,'rgba(231,239,245,.32)',1.4);line(193,233,222,236,'rgba(5,11,17,.7)',2);line(191,239,222,242,'rgba(5,11,17,.7)',2);
+  for(let row=0;row<3;row++)for(let col=0;col<4;col++)box(194+col*6,231+row*6,3.4,2.2,1.1,'rgba(163,184,198,.52)',null);
+  box(192,252,9,18,2,'#172632',dark,1.5);box(203,254,9,18,2,'#172632',dark,1.5);box(214,253,9,18,2,'#172632',dark,1.5);
+  line(194,255,199,255,'rgba(255,255,255,.24)',1);line(205,257,210,257,'rgba(255,255,255,.24)',1);line(216,256,221,256,'rgba(255,255,255,.24)',1);
+  box(179,279,17,20,3,'#263845',dark,2);box(181,282,13,4,1,a.accentColor,null);
+  line(184,303,227,303,'rgba(8,13,19,.75)',4);
+  path(()=>{c.moveTo(179,317);c.lineTo(224,317);c.lineTo(228,331);c.lineTo(183,335);c.closePath();},'#172631',dark,2.5);
+  box(203,316,12,9,2,'#354857',dark,1.5);box(226,318,15,20,2,'#263745',dark,2);line(229,322,238,322,'rgba(255,255,255,.25)',1);
+
+  // Rear arm and a neutral carbine silhouette to give the preview its field-ready pose.
+  stroke(()=>{c.moveTo(188,216);c.quadraticCurveTo(179,231,192,247);c.lineTo(223,252);},dark,24);
+  stroke(()=>{c.moveTo(188,216);c.quadraticCurveTo(179,231,192,247);c.lineTo(223,252);},a.shirtColor,18);
+  path(()=>{c.moveTo(220,228);c.lineTo(231,224);c.lineTo(244,230);c.lineTo(241,240);c.lineTo(228,241);c.closePath();},'#222f3b','#090f16',2.5);
+  box(235,225,51,13,3,'#303e4a','#090f16',2);box(242,222,30,4,1,'#202d38','#080e14',1.5);line(244,221,273,221,'#9aabb7',1);
+  box(283,227,40,8,2,'#263641','#080e14',2);for(let i=0;i<5;i++)line(289+i*6,228,289+i*6,234,'rgba(182,198,208,.40)',1);
+  box(320,229,25,3,1,'#121d27','#080e14',1);box(342,226,7,8,1,'#344654','#080e14',1.4);
+  path(()=>{c.moveTo(254,237);c.lineTo(269,237);c.lineTo(273,254);c.lineTo(260,257);c.closePath();},'#1d2a35','#080e14',2);
+  path(()=>{c.moveTo(241,236);c.lineTo(250,235);c.lineTo(250,242);c.lineTo(244,246);c.closePath();},'#273643','#080e14',2);
+  stroke(()=>{c.moveTo(214,216);c.quadraticCurveTo(227,224,238,236);c.quadraticCurveTo(251,235,263,232);},dark,24);
+  stroke(()=>{c.moveTo(214,216);c.quadraticCurveTo(227,224,238,236);c.quadraticCurveTo(251,235,263,232);},shirt,18);
+  line(223,222,235,234,'rgba(232,239,244,.2)',2);box(256,226,15,12,3,'#273845','#0b141d',2);line(261,228,267,234,'rgba(222,232,239,.26)',1);
+  box(229,231,12,10,3,'#425565','#111c26',1.5);line(231,234,238,237,'rgba(255,255,255,.24)',1);
+
+  // Side-profile face. Facial shape and eye/hair colors follow the live customization fields.
+  const hx=216,hy=151;
+  if(a.hairStyle==='long')path(()=>{c.moveTo(hx-17,hy-15);c.quadraticCurveTo(hx-32,hy+1,hx-27,hy+34);c.lineTo(hx-15,hy+38);c.lineTo(hx-8,hy+7);c.closePath();},a.hairColor,dark,2);
+  if(a.hairStyle==='ponytail')path(()=>{c.moveTo(hx-16,hy-14);c.quadraticCurveTo(hx-34,hy-2,hx-30,hy+10);c.quadraticCurveTo(hx-27,hy+17,hx-35,hy+28);c.quadraticCurveTo(hx-21,hy+25,hx-17,hy+13);c.closePath();},a.hairColor,dark,2);
+  if(a.hairStyle==='bun'){c.fillStyle=a.hairColor;c.beginPath();c.ellipse(hx-8,hy-26,9,8,-.25,0,Math.PI*2);c.fill();c.strokeStyle=dark;c.lineWidth=2;c.stroke();}
+  path(()=>{
+    c.moveTo(hx-17,hy-21);
+    if(a.faceShape==='angular'){c.lineTo(hx+4,hy-27);c.lineTo(hx+19,hy-18);c.lineTo(hx+24,hy-2);c.lineTo(hx+32,hy+6);c.lineTo(hx+25,hy+12);c.lineTo(hx+22,hy+24);c.lineTo(hx+5,hy+31);c.lineTo(hx-12,hy+22);c.lineTo(hx-19,hy+4);}
+    else if(a.faceShape==='round'){c.bezierCurveTo(hx-3,hy-32,hx+17,hy-27,hx+23,hy-10);c.quadraticCurveTo(hx+28,hy+1,hx+33,hy+6);c.lineTo(hx+26,hy+12);c.quadraticCurveTo(hx+24,hy+28,hx+7,hy+30);c.quadraticCurveTo(hx-13,hy+27,hx-18,hy+8);}
+    else{c.bezierCurveTo(hx-3,hy-32,hx+16,hy-28,hx+23,hy-12);c.lineTo(hx+32,hy+5);c.lineTo(hx+25,hy+11);c.quadraticCurveTo(hx+22,hy+26,hx+7,hy+29);c.quadraticCurveTo(hx-11,hy+25,hx-17,hy+8);}
+    c.closePath();
+  },skin,dark,3);
+  c.fillStyle=a.skinTone;c.beginPath();c.ellipse(hx-12,hy+3,6,8,0,0,Math.PI*2);c.fill();c.strokeStyle='rgba(47,26,20,.55)';c.lineWidth=1.2;c.beginPath();c.arc(hx-13,hy+3,3,Math.PI*1.45,Math.PI*.55);c.stroke();
+  line(hx+9,hy-4,hx+20,hy-4,'#38251f',2.2);
+  c.fillStyle='#f0e8dc';c.beginPath();c.ellipse(hx+19,hy+1,5,3,0,0,Math.PI*2);c.fill();
+  c.fillStyle=a.eyeColor;c.beginPath();c.arc(hx+21,hy+1,2.2,0,Math.PI*2);c.fill();c.fillStyle='#0a1118';c.beginPath();c.arc(hx+21.6,hy+1,1,0,Math.PI*2);c.fill();
+  stroke(()=>{c.moveTo(hx+26,hy+3);c.lineTo(hx+29,hy+7);c.lineTo(hx+24,hy+8);},'rgba(70,38,28,.68)',1.2);line(hx+15,hy+17,hx+24,hy+17,'rgba(65,34,26,.6)',1.2);
+  if(a.hairStyle==='spiky')path(()=>{c.moveTo(hx-21,hy-8);c.lineTo(hx-23,hy-27);c.lineTo(hx-10,hy-19);c.lineTo(hx-5,hy-35);c.lineTo(hx+5,hy-22);c.lineTo(hx+13,hy-29);c.lineTo(hx+21,hy-14);c.lineTo(hx+23,hy-8);c.closePath();},a.hairColor,dark,2.3);
+  else path(()=>{c.moveTo(hx-21,hy-8);c.quadraticCurveTo(hx-27,hy-29,hx-7,hy-32);c.quadraticCurveTo(hx+11,hy-35,hx+22,hy-16);c.lineTo(hx+22,hy-10);c.lineTo(hx+10,hy-15);c.quadraticCurveTo(hx-5,hy-21,hx-21,hy-8);c.closePath();},a.hairColor,dark,2.3);
+  if(a.hairStyle==='buzz'){c.fillStyle='rgba(255,255,255,.13)';c.beginPath();c.ellipse(hx+1,hy-25,15,4,0,0,Math.PI*2);c.fill();}
+  if(a.hairStyle==='undercut'){box(hx-17,hy-5,8,23,2,'#303b45',dark,1.2);for(let y=hy;y<hy+13;y+=4)line(hx-16,y,hx-11,y,'rgba(217,230,239,.4)',.8);}
+  if(a.headwear==='bandana'){
+    path(()=>{c.moveTo(hx-22,hy-20);c.lineTo(hx+17,hy-24);c.lineTo(hx+23,hy-16);c.lineTo(hx-20,hy-12);c.closePath();},a.bandanaColor,'#121a22',2);
+    line(hx-10,hy-17,hx+14,hy-20,'rgba(255,255,255,.22)',1);
+    path(()=>{c.moveTo(hx-18,hy-13);c.quadraticCurveTo(hx-31,hy-8,hx-28,hy+5);c.lineTo(hx-23,hy+3);c.lineTo(hx-20,hy-5);c.closePath();},a.bandanaColor,'#121a22',1.5);
+  }else if(a.headwear==='headset'){
+    stroke(()=>{c.arc(hx-2,hy-3,25,Math.PI*1.02,Math.PI*1.86);},'#202d38',5);
+    box(hx-24,hy-5,10,18,3,'#2d3d4b','#0b141d',2);box(hx-23,hy+1,8,7,2,a.accentColor,'#111c26',1);
+    stroke(()=>{c.moveTo(hx-18,hy+9);c.quadraticCurveTo(hx-9,hy+16,hx-2,hy+12);},'#6c8293',1.4);
+  }
+  // Final silhouette anchors and clothing accents.
+  line(182,223,189,246,'rgba(226,236,242,.18)',1.5);box(182,242,10,15,2,'#202f3b','#0b141d',1.5);line(184,246,190,246,'rgba(255,255,255,.2)',1);
+  box(181,307,12,8,2,'#3a4e5d','#101820',1.2);box(185,335,9,13,2,'#1d2a35','#0a1119',1.5);box(224,339,9,13,2,'#1d2a35','#0a1119',1.5);
+  c.strokeStyle='rgba(255,177,74,.55)';c.lineWidth=1;c.beginPath();c.moveTo(218,88);c.lineTo(218,102);c.moveTo(218,458);c.lineTo(218,472);c.moveTo(105,285);c.lineTo(117,285);c.moveTo(319,285);c.lineTo(331,285);c.stroke();
+  c.restore();
 }
 function hairLabel(v) { return ({ short:'短发', buzz:'寸头', ponytail:'马尾', bun:'丸子头', long:'长发', spiky:'碎刺发', undercut:'侧剃' })[v] || '短发'; }
 function faceLabel(v) { return ({ oval:'椭圆脸', round:'圆脸', angular:'棱角脸' })[v] || '椭圆脸'; }
@@ -169,6 +255,7 @@ $('appearanceSave')?.addEventListener('click', () => {
   const ok = saveAppearance(readAppForm());
   if (!ok) { toast('保存失败：浏览器存储不可用'); return; }
   try { localStorage.removeItem(APP_DRAFT_KEY); } catch { /* ignore */ }
+  setAppearanceStageStatus('已应用到游戏角色', 'saved');
   toast('外观已应用到游戏角色');
 });
 function randomizeAppearance() {
@@ -196,6 +283,7 @@ document.querySelectorAll('[data-slot-load]').forEach((el) => el.addEventListene
   let initial = loadAppearance();
   try { const draft = JSON.parse(localStorage.getItem(APP_DRAFT_KEY) || 'null'); if (draft && typeof draft === 'object') initial = { ...initial, ...draft }; } catch { /* ignore */ }
   setAppForm(initial);
+  setAppearanceStageStatus('已载入保存的外观', 'saved');
 })();
 
 const HINTS = {
