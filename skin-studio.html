@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>角色造型工作台 — HERO NIGHTFALL</title>
+  <title>干员外观整备 — HERO NIGHTFALL</title>
   <link href="https://fonts.googleapis.com/css2?family=ZCOOL+QingKe+HuangYou&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root{--bg:#070d15;--panel:#0d1825;--panel2:#111f2e;--line:rgba(135,174,211,.20);--muted:#8ea2b8;--text:#e7eff8;--amber:#ffb14a;--cyan:#70c8e8;--radius:8px}
@@ -21,22 +21,109 @@
     @media(max-width:800px){.topbar{padding:0 13px;gap:10px}.top-title{display:none}.page{padding:15px 12px}.studio-grid{grid-template-columns:1fr}.preview-stage{min-height:390px}.preview-stage canvas{max-height:470px}.page-head{align-items:start;flex-direction:column}.save-note{text-align:left}.legacy #wrap{flex-direction:column}.legacy #slots{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.legacy #right{width:100%}.legacy #assembled{max-width:320px}.color-line{grid-template-columns:78px 1fr 34px}.presets{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
   </style>
+<style id="operator-identity-overhaul">
+
+  /* OPERATOR IDENTITY OVERHAUL — existing IDs and JS hooks intentionally preserved. */
+  :root{--bg:#060b12;--panel:#0b1420;--panel2:#101e2c;--line:rgba(151,181,211,.19);--muted:#8ea3b9;--text:#e8f0f8;--amber:#ffb14a;--cyan:#74cce5;--radius:3px}
+  html{scroll-behavior:smooth;background:var(--bg)}
+  body{min-height:100vh;background:radial-gradient(ellipse at 16% 0%,rgba(34,59,82,.58),transparent 40%),radial-gradient(ellipse at 92% 28%,rgba(20,47,65,.28),transparent 34%),linear-gradient(145deg,#080e16 0%,#060b12 53%,#05090f 100%);color:var(--text);letter-spacing:.1px}
+  body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.16;background:linear-gradient(rgba(126,165,199,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(126,165,199,.06) 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to bottom,black,transparent 78%)}
+  body:after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.23;background:linear-gradient(90deg,transparent 0 6.5%,rgba(255,177,74,.08) 6.55%,transparent 6.7%),linear-gradient(180deg,transparent 0 88%,rgba(116,204,229,.04) 88.1%,transparent 88.4%)}
+  .topbar{height:74px;padding:0 clamp(18px,3vw,48px);gap:25px;position:sticky;top:0;z-index:10;background:rgba(5,10,16,.91);border-bottom:1px solid rgba(151,181,211,.18);box-shadow:0 12px 28px rgba(0,0,0,.2);backdrop-filter:blur(16px)}
+  .brand{gap:11px;position:relative;padding-right:25px}.brand:after{content:"";position:absolute;right:0;top:2px;bottom:1px;width:1px;background:linear-gradient(transparent,var(--amber),transparent)}
+  .brand strong{font-size:32px;letter-spacing:3px;color:#f5f7f9;text-shadow:0 0 20px rgba(255,177,74,.1)}.brand span{color:var(--amber);font-size:9px;letter-spacing:3.3px}
+  .top-title{border:0;padding:0;line-height:1.3}.top-title b{font-size:13px;letter-spacing:1.8px}.top-title small{display:block;margin-top:4px;font-size:9px;letter-spacing:1.7px;color:#728aa2}
+  .top-spacer{flex:1}.topbar a,.topbar button{border-radius:2px;padding:10px 16px;font-size:11px;letter-spacing:.5px;border-color:rgba(151,181,211,.24);background:rgba(19,32,46,.8);transition:background .18s,border-color .18s,transform .18s}
+  .topbar a:hover,.topbar button:hover{border-color:rgba(255,177,74,.66);background:rgba(255,177,74,.08);transform:translateY(-1px)}
+  .topbar button#openAppearance{background:var(--amber);border-color:var(--amber);color:#18130c;font-weight:800;box-shadow:0 4px 18px rgba(255,177,74,.12)}.topbar button#openAppearance:hover{background:#ffd08b}
+  .page{position:relative;z-index:1;max-width:1720px;margin:0 auto;padding:30px clamp(16px,3vw,48px) 58px}
+  .page-head{position:relative;align-items:center;gap:32px;margin-bottom:24px;padding:4px 0 21px 22px;border-bottom:1px solid rgba(151,181,211,.12)}
+  .page-head:before{content:"";position:absolute;left:0;top:7px;bottom:23px;width:2px;background:linear-gradient(var(--amber),rgba(255,177,74,.12))}
+  .eyebrow{display:flex;align-items:center;gap:9px;font-size:10px;letter-spacing:2.6px;color:var(--cyan);font-weight:700}.eyebrow:before{content:"";width:17px;height:2px;background:var(--amber);box-shadow:0 0 12px rgba(255,177,74,.35)}
+  h1{font-family:"ZCOOL QingKe HuangYou","Noto Sans SC",sans-serif;font-size:clamp(30px,3vw,43px);font-weight:400;line-height:1.16;letter-spacing:1.5px;margin:11px 0 9px;color:#f2f5f8}
+  .page-head p{max-width:670px;margin:0;color:#93a7bc;font-size:12px;line-height:1.85}
+  .save-note{min-width:270px;max-width:330px;text-align:left;padding:15px 17px 15px 19px;border:1px solid rgba(127,178,255,.16);border-left:2px solid rgba(255,177,74,.68);background:linear-gradient(115deg,rgba(17,32,46,.78),rgba(8,14,22,.5));font-size:11px;line-height:1.55;color:#ccd9e6}
+  .save-note-mark{display:inline-block;width:6px;height:6px;margin:0 7px 1px 0;background:var(--amber);box-shadow:0 0 11px rgba(255,177,74,.6)}.save-note b{font-size:11px;letter-spacing:.6px}.save-note small{display:block;color:#8198ad;font-size:10px;margin-top:6px;line-height:1.7}
+  .studio-grid{grid-template-columns:minmax(0,1.08fr) minmax(420px,.92fr);gap:20px;align-items:start}
+  .panel{position:relative;min-width:0;border-radius:3px;background:linear-gradient(150deg,rgba(15,28,41,.98),rgba(7,13,21,.98));border:1px solid rgba(143,174,205,.19);box-shadow:0 22px 55px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.018);overflow:hidden}
+  .panel:before{content:"";position:absolute;left:0;top:0;width:37px;height:2px;background:var(--amber);opacity:.85}
+  .panel-head{position:relative;min-height:59px;padding:15px 19px;border-bottom:1px solid rgba(151,181,211,.14);background:rgba(16,30,44,.52)}.panel-head b{font-size:12px;letter-spacing:1.5px;text-transform:uppercase}.panel-head small{font-size:9px;letter-spacing:1.8px;color:#7790a7}
+  .preview-panel{overflow:hidden}
+  .preview-stage{height:clamp(510px,65vw,650px);min-height:510px;position:relative;padding:0;display:block;isolation:isolate;overflow:hidden;background:radial-gradient(ellipse at 50% 44%,rgba(45,76,103,.25),transparent 44%),linear-gradient(180deg,#0c1723 0%,#08111b 76%,#070d14 100%)}
+  .preview-stage:before{content:"";position:absolute;inset:0;z-index:-1;opacity:.8;background:linear-gradient(90deg,transparent 0 13%,rgba(127,178,255,.08) 13.1%,transparent 13.25%),linear-gradient(90deg,transparent 0 87%,rgba(127,178,255,.08) 87.1%,transparent 87.25%),repeating-linear-gradient(0deg,transparent 0 31px,rgba(127,178,255,.055) 32px,transparent 33px),repeating-linear-gradient(90deg,transparent 0 31px,rgba(127,178,255,.055) 32px,transparent 33px)}
+  .preview-stage:after{content:"";position:absolute;inset:12px;z-index:3;pointer-events:none;border:1px solid rgba(127,178,255,.13);background:linear-gradient(var(--amber),var(--amber)) left top/22px 1px no-repeat,linear-gradient(var(--amber),var(--amber)) left top/1px 22px no-repeat,linear-gradient(var(--amber),var(--amber)) right bottom/22px 1px no-repeat,linear-gradient(var(--amber),var(--amber)) right bottom/1px 22px no-repeat}
+  #appearancePreview{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;width:auto;height:calc(100% - 26px);max-height:620px;max-width:100%;border:0;border-radius:0;background:transparent;z-index:1}
+  .stage-topline{position:absolute;z-index:4;left:27px;right:27px;top:26px;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
+  .stage-unit,.stage-live{font-size:9px;letter-spacing:2px;color:#b5c8da;font-weight:700;display:flex;align-items:center;gap:8px}.stage-unit i{width:7px;height:7px;background:var(--amber);display:inline-block;box-shadow:0 0 10px rgba(255,177,74,.5)}
+  .stage-live{color:#8ca8bf;letter-spacing:1.3px}.stage-live i{width:5px;height:5px;background:#80d39b;border-radius:50%;box-shadow:0 0 9px rgba(128,211,155,.6)}
+  .stage-side-label{position:absolute;z-index:4;top:48%;color:#6f879e;font-size:8px;letter-spacing:2px;writing-mode:vertical-rl;pointer-events:none;display:flex;gap:8px;align-items:center}.stage-side-label b{font-weight:500;color:#9baec0;font-size:8px;letter-spacing:1.5px}
+  .stage-side-left{left:26px;transform:rotate(180deg)}.stage-side-right{right:26px}
+  .stage-bottomline{position:absolute;z-index:4;left:27px;right:27px;bottom:26px;display:flex;justify-content:space-between;align-items:end;border-top:1px solid rgba(151,181,211,.16);padding-top:11px;color:#71879d;font-size:8px;letter-spacing:1.5px}
+  .stage-bottomline b{display:block;color:#b0c0ce;font-size:9px;margin-top:5px;letter-spacing:1px;font-weight:600}
+  .preview-bottom{min-height:67px;gap:14px;padding:13px 18px;border-top:1px solid rgba(151,181,211,.14);background:rgba(4,9,15,.42)}
+  .look-name{font-size:11px;letter-spacing:1.2px;font-weight:800;color:#ecf2f8}.look-name span{font-size:11px;font-weight:500;letter-spacing:.2px;color:#a9bac9;margin-left:8px}.look-sub{font-size:10px;color:#7f94a8;line-height:1.5}
+  .stage-save-state{display:flex;align-items:center;gap:7px;white-space:nowrap;color:#8398ac;font-size:9px;letter-spacing:.3px}.stage-save-state i{width:6px;height:6px;background:#79c99b;display:block;box-shadow:0 0 8px rgba(121,201,155,.35)}
+  .stage-save-state[data-state="draft"]{color:#ffc16f}.stage-save-state[data-state="draft"] i{background:var(--amber);box-shadow:0 0 8px rgba(255,177,74,.42)}
+  .icon-button{border-radius:2px;padding:9px 11px;background:rgba(20,36,51,.85);border-color:rgba(151,181,211,.22);font-size:10px;letter-spacing:.4px}.icon-button:hover{border-color:var(--amber);color:#fff}
+  .presets{grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;padding:12px 14px 13px;border-top:1px solid rgba(151,181,211,.13)}
+  .preset{position:relative;min-height:87px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;text-align:left;padding:11px 9px 10px 12px;border-radius:2px;background:linear-gradient(135deg,rgba(17,31,45,.95),rgba(8,15,23,.9));border-color:rgba(151,181,211,.15)}
+  .preset:before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--sw2);opacity:.6}.preset i{width:30px;height:4px;border:0;border-radius:0;margin:0 0 4px;background:linear-gradient(90deg,var(--sw1),var(--sw2))}
+  .preset b{font-size:10px;font-weight:700;white-space:nowrap}.preset small{font-size:9px;line-height:1.4;color:#8196aa;margin-top:0}.preset:hover{background:linear-gradient(135deg,rgba(29,48,64,.98),rgba(9,17,26,.96))}
+  .preset.selected{border-color:rgba(255,177,74,.75);background:linear-gradient(135deg,rgba(255,177,74,.12),rgba(12,20,29,.95));box-shadow:inset 2px 0 var(--amber),0 0 20px rgba(255,177,74,.045)}
+  .profile-slots{padding:12px 14px;gap:8px;border-top:1px solid rgba(151,181,211,.13);background:rgba(5,10,16,.27)}
+  .profile-slot{padding:10px;border-radius:2px;background:rgba(12,21,31,.85);border-color:rgba(151,181,211,.15);min-width:0}.profile-slot b{font-size:10px;letter-spacing:.5px}.profile-slot small{margin-top:4px;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px}
+  .profile-slot button{border-radius:2px;padding:6px 8px;font-size:9px;letter-spacing:.4px}.profile-slot button:hover{border-color:var(--amber);color:#fff}
+  .builder{display:flex;flex-direction:column;overflow:visible}.builder-intro{padding:21px 22px 15px;background:linear-gradient(120deg,rgba(20,37,53,.72),rgba(8,15,23,.15))}
+  .builder-kicker{font-size:9px;letter-spacing:2.3px;color:var(--cyan);font-weight:700;margin-bottom:9px}.builder-intro h2{margin:0 0 7px;font-family:"ZCOOL QingKe HuangYou","Noto Sans SC",sans-serif;font-size:25px;letter-spacing:1.5px;font-weight:400;color:#f0f5fa}
+  .builder-intro p{font-size:11px;line-height:1.85;color:#8fa4b8;max-width:540px}.builder-progress{display:flex;gap:14px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid rgba(151,181,211,.12)}
+  .builder-progress span{display:flex;align-items:center;gap:6px;color:#8ca1b5;font-size:9px;letter-spacing:.4px}.builder-progress i{width:5px;height:5px;background:var(--amber);display:block;opacity:.85}
+  .state-store{display:none!important}.tabs{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;padding:0 14px;border-bottom:1px solid rgba(151,181,211,.16);overflow-x:auto;background:rgba(4,9,15,.3)}
+  .tabs button{position:relative;padding:15px 6px 14px;border:0;border-radius:0;color:#8399ad;font-size:10px;letter-spacing:.5px;background:transparent}.tabs button:after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;background:transparent;transition:background .18s,transform .18s}
+  .tabs button:hover{color:#e2ebf4;background:rgba(255,255,255,.02)}.tabs button.active{color:var(--amber);border:0;background:linear-gradient(180deg,rgba(255,177,74,.075),transparent)}.tabs button.active:after{background:var(--amber);box-shadow:0 0 13px rgba(255,177,74,.35)}
+  .look-panel{padding:20px 20px 18px;animation:panelIn .22s ease-out}.look-panel[hidden]{display:none}@keyframes panelIn{from{opacity:.45;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+  .field-section{margin:0 0 13px;padding:15px 15px 16px;border:1px solid rgba(151,181,211,.11);background:linear-gradient(130deg,rgba(15,28,41,.62),rgba(7,13,21,.38))}
+  .field-head{margin-bottom:13px;align-items:center}.field-head b{font-size:11px;letter-spacing:1px;color:#e6edf5}.field-head small{font-size:9px;color:#71879c;text-align:right}.field-divider{display:none}
+  .choice-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.choice{min-width:0;min-height:79px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border-radius:2px;padding:9px 5px;background:rgba(7,14,22,.62);border-color:rgba(151,181,211,.15);flex:initial}
+  .choice-icon{width:30px;height:30px;display:grid;place-items:center;margin:0;border-radius:2px;border-color:rgba(151,181,211,.16);background:linear-gradient(145deg,#1e3042,#0b131d);color:#9eafbf;font-size:16px}
+  .choice b{font-size:10px;letter-spacing:.2px}.choice small{font-size:9px;color:#8196aa}.choice:hover{border-color:rgba(116,204,229,.55);background:rgba(26,45,60,.5);transform:translateY(-1px)}
+  .choice.selected{border-color:rgba(255,177,74,.78);background:linear-gradient(145deg,rgba(255,177,74,.12),rgba(8,15,23,.8));box-shadow:inset 0 -2px var(--amber),0 0 14px rgba(255,177,74,.035)}.choice.selected .choice-icon{color:var(--amber);border-color:rgba(255,177,74,.32);background:rgba(255,177,74,.09)}
+  .color-line{grid-template-columns:98px minmax(0,1fr) 34px;gap:10px;margin:14px 0}.color-line label{color:#aebfd0;font-size:10px;letter-spacing:.2px}.swatch-grid{gap:7px;min-width:0}
+  .swatch{width:25px;height:25px;flex:0 0 25px;border-radius:2px;border:1px solid rgba(231,240,248,.23);box-shadow:inset 0 0 0 1px rgba(0,0,0,.16);transition:transform .14s,border-color .14s}
+  .swatch:hover{transform:translateY(-2px) scale(1.06);border-color:#fff}.swatch.selected{outline:1px solid var(--amber);outline-offset:2px}.swatch.selected:after{font-size:11px}
+  .color-line input[type=color]{width:34px;height:29px;border-radius:2px;padding:2px;background:#0b1420;border-color:rgba(151,181,211,.28)}
+  .builder-actions{position:sticky;bottom:0;z-index:5;display:flex;gap:8px;padding:13px 18px calc(13px + env(safe-area-inset-bottom));border-top:1px solid rgba(151,181,211,.16);background:rgba(6,12,19,.96);backdrop-filter:blur(12px)}
+  .builder-actions button{border-radius:2px;padding:11px 13px;font-size:10px;letter-spacing:.4px}.builder-actions button:hover{border-color:rgba(255,177,74,.5)}.builder-actions button.primary{box-shadow:0 3px 14px rgba(255,177,74,.1);min-width:135px}.builder-actions .random{margin-right:auto}
+  .hintline{font-size:10px;color:#70869b;line-height:1.8}.page>.hintline{margin:18px 2px 0;max-width:920px}
+  #toast{border-radius:2px;bottom:24px;padding:12px 19px;letter-spacing:.4px;font-size:11px;box-shadow:0 12px 36px rgba(0,0,0,.45);max-width:min(90vw,580px)}
+  details.legacy{position:relative;margin-top:28px;border-radius:3px;border-color:rgba(127,178,255,.16);background:rgba(8,15,23,.92)}details.legacy>summary{min-height:57px;padding:17px 19px;font-size:11px;letter-spacing:.4px}
+  details.legacy>summary:after{content:"高级工具  +";letter-spacing:1px}details.legacy[open]>summary:after{content:"收起工具  −"}.legacy-body{padding:17px;border-color:rgba(151,181,211,.13)}
+  .legacy-toolbar button,.legacy-toolbar select,.legacy-toolbar input,.legacy .slot,.legacy #guide,#modal .mhead button,#modal .mtools button{border-radius:2px}
+  #modal{background:rgba(3,6,10,.88);backdrop-filter:blur(10px)}.mcard{border-radius:3px;background:#0b1420;border-color:rgba(151,181,211,.25)}
+  button,a,input,summary{outline-offset:3px}button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--cyan)}
+  @media(max-width:1200px){.studio-grid{grid-template-columns:minmax(0,1fr) minmax(390px,.92fr);gap:14px}.preview-stage{height:570px;min-height:500px}.presets{grid-template-columns:repeat(3,minmax(0,1fr))}.preset{min-height:75px}.field-head{align-items:flex-start}}
+  @media(max-width:900px){.topbar{gap:12px;padding:0 16px}.page{padding:22px 16px 44px}.page-head{align-items:flex-start;flex-direction:column;gap:17px}.save-note{max-width:none;width:100%;min-width:0}.studio-grid{grid-template-columns:minmax(0,1fr)}.preview-stage{height:590px;min-height:500px}.preview-panel{position:relative}.presets{grid-template-columns:repeat(5,minmax(0,1fr))}.builder{overflow:hidden}.look-panel{min-height:300px}}
+  @media(max-width:580px){.topbar{height:64px;gap:10px;padding:0 11px}.brand{padding-right:11px;gap:6px}.brand strong{font-size:25px}.brand span{font-size:8px;letter-spacing:1.5px}.top-title{display:none}.top-spacer{flex:1}.topbar a,.topbar button{padding:9px 10px;font-size:10px}
+    .page{padding:17px 10px 34px}.page-head{padding-left:15px;margin-bottom:16px}h1{font-size:31px;line-height:1.24}.page-head p{font-size:11px}.preview-stage{height:510px;min-height:510px}#appearancePreview{height:calc(100% - 40px);max-width:100%}.stage-topline{left:23px;right:23px;top:22px}.stage-unit,.stage-live{font-size:8px;letter-spacing:1px}.stage-side-label{display:none}.stage-bottomline{left:23px;right:23px;bottom:21px}.preview-bottom{align-items:flex-start;flex-wrap:wrap;padding:12px}.preview-bottom .grow{display:none}.stage-save-state{order:3}.preview-bottom .icon-button{margin-left:auto}
+    .presets{grid-template-columns:repeat(3,minmax(0,1fr));padding:10px;gap:6px}.preset{min-height:72px;padding:9px}.profile-slots{grid-template-columns:1fr;gap:6px;padding:10px}.profile-slot{grid-template-columns:1fr auto}.builder-intro{padding:17px 15px 12px}.builder-intro h2{font-size:23px}.tabs{padding:0 6px}.tabs button{font-size:9px;padding:13px 2px}.look-panel{padding:12px 10px}.field-section{padding:12px 10px}.choice-row{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.choice{min-height:73px}.color-line{grid-template-columns:74px minmax(0,1fr) 31px;gap:6px}.swatch-grid{gap:6px}.swatch{width:22px;height:22px;flex-basis:22px}.builder-actions{padding:10px;gap:6px}.builder-actions button{padding:10px 8px;font-size:9px}.builder-actions button.primary{min-width:0}.legacy #slots{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+  </style>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><strong>HERO</strong><span>NIGHTFALL</span></div>
-    <div class="top-title"><b>角色造型工作台</b><small>OPERATOR IDENTITY LAB</small></div>
+    <div class="top-title"><b>干员外观整备</b><small>OPERATOR IDENTITY LAB / 01</small></div>
     <div class="top-spacer"></div>
-    <button id="openAppearance" type="button">角色外观</button>
+    <button id="openAppearance" type="button">开始定制</button>
     <a href="./game.html">← 返回游戏</a>
   </header>
   <main class="page">
-    <div class="page-head"><div><div class="eyebrow">CUSTOMIZE · PREVIEW · APPLY</div><h1>打造你自己的突击手</h1><p>先选一个战斗风格，再微调发型、肤色、眼睛与制服配色；右侧预览即时更新，满意后一次保存。</p></div><div class="save-note">只改变外观，不改变骨骼、碰撞体、武器握点和角色物理<br>所有程序化造型均不需要额外图片素材</div></div>
+    <div class="page-head"><div><div class="eyebrow">OPERATOR IDENTITY / 自定义干员</div><h1>让这名干员，成为你自己的。</h1><p>从轮廓、面部到战斗服配色。每一次选择都会即时呈现在侧视角色上，确认后再应用到游戏。</p></div><div class="save-note"><span class="save-note-mark"></span><b>只改外观，不改战斗能力</b><small>主动骨骼、碰撞体、握点与物理动作保持原样</small></div></div>
     <div class="studio-grid">
       <section class="panel preview-panel">
         <div class="panel-head"><b>角色实时预览</b><small>2D SIDE PROFILE · LIVE</small></div>
-        <div class="preview-stage"><canvas id="appearancePreview" width="320" height="520" aria-label="角色造型预览"></canvas></div>
-        <div class="preview-bottom"><div><div class="look-name">OPERATOR / 自定义突击手</div><div class="look-sub">侧视造型预览 · 物理骨架保持不变</div></div><div class="grow"></div><button id="appearanceRandomTop" class="icon-button" type="button">✦ 随机灵感</button></div>
+        <div class="preview-stage"><div class="stage-topline"><span class="stage-unit"><i></i> OPERATOR / 01</span><span class="stage-live"><i></i> LIVE PREVIEW</span></div><div class="stage-side-label stage-side-left">IDENTITY LAB <b>02 / SIDE PROFILE</b></div><div class="stage-side-label stage-side-right">VISUAL ONLY <b>RIG UNCHANGED</b></div><canvas id="appearancePreview" width="420" height="600" aria-label="角色造型预览"></canvas><div class="stage-bottomline"><span>HERO NIGHTFALL <b>TACTICAL PERSONNEL</b></span><span>PREVIEW <b>实时渲染</b></span></div></div>
+        <div class="preview-bottom"><div><div class="look-name">FIELD OPERATOR <span>自定义突击手</span></div><div class="look-sub">侧视视角 · 外观与游戏角色共享存档格式</div></div><div class="grow"></div><div class="stage-save-state" id="appearanceStageStatus" data-state="saved"><i></i><span>已载入外观</span></div><button id="appearanceRandomTop" class="icon-button" type="button">随机生成</button></div>
         <div class="presets">
           <button class="preset" data-app-profile="recon" type="button" style="--sw1:#263b2f;--sw2:#d99447"><i></i><b>夜幕侦察</b><small>低调潜入</small></button>
           <button class="preset" data-app-profile="urban" type="button" style="--sw1:#2e3138;--sw2:#5db8d3"><i></i><b>城市行动</b><small>都市战术</small></button>
@@ -51,7 +138,7 @@
         </div>
       </section>
       <section id="appearancePanel" class="panel builder">
-        <div class="builder-intro"><h2>外观定制</h2><p>不再需要上传图片、抠白底或手动对齐部件。点选选项即可看到预览；颜色可用色板，也可以打开自选颜色。</p></div>
+        <div class="builder-intro"><div class="builder-kicker">PERSONALIZATION</div><h2>干员整备</h2><p>先塑造基础外观，再选择色彩与头部装备。这里的修改只作用于角色表现，不会改变游戏里的骨骼与命中逻辑。</p><div class="builder-progress"><span><i></i> 即时预览</span><span><i></i> 本地草稿</span><span><i></i> 手动应用</span></div></div>
         <div class="state-store" aria-hidden="true">
           <select data-app="hairStyle"><option value="short">短发</option><option value="buzz">寸头</option><option value="ponytail">马尾</option><option value="bun">丸子头</option><option value="long">长发</option><option value="spiky">碎刺发</option><option value="undercut">侧剃</option></select>
           <select data-app="faceShape"><option value="oval">椭圆脸</option><option value="round">圆脸</option><option value="angular">棱角脸</option></select>
@@ -87,7 +174,7 @@
           <div class="field-section"><div class="field-head"><b>头巾颜色</b><small>只在佩戴战术头巾时显示</small></div><div class="color-line"><label>头巾</label><div class="swatch-grid"><button class="swatch" style="--swatch:#d96b3b" data-app-color="bandanaColor" data-color="#d96b3b" type="button"></button><button class="swatch" style="--swatch:#34465a" data-app-color="bandanaColor" data-color="#34465a" type="button"></button><button class="swatch" style="--swatch:#263b2f" data-app-color="bandanaColor" data-color="#263b2f" type="button"></button><button class="swatch" style="--swatch:#9e3740" data-app-color="bandanaColor" data-color="#9e3740" type="button"></button><button class="swatch" style="--swatch:#d0b887" data-app-color="bandanaColor" data-color="#d0b887" type="button"></button><button class="swatch" style="--swatch:#252b32" data-app-color="bandanaColor" data-color="#252b32" type="button"></button></div><input data-app="bandanaColor" type="color" aria-label="自选头巾颜色"></div></div>
           <div class="hintline">说明：头巾或耳机是外观层；如果在游戏中穿戴头盔，游戏装备会按原有规则覆盖头部外观。已上传的自绘贴图仍保留，并按原有渲染优先级工作。</div>
         </div>
-        <div class="builder-actions"><button id="appearanceRandom" class="random" type="button">✦ 随机灵感</button><button id="appearanceReset" type="button">恢复默认</button><button id="appearanceSave" class="primary" type="button">保存并应用</button></div>
+        <div class="builder-actions"><button id="appearanceRandom" class="random" type="button">随机生成</button><button id="appearanceReset" type="button">重置草稿</button><button id="appearanceSave" class="primary" type="button">应用到游戏</button></div>
       </section>
     </div>
     <p class="hintline">改动只对玩家外观生效。若想手工上传或绘制头、躯干、四肢与装备贴图，可展开下面的高级工具；普通玩家只需在上方完成造型即可。</p>
