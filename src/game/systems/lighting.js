@@ -1,5 +1,7 @@
 // HERO's shared light field: visual light pools, darkness and per-frame light queries for stealth AI.
 // Kept renderer-agnostic so the same pass is used by the main view and the sniper scope.
+import { RAID_FLOOR_COUNT, RAID_FLOOR_HEIGHT, raidFloorBand, rectIntersectsRaidFloor } from '../domain/raidVisibility.js';
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 export const lightingState = {
@@ -102,8 +104,8 @@ function lightBlocked(x0, y0, x1, y1, rects) {
 const floorIdAt = (y) => {
   const feet = y - 0.9;
   let id = 0, best = Infinity;
-  for (let i = 0; i < 4; i++) {
-    const d = Math.abs(feet - i * 3.5);
+  for (let i = 0; i < RAID_FLOOR_COUNT; i++) {
+    const d = Math.abs(feet - i * RAID_FLOOR_HEIGHT);
     if (d < best) { best = d; id = i; }
   }
   return id;
@@ -112,7 +114,7 @@ const floorIdAt = (y) => {
 function ambientFloorLights() {
   // Emergency fittings are part of the building, not destructible gameplay objects.
   return [0, 1, 2].flatMap((floor) => [4.0, 36.5, 69.0].map((x) => ({
-    x, y: floor * 3.5 + 2.9, radius: 3.9, strength: 0.25,
+    x, y: floor * RAID_FLOOR_HEIGHT + 2.9, radius: 2.7, strength: 0.18,
     color: '255,66,50', floor, type: 'emergency',
   })));
 }
@@ -127,7 +129,7 @@ function collectSources(state, rects, time, flash, rings) {
       const flicker = 0.92 + 0.055 * Math.sin(time * 7.1 + r.x) + 0.025 * Math.sin(time * 13.4 + r.x * 0.3);
       sources.push({
         x: r.x + sway * 0.075, y: r.y - 0.22 + sway * 0.045,
-        radius: 7.2, strength: clamp(flicker, 0.76, 1),
+        radius: 5.2, strength: clamp(flicker, 0.76, 1),
         color: '255,173,85', floor: r.raidFloorId ?? floorIdAt(r.y), type: 'lamp', id: r.lampId,
       });
     }
@@ -135,15 +137,15 @@ function collectSources(state, rects, time, flash, rings) {
   if (!state.powerOn) sources.push(...ambientFloorLights());
   if (state.flashlightOn && state.flashlightBattery > 0) {
     sources.push({
-      x: state.flashlightX, y: state.flashlightY, radius: 8.6,
-      strength: 0.84 * clamp(state.flashlightBattery / 12, 0.2, 1),
+      x: state.flashlightX, y: state.flashlightY, radius: 6.2,
+      strength: 0.74 * clamp(state.flashlightBattery / 12, 0.2, 1),
       color: '205,225,255', floor: floorIdAt(state.flashlightY),
-      type: 'flashlight', angle: state.flashlightAngle, cone: 0.58,
+      type: 'flashlight', angle: state.flashlightAngle, cone: 0.46,
     });
   }
   if (flash?.t > 0 && Number.isFinite(flash.x) && Number.isFinite(flash.y)) {
     sources.push({
-      x: flash.x, y: flash.y, radius: 3.2 + (flash.r || 25) / 50,
+      x: flash.x, y: flash.y, radius: 2.4 + (flash.r || 25) / 70,
       strength: clamp(flash.t / 0.09, 0, 1), color: '255,194,112',
       floor: floorIdAt(flash.y), type: 'muzzle',
     });
@@ -151,8 +153,8 @@ function collectSources(state, rects, time, flash, rings) {
   for (const ring of rings || []) {
     if (ring.life <= 0) continue;
     sources.push({
-      x: ring.x, y: ring.y, radius: clamp(2.8 + (ring.r || 0) * 0.75, 2.8, 6.5),
-      strength: clamp((ring.life / (ring.max || 0.42)) * 0.72, 0, 0.72),
+      x: ring.x, y: ring.y, radius: clamp(2.3 + (ring.r || 0) * 0.55, 2.3, 4.8),
+      strength: clamp((ring.life / (ring.max || 0.42)) * 0.46, 0, 0.46),
       color: ring.color || '255,185,105', floor: floorIdAt(ring.y), type: 'explosion',
     });
   }
@@ -170,7 +172,7 @@ export function lightLevelAt(x, y, rects = [], state = lightingState, { forAI = 
     if ((r.raidFloorId ?? floorIdAt(r.y)) !== floor) continue;
     const dx = x - r.x, dy = y - r.y;
     const dist = Math.hypot(dx, dy);
-    const radius = 7.2;
+    const radius = 5.2;
     if (dist >= radius || lightBlocked(r.x, r.y - 0.2, x, y, rects)) continue;
     level = Math.max(level, 0.20 + 0.78 * Math.pow(1 - dist / radius, 0.72));
   }
@@ -188,8 +190,8 @@ export function lightLevelAt(x, y, rects = [], state = lightingState, { forAI = 
     const dist = Math.hypot(dx, dy);
     const angle = Math.atan2(dy, dx);
     const delta = Math.atan2(Math.sin(angle - state.flashlightAngle), Math.cos(angle - state.flashlightAngle));
-    if (dist < 8.6 && Math.abs(delta) < 0.58 && !lightBlocked(state.flashlightX, state.flashlightY, x, y, rects)) {
-      level = Math.max(level, 0.18 + 0.82 * (1 - dist / 8.6));
+    if (dist < 6.2 && Math.abs(delta) < 0.46 && !lightBlocked(state.flashlightX, state.flashlightY, x, y, rects)) {
+      level = Math.max(level, 0.18 + 0.82 * (1 - dist / 6.2));
     }
   }
   return clamp(level, 0.025, 1);
@@ -208,10 +210,26 @@ function ensureMask(W, H) {
   return maskCtx;
 }
 
-function worldBlockers(source, rects) {
+function worldBlockers(source, rects, floorScoped = false) {
   const reach = source.radius + 1.2;
   return rects.filter((r) => blocksLight(r)
+    && (!floorScoped || rectIntersectsRaidFloor(r, source.floor))
     && Math.hypot(r.x - source.x, r.y - source.y) < reach + Math.hypot(r.w, r.h) * 0.5);
+}
+
+function clipToRaidFloor(ctx, source, w2s, W, H) {
+  if (!Number.isInteger(source.floor)) return false;
+  const band = raidFloorBand(source.floor);
+  const [, y0] = w2s(0, band.minY);
+  const [, y1] = w2s(0, band.maxY);
+  if (![y0, y1].every(Number.isFinite)) return false;
+  const top = Math.max(0, Math.min(y0, y1));
+  const bottom = Math.min(H, Math.max(y0, y1));
+  if (bottom <= top) return false;
+  ctx.beginPath();
+  ctx.rect(0, top, W, bottom - top);
+  ctx.clip();
+  return true;
 }
 
 function clipLightPolygon(ctx, source, blockers, w2s, ppm, W, H) {
@@ -240,12 +258,13 @@ function clipLightPolygon(ctx, source, blockers, w2s, ppm, W, H) {
   return { cx, cy, radius, points };
 }
 
-function paintSource(ctx, source, rects, w2s, ppm, W, H, mode) {
+function paintSource(ctx, source, rects, w2s, ppm, W, H, mode, floorScoped = false) {
   const [cx, cy] = w2s(source.x, source.y);
   const radius = source.radius * ppm;
   if (radius < 2 || cx < -radius || cy < -radius || cx > W + radius || cy > H + radius) return;
-  const blockers = worldBlockers(source, rects);
   ctx.save();
+  if (floorScoped && !clipToRaidFloor(ctx, source, w2s, W, H)) { ctx.restore(); return; }
+  const blockers = worldBlockers(source, rects, floorScoped);
   clipLightPolygon(ctx, source, blockers, w2s, ppm, W, H);
   if (mode === 'erase') {
     ctx.globalCompositeOperation = 'destination-out';
@@ -258,15 +277,15 @@ function paintSource(ctx, source, rects, w2s, ppm, W, H, mode) {
   } else {
     ctx.globalCompositeOperation = 'screen';
     const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-    gradient.addColorStop(0, `rgba(${source.color},${0.26 * source.strength})`);
-    gradient.addColorStop(0.3, `rgba(${source.color},${0.17 * source.strength})`);
+    gradient.addColorStop(0, `rgba(${source.color},${0.16 * source.strength})`);
+    gradient.addColorStop(0.3, `rgba(${source.color},${0.09 * source.strength})`);
     gradient.addColorStop(1, `rgba(${source.color},0)`);
     ctx.fillStyle = gradient;
     ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
     // Tiny bloom at the fitting makes the lamp read as an actual luminous object.
     if (source.type === 'lamp' || source.type === 'emergency') {
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.65 * source.strength;
+      ctx.globalAlpha = 0.42 * source.strength;
       ctx.fillStyle = source.type === 'emergency' ? '#ff5343' : '#ffd29a';
       ctx.beginPath(); ctx.arc(cx, cy, Math.max(1.5, ppm * 0.085), 0, Math.PI * 2); ctx.fill();
     }
@@ -296,7 +315,7 @@ export function drawLighting(ctx, { state = lightingState, rects = [], w2s, ppm,
   const darkness = state.nightVision ? 0.13 : state.powerOn ? 0.54 : 0.79;
   mctx.fillStyle = `rgba(2,6,11,${darkness})`;
   mctx.fillRect(0, 0, W, H);
-  for (const source of sources) paintSource(mctx, source, rects, w2s, ppm, W, H, 'erase');
+  for (const source of sources) paintSource(mctx, source, rects, w2s, ppm, W, H, 'erase', true);
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(maskCanvas, 0, 0, W, H);
@@ -305,5 +324,9 @@ export function drawLighting(ctx, { state = lightingState, rects = [], w2s, ppm,
     ctx.fillRect(0, 0, W, H);
   }
   ctx.restore();
-  for (const source of sources) paintSource(ctx, source, rects, w2s, ppm, W, H, 'glow');
+  for (const source of sources) {
+    // Night vision should read as a single clean image, not green plus every lamp/flashlight bloom.
+    if (state.nightVision && ['lamp', 'emergency', 'flashlight'].includes(source.type)) continue;
+    paintSource(ctx, source, rects, w2s, ppm, W, H, 'glow', true);
+  }
 }
