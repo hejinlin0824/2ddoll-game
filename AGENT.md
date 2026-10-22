@@ -581,6 +581,17 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
     自动化测试陷阱:__frameN 推帧在 timeScale<1(菜单 0.3/背包 0.08/顿帧 0.02)时
     一个 frame 可能积不满一个 STEP,step 没跑事件就没消费 —— 推帧后检查状态前多推几帧。
 
+## 外观 / 装备错位排查与坐标契约（2026-10-22）
+
+- `src/game/domain/rigGeometry.js` 是主动布娃娃尺寸、肩/颈/髋锚点与默认姿态的唯一数据源；`player.js` 和皮肤工坊的组装预览必须复用它。不要在设计器里用左右偏移常量“猜”四肢位置。
+- `SKIN_BOX`（`skin.js`）仍是皮肤贴图标准视觉框的唯一数据源；`skinFitScale`、端点锚定规则必须被游戏和预览共同调用。
+- 装备图像坐标的版本契约在 `src/game/domain/equipmentGeometry.js`：
+  - 旧的无 `coordinateSpace` 标记的**图片零件**：`x/y` 是中心点（保留旧档兼容）。
+  - 矩形零件：`x/y` 一直是左上角。
+  - 新的工坊存档必须写 `coordinateSpace: 'top-left-v2'`，图片和矩形零件一律以左上角序列化；渲染中心由 `equipmentPartCenter(equipment, part)` 推导。
+  - 读取旧图像件用 `equipmentPartToStudio` 转成工坊内部中心坐标；保存用 `equipmentPartToStorage` 转成规范左上角，禁止调用方自行加/减半个宽高。
+- 改动以上几何规则后必须运行 `node --test tests/*.test.mjs`；浏览器回归脚本 `tests/browser-smoke.mjs` 负责验证外观即时预览/应用、旧装备存档迁移、`game.html` 渲染诊断和现有夜视/手电/门/电闸交互。GitHub Actions 工作流：`.github/workflows/appearance-alignment.yml`。
+
 ## 设计器数据格式
 
 ```js
