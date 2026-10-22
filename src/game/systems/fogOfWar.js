@@ -12,6 +12,7 @@ let visibleCanvas = null, visibleCtx = null;
 let fogCanvas = null, fogCtx = null;
 let visiblePixels = null;
 let blockerSource = null, blockerLength = -1, blockers = [];
+let refreshAccumulator = 1;
 
 const width = () => Math.round((WORLD.maxX - WORLD.minX) * WORLD.pixelsPerMeter);
 const height = () => Math.round((WORLD.maxY - WORLD.minY) * WORLD.pixelsPerMeter);
@@ -133,16 +134,22 @@ export function resetFogOfWar(scene = 'wild') {
   blockerLength = -1;
   blockers = [];
   visiblePixels = null;
+  refreshAccumulator = 1; // Force the first mask to be ready immediately after scene initialization.
   if (!ensureCanvases()) return;
   exploredCtx.clearRect(0, 0, width(), height());
   visibleCtx.clearRect(0, 0, width(), height());
   fogCtx.clearRect(0, 0, width(), height());
 }
 
-export function updateFogOfWar({ scene = 'wild', player, rects = [] } = {}) {
+export function updateFogOfWar({ scene = 'wild', player, rects = [], dt = 1 / 60 } = {}) {
   const nextScene = scene || 'wild';
   if (sceneId !== nextScene) resetFogOfWar(nextScene);
   if (nextScene !== 'raid' || !ensureCanvases()) return;
+  // LOS geometry does not need to be rebuilt at the physics rate. Refresh at 20Hz to avoid
+  // raycast + canvas readback becoming the bottleneck when the physics accumulator catches up.
+  refreshAccumulator += Number.isFinite(dt) ? Math.max(0, dt) : 0;
+  if (refreshAccumulator < 0.05) return;
+  refreshAccumulator = 0;
   const polygon = makeVisibilityPolygon(player, rects);
   paintVisibility(visibleCtx, polygon);
   exploredCtx.save();
