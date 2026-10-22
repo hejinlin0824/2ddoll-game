@@ -419,13 +419,15 @@ activateBackgroundSet(themeId); // 场景切换复用已加载的 Image,避免�
 // 染色缓存:素材层 × 主题 → 离屏 canvas(滤镜只跑一次,平铺时零开销)
 let tintCache = {};
 function tinted(key) {
-  const img = bgImgs[key];
-  if (!img.complete || !img.naturalWidth) return null;
+  // 不是每个场景都有 fore / trees 等所有图层;可选图层缺失必须视为正常情况。
+  const img = bgImgs?.[key];
+  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
   const id = themeId + ':' + key;
   if (tintCache[id]) return tintCache[id];
   const cv = document.createElement('canvas');
   cv.width = img.naturalWidth; cv.height = img.naturalHeight;
   const cc = cv.getContext('2d');
+  if (!cc) return null;
   cc.filter = currentTheme().filter;
   cc.drawImage(img, 0, 0);
   cc.filter = 'none';
@@ -434,13 +436,22 @@ function tinted(key) {
 }
 // 横向平铺绘制(带视差偏移;sky 层不染色,其余走主题染色)
 function drawTiled(c, key, W, H, offset, alpha = 1) {
-  const img = key === 'sky' ? bgImgs.sky : tinted(key);
+  const img = key === 'sky' ? bgImgs?.sky : tinted(key);
   if (!img) return;
-  const w = (img.width || img.naturalWidth) * BG_SCALE;
-  let sx = ((offset % w) + w) % w;
-  c.globalAlpha = alpha;
-  for (let x = -sx; x < W; x += w) c.drawImage(img, x, 0, w, H);
-  c.globalAlpha = 1;
+  // Image 尚未加载/加载失败时宽度可能为 0;避免非法 drawImage 与零步长循环。
+  const sourceW = img.naturalWidth || img.width || 0;
+  if (!Number.isFinite(sourceW) || sourceW <= 0 || !Number.isFinite(BG_SCALE) || BG_SCALE <= 0) return;
+  const w = sourceW * BG_SCALE;
+  if (!Number.isFinite(w) || w <= 0) return;
+  const safeOffset = Number.isFinite(offset) ? offset : 0;
+  let sx = ((safeOffset % w) + w) % w;
+  const prevAlpha = c.globalAlpha;
+  c.globalAlpha = prevAlpha * Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 1));
+  try {
+    for (let x = -sx; x < W; x += w) c.drawImage(img, x, 0, w, H);
+  } finally {
+    c.globalAlpha = prevAlpha;
+  }
 }
 
 // ---- 绘制 ----
@@ -502,7 +513,13 @@ export function drawParallax(ctx, W, H, camX, ppm) {
 
 // 前景树剪影(世界绘制完成后调用,增加纵深);透明度随素材"重量"每关可调(BG_SETS.foreAlpha)
 export function drawForeground(ctx, W, H, camX) {
-  drawTiled(ctx, 'fore', W, H, camX * PPM_FG, curSet.foreAlpha ?? 0.85);
+  // room / raid / port intentionally have no separate foreground sprite. Do not call tinted('fore')
+  // for a missing layer: render() previously caught that TypeError and reset the entire canvas,
+  // which made those scenes look like a black screen while DOM HUD continued to update.
+  if (!curSet || !bgImgs?.fore) return;
+  const alpha = curSet.foreAlpha ?? 0.85;
+  if (!Number.isFinite(alpha) || alpha <= 0) return;
+  drawTiled(ctx, 'fore', W, H, camX * PPM_FG, alpha);
 }
 const PPM_FG = 52 * 1.15;
 

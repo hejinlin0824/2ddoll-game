@@ -1375,8 +1375,12 @@ function render(time) {
     ctx.globalAlpha = 1;
   }
 
-  // 前景树剪影(纵深)
-  drawForeground(ctx, W, H, cam.x);
+  // 前景图层是可选的：港口/室内/剿匪场景没有 fore.png，不应让此层错误中断整帧。
+  try { drawForeground(ctx, W, H, cam.x); }
+  catch (err) {
+    window.__renderLayerErrors ||= {};
+    window.__renderLayerErrors.foreground = String(err && err.stack || err);
+  }
   ctx.restore(); // trauma 旋转结束(以下都是屏幕空间遮罩)
 
   // 玩家受击红闪
@@ -1514,10 +1518,17 @@ function frame(now) {
         render(now / 1000);
       } catch (err) {
         window.__lastRenderError = { msg: String(err && err.stack || err), at: new Date().toISOString() };
-        // render() 失败时恢复 Canvas 状态栈/裁切区域；下一帧会重画完整游戏场景。
+        // 不能把一帧中已经成功画出的内容清空后留下整屏黑色。
+        // 发生意外异常时重置 Canvas 状态，再画一个可读的背景/地形保底层，下一帧继续恢复完整画面。
         canvas.width = W;
         canvas.height = H;
         ctx.imageSmoothingEnabled = true;
+        ctx.fillStyle = '#07101a'; ctx.fillRect(0, 0, W, H);
+        try { drawSky(ctx, W, H); } catch {}
+        try { drawParallax(ctx, W, H, cam.x, PPM); } catch {}
+        try { drawTerrain(ctx, LEVEL.rects, makeW2S(cam, W, H, PPM), PPM * cam.zoom); } catch {}
+        ctx.fillStyle = 'rgba(255,177,74,.9)'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('渲染保护已触发 · window.__lastRenderError', 14, H - 14);
       }
       try {
         wheel.draw(ctx);

@@ -90,8 +90,8 @@ export const GUN_PRESETS = {
       { x: 22,  y: 23, w: 26, h: 9,  color: '#6f7987', r: 3 },  // 缓冲管
       { x: 44,  y: 17, w: 52, h: 19, color: '#8f7a55', r: 2 },  // 机匣
       { x: 46,  y: 13, w: 78, h: 6,  color: '#5d6673', r: 2 },  // 顶部导轨
-      { x: 58,  y: 1,  w: 22, h: 13, color: '#3a3f47', r: 3 },  // 红点镜
-      { x: 61,  y: 4,  w: 5,  h: 8,  color: '#59c2ff', r: 2 },  // 镜片(亮)
+      { x: 58,  y: 8,  w: 5,  h: 5,  color: '#3a3f47', r: 2 },  // 机械照门(光学配件另装)
+      { x: 59,  y: 9,  w: 2,  h: 3,  color: '#8999a8', r: 1 },  // 照门高光
       { x: 52,  y: 36, w: 10, h: 19, color: '#3a3f47', r: 3 },  // 握把
       { x: 74,  y: 36, w: 14, h: 22, color: '#5d6673', r: 2 },  // 直弹匣
       { x: 94,  y: 17, w: 42, h: 13, color: '#a08b63', r: 3 },  // 护木
@@ -209,41 +209,115 @@ export function attachmentBonusLines(ids = []) {
 }
 
 function attachmentParts(gun, ids) {
-  // 存档也必须遵守槽位互斥，避免手改 localStorage 后出现双枪口/双瞄具。
+  // 配件锚点按各款枪的实际几何位置单独标定。不能用整枪 minY/maxY 推算：
+  // AK 的弯弹匣很长、AWP 自带镜、Glock 枪身很短，通用边界会把配件挂到空中。
+  const preset = gun.basePreset || gun.name || 'AK-47';
+  const mounts = {
+    'AK-47':   { rail: { x: 88, y: 12 }, under: { x: 128, y: 31 }, mag: { x: 88, y: 69 }, stock: { x: 3, y: 25 }, receiver: { x: 86, y: 24 } },
+    'M4A1':    { rail: { x: 87, y: 13 }, under: { x: 114, y: 30 }, mag: { x: 81, y: 57 }, stock: { x: 1, y: 27 }, receiver: { x: 79, y: 26 } },
+    'AWP':     { rail: { x: 75, y: 12 }, under: { x: 119, y: 27 }, mag: { x: 78, y: 46 }, stock: { x: 5, y: 26 }, receiver: { x: 72, y: 25 } },
+    'MP5':     { rail: { x: 49, y: 13 }, under: { x: 84, y: 31 }, mag: { x: 51, y: 57 }, stock: { x: 2, y: 26 }, receiver: { x: 47, y: 25 } },
+    '霰弹枪':   { rail: { x: 104, y: 18 }, under: { x: 107, y: 35 }, mag: { x: 111, y: 36 }, stock: { x: 4, y: 27 }, receiver: { x: 58, y: 25 } },
+    'Glock 17': { rail: { x: 61, y: 12 }, under: { x: 66, y: 26 }, mag: { x: 52, y: 51 }, stock: { x: 30, y: 24 }, receiver: { x: 58, y: 20 } },
+  };
+  const m = mounts[preset] || mounts['AK-47'];
   const idsSafe = [];
   const usedSlots = new Set();
   for (const id of (Array.isArray(ids) ? ids : [])) {
     const def = GUN_ATTACHMENTS[id];
-    if (!def || !def.compatible.includes(gun.basePreset) || usedSlots.has(def.slot)) continue;
+    if (!def || !def.compatible.includes(preset) || usedSlots.has(def.slot)) continue;
     usedSlots.add(def.slot);
     idsSafe.push(id);
   }
-  const rear = gun.grips?.rear || { x: 50, y: 25 };
-  const front = gun.grips?.front || { x: 120, y: 24 };
-  const mx = Number(gun.muzzle?.x) || 170;
-  const my = Number(gun.muzzle?.y) || 24;
-  const minY = Math.min(...(gun.parts || []).map((p) => p.y), my - 2);
-  const maxY = Math.max(...(gun.parts || []).map((p) => p.y + p.h), my + 5);
-  const mid = (rear.x + front.x) / 2;
+  const mx = Number(gun.baseMuzzle?.x ?? gun.muzzle?.x);
+  const my = Number(gun.baseMuzzle?.y ?? gun.muzzle?.y);
+  const muzzleX = Number.isFinite(mx) ? mx : 170;
+  const muzzleY = Number.isFinite(my) ? my : 24;
   const visual = [];
-  const add = (id, x, y, w, h, color, r = 2) => visual.push({ x, y, w, h, color, r, attachmentId: id });
+  const add = (id, x, y, w, h, color, r = 2) => {
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return;
+    visual.push({ x, y, w, h, color, r, attachmentId: id });
+  };
+  const { rail, under, mag, stock, receiver } = m;
+
   for (const id of idsSafe) {
     switch (id) {
-      case 'suppressor': add(id, mx - 12, my - 4, 20, 8, '#333c49'); add(id, mx - 10, my - 2, 16, 2, '#8c9aaa'); break;
-      case 'glock_suppressor': add(id, mx - 10, my - 3, 18, 6, '#283441'); add(id, mx - 8, my - 1, 14, 2, '#9aa9b8'); break;
-      case 'mp5_integral': add(id, mx - 10, my - 4, 17, 8, '#293745'); add(id, mx - 8, my - 1, 12, 2, '#758899'); break;
-      case 'awp_suppressor': add(id, mx - 18, my - 5, 28, 10, '#273342'); add(id, mx - 16, my - 2, 24, 2, '#8191a2'); break;
-      case 'red_dot': add(id, mid - 8, minY - 7, 17, 6, '#242d38'); add(id, mid - 4, minY - 10, 8, 4, '#ffb14a'); break;
-      case 'scope_4x': add(id, mid - 17, minY - 10, 34, 9, '#25303e', 4); add(id, mid - 14, minY - 7, 4, 4, '#8fcce8', 2); add(id, mid + 10, minY - 7, 4, 4, '#8fcce8', 2); break;
-      case 'angled_grip': add(id, mid - 5, maxY - 2, 10, 14, '#313b47'); add(id, mid - 3, maxY + 1, 3, 8, '#778594'); break;
-      case 'extended_mag': add(id, mid - 7, maxY - 2, 14, 20, '#424d5a'); add(id, mid - 4, maxY + 1, 2, 14, '#9aa8b5'); break;
-      case 'pistol_extended_mag': add(id, mid - 5, maxY - 2, 10, 16, '#394756'); add(id, mid - 2, maxY + 1, 2, 10, '#a3b0bd'); break;
-      case 'pistol_compensator': add(id, mx - 5, my - 3, 8, 6, '#323e4c'); add(id, mx - 2, my - 2, 2, 4, '#a9b7c4'); break;
-      case 'tactical_stock': add(id, rear.x - 17, rear.y - 7, 18, 14, '#394655'); add(id, rear.x - 19, rear.y - 5, 4, 10, '#8995a1'); break;
-      case 'laser_sight': add(id, front.x - 26, maxY - 1, 12, 6, '#2d3946'); add(id, front.x - 17, maxY + 1, 3, 2, '#db514b'); break;
-      case 'flashlight': add(id, front.x - 32, maxY + 1, 13, 6, '#394653'); add(id, front.x - 21, maxY + 2, 3, 4, '#d6e8ed'); break;
-      case 'muzzle_brake': add(id, mx - 7, my - 4, 9, 8, '#303945'); add(id, mx - 5, my - 3, 2, 6, '#a5b1bd'); break;
-      case 'ap_round': add(id, mid - 3, maxY + 1, 5, 6, '#d46d43'); break;
+      // 枪口组件从枪管末端往前延伸，底边与枪管中心线对齐。
+      case 'suppressor':
+        add(id, muzzleX - 4, muzzleY - 4, 18, 8, '#333c49');
+        add(id, muzzleX - 2, muzzleY - 2, 14, 2, '#8c9aaa');
+        add(id, muzzleX + 8, muzzleY - 3, 2, 6, '#202a35');
+        break;
+      case 'glock_suppressor':
+        add(id, muzzleX - 3, muzzleY - 3, 19, 6, '#283441');
+        add(id, muzzleX - 1, muzzleY - 1, 15, 2, '#9aa9b8');
+        break;
+      case 'mp5_integral':
+        add(id, muzzleX - 5, muzzleY - 4, 17, 8, '#293745');
+        add(id, muzzleX - 3, muzzleY - 1, 12, 2, '#758899');
+        break;
+      case 'awp_suppressor':
+        add(id, muzzleX - 7, muzzleY - 5, 28, 10, '#273342');
+        add(id, muzzleX - 5, muzzleY - 2, 23, 2, '#8191a2');
+        break;
+      case 'pistol_compensator':
+        add(id, muzzleX - 2, muzzleY - 3, 8, 6, '#323e4c');
+        add(id, muzzleX + 2, muzzleY - 2, 2, 4, '#a9b7c4');
+        break;
+      case 'muzzle_brake':
+        add(id, muzzleX - 3, muzzleY - 4, 9, 8, '#303945');
+        add(id, muzzleX - 1, muzzleY - 3, 2, 6, '#a5b1bd');
+        break;
+      // 光学件下沿直接落在该枪导轨线上；AWP 的固定镜体作为基础机匣的一部分，4x 模块覆在同一安装位。
+      case 'red_dot':
+        add(id, rail.x - 8, rail.y - 7, 16, 7, '#242d38');
+        add(id, rail.x - 4, rail.y - 10, 8, 3, '#ffb14a');
+        add(id, rail.x - 2, rail.y - 9, 4, 2, '#91d5ee');
+        break;
+      case 'scope_4x':
+        if (preset === 'AWP') {
+          add(id, rail.x - 23, rail.y - 10, 44, 10, '#25303e', 4);
+          add(id, rail.x - 20, rail.y - 7, 5, 5, '#8fcce8', 2);
+          add(id, rail.x + 15, rail.y - 7, 5, 5, '#8fcce8', 2);
+        } else {
+          add(id, rail.x - 17, rail.y - 10, 34, 10, '#25303e', 4);
+          add(id, rail.x - 14, rail.y - 7, 4, 4, '#8fcce8', 2);
+          add(id, rail.x + 10, rail.y - 7, 4, 4, '#8fcce8', 2);
+        }
+        break;
+      // 下挂设备顶部和护木底部轻微重叠，视觉上会“贴”在枪上，而不是悬空。
+      case 'angled_grip':
+        add(id, under.x - 4, under.y - 1, 9, 12, '#313b47');
+        add(id, under.x - 3, under.y + 2, 3, 7, '#778594');
+        add(id, under.x + 1, under.y + 5, 3, 4, '#202a35');
+        break;
+      case 'laser_sight':
+        add(id, under.x - 14, under.y - 1, 13, 5, '#2d3946');
+        add(id, under.x - 4, under.y, 3, 3, '#db514b');
+        break;
+      case 'flashlight':
+        add(id, under.x - 19, under.y - 1, 15, 6, '#394653');
+        add(id, under.x - 6, under.y, 3, 4, '#d6e8ed');
+        break;
+      // 弹匣扩容从原弹匣底部向下延长，前两像素重叠，避免与原弹匣脱节。
+      case 'extended_mag':
+        add(id, mag.x - 6, mag.y - 2, 12, 13, '#424d5a');
+        add(id, mag.x - 3, mag.y, 2, 9, '#9aa8b5');
+        break;
+      case 'pistol_extended_mag':
+        add(id, mag.x - 5, mag.y - 2, 10, 10, '#394756');
+        add(id, mag.x - 2, mag.y, 2, 6, '#a3b0bd');
+        break;
+      // 枪托配件只画缓冲垫/后托板，不再把整块枪托放到握把附近。
+      case 'tactical_stock':
+        add(id, stock.x - 2, stock.y - 8, 5, 16, '#394655');
+        add(id, stock.x - 3, stock.y - 5, 2, 10, '#8995a1');
+        break;
+      // 穿甲弹属于弹药配置：在机匣附近给一个小型黄铜/红铜识别块，不再漂浮到整枪最下方。
+      case 'ap_round':
+        add(id, receiver.x - 3, receiver.y + 3, 6, 5, '#d46d43');
+        add(id, receiver.x - 2, receiver.y + 4, 2, 3, '#e2bd76');
+        break;
     }
   }
   return { ids: idsSafe, parts: visual };
