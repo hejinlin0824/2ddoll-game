@@ -176,6 +176,8 @@ export const LAYOUTS = {
       ground90(),
       // 入口配电柜位于地面入口侧，整栋楼清剿后也可在此发出撤离信号。
       { x: 2.5, y: 1.15, w: 0.46, h: 0.82, type: 'breaker', breakerId: 'main', raidFloorId: 0, interactive: true, destructible: false, sensor: true },
+      // 二层 COMMS 机柜里放着本章真正要回收的失联名单；感应体不占用走廊碰撞空间。
+      { x: 34.3, y: 4.2, w: 0.62, h: 0.74, type: 'intel', intelId: 'missing-list', raidFloorId: 1, interactive: true, destructible: false, sensor: true, intelSecured: false },
       // 四层统一保留同一条中央楼梯井。屋顶插入点在井道左侧，沿屋顶可直接抵达楼梯入口。
       ...floorSpan(10.25),
       ...floorSpan(6.75),
@@ -960,6 +962,19 @@ export function drawTerrain(ctx, rects, w2s, ppm, time = 0, lighting = null) {
         ctx.fillStyle = 'rgba(110,48,52,0.48)'; ctx.fillRect(-w * 0.32, -h * 0.30, w * 0.64, h * 0.60);
       }
       ctx.restore();
+    } else if (r.type === 'intel') {
+      const secured = !!r.intelSecured;
+      const pulse = 0.58 + Math.sin(time * 4.2) * 0.18;
+      ctx.fillStyle = '#14232f'; ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#304657'; ctx.fillRect(sx + w * 0.08, sy + h * 0.06, w * 0.84, h * 0.16);
+      ctx.strokeStyle = secured ? '#8cce97' : '#7fb2c9';
+      ctx.lineWidth = Math.max(1, ppm * 0.025); ctx.strokeRect(sx + 1, sy + 1, w - 2, h - 2);
+      ctx.fillStyle = secured ? '#8cce97' : `rgba(255,177,74,${pulse})`;
+      ctx.fillRect(sx + w * 0.73, sy + h * 0.11, w * 0.12, h * 0.07);
+      ctx.fillStyle = '#476579';
+      for (let i = 0; i < 3; i++) ctx.fillRect(sx + w * 0.15, sy + h * (0.38 + i * 0.15), w * (i === 1 ? 0.42 : 0.62), Math.max(1, h * 0.045));
+      ctx.fillStyle = secured ? '#8cce97' : '#ffcb79';
+      ctx.fillRect(sx + w * 0.15, sy + h * 0.83, w * 0.70, Math.max(1, h * 0.06));
     } else if (r.type === 'breaker') {
       ctx.fillStyle = '#1c2935'; ctx.fillRect(sx, sy, w, h);
       ctx.strokeStyle = '#8196a4'; ctx.lineWidth = Math.max(1, ppm * 0.025); ctx.strokeRect(sx + 1, sy + 1, w - 2, h - 2);
