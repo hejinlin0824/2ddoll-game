@@ -95,17 +95,17 @@ test('affix absorption merges same-stat values, appends new stats up to cap, and
   const original = [{ id: 'deadly', v: 10 }];
   const merged = absorbAffix(original, { id: 'tungsten', v: 7 }, 2);
   assert.deepEqual(original, [{ id: 'deadly', v: 10 }]);
-  assert.deepEqual(merged, [{ id: 'deadly', v: 10 }, { id: 'tungsten', v: 7 }]);
+  assert.deepEqual(merged, [{ id: 'deadly', v: 17 }]);
 
-  const stacked = absorbAffix(merged, { id: 'swiftgun', v: 4 }, 2);
-  assert.deepEqual(stacked, [
-    { id: 'deadly', v: 10 },
-    { id: 'tungsten', v: 7 },
+  const appended = absorbAffix(merged, { id: 'swiftgun', v: 4 }, 2);
+  assert.deepEqual(appended, [
+    { id: 'deadly', v: 17 },
+    { id: 'swiftgun', v: 4 },
   ]);
-  const stackedSameStat = absorbAffix(merged, { id: 'precise', v: 5 }, 2);
+  const stackedSameStat = absorbAffix(appended, { id: 'overdrive', v: 5 }, 2);
   assert.deepEqual(stackedSameStat, [
-    { id: 'deadly', v: 10 },
-    { id: 'tungsten', v: 7 },
+    { id: 'deadly', v: 17 },
+    { id: 'swiftgun', v: 9 },
   ]);
   const capList = [{ id: 'deadly', v: 10 }, { id: 'swiftgun', v: 5 }];
   assert.equal(absorbAffix(capList, { id: 'expansive', v: 3 }, 2), null);
