@@ -1273,13 +1273,13 @@ export class Player {
       if(this.appearance.backpack==='radio'){ctx.fillStyle='#4d5e67';ctx.fillRect(-bw*.13,-bh*.62,bw*.26,bh*.38);ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.beginPath();ctx.moveTo(0,-bh*.58);ctx.lineTo(bw*.25,-bh*.88);ctx.stroke();}
       ctx.restore();
     }
-    // 躯干(自绘皮肤优先,随朝向镜像;无皮肤画程序躯体+弹药带)
+    // 躯干基底与模块化载具：始终锚定 torso 刚体局部空间
     {
       const [x, y] = P(this.torso);
       ctx.save();
       ctx.translate(x, y); ctx.rotate(R(this.torso));
       {
-        // 躯干基底:自绘皮肤(带微调变换)或程序躯体
+        // 基础作战服与接缝细节
         const w = D.torso.w * ppm, h = D.torso.h * ppm;
         ctx.fillStyle = this.C.shirt || this.C.skin;
         ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
@@ -1360,7 +1360,7 @@ export class Player {
       ctx.restore();
     }
 
-    // 头(自绘皮肤优先,随朝向镜像;无皮肤画程序头+红头巾+眼)
+    // 头部与装饰：程序化头型、头发、护目镜与头盔都锚定 head 刚体
     {
       const [x, y] = P(this.head);
       ctx.save();
