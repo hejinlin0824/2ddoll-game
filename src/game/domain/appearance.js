@@ -5,7 +5,7 @@ const DEFAULTS = Object.freeze({
   hairStyle: 'short', hairColor: '#202733', faceShape: 'oval', kitStyle: 'plate', helmetStyle: 'highcut', eyewear: 'goggles', pads: 'full', backpack: 'assault', armorColor: '#263744',
   skinTone: '#c89572', eyeColor: '#67c9ff',
   shirtColor: '#35495b', pantsColor: '#34465a', bootColor: '#1b222b',
-  bandanaColor: '#d96b3b', headwear: 'bandana', accentColor: '#d99447',
+  bandanaColor: '#d96b3b', headwear: 'headset', accentColor: '#d99447',
 });
 const HAIR = new Set(['short', 'buzz', 'ponytail', 'bun', 'long', 'spiky', 'undercut']);
 const FACE = new Set(['round', 'oval', 'angular']);
