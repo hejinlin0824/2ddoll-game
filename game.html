@@ -394,7 +394,7 @@
       .rh-awareness i { display:block; height:100%; width:0; background:var(--raid-accent,#ffb14a); transition:width .18s linear; box-shadow:0 0 10px var(--raid-accent,#ffb14a); }
       .rh-awareness b { color:rgba(220,230,242,.8); font-size:9px; font-weight:700; }
       .rh-noise { color:rgba(255,205,133,.76); border-top:1px solid rgba(148,178,214,.13); padding-top:8px; font-size:10px; }
-      .rh-keys { display:flex; gap:14px; color:rgba(173,192,217,.48); font-size:9px; }
+      .rh-keys { display:flex; flex-wrap:wrap; gap:6px 12px; color:rgba(173,192,217,.58); font-size:9px; }
       .rh-keys span { display:flex; align-items:center; gap:5px; }
       .rh-keys kbd { display:inline-grid; place-items:center; min-width:15px; height:15px; border:1px solid rgba(148,178,214,.22); color:rgba(226,235,247,.78); background:rgba(148,178,214,.06); font:800 9px var(--font-body); }
       @keyframes raidHudIn { from { opacity:0; transform:translateY(-7px); } to { opacity:1; transform:translateY(0); } }
@@ -989,7 +989,7 @@
       <div class="rh-status" id="raidMissionStatus">目标 01/04 · 清理屋顶守军，找到中央楼梯入口</div>
       <div class="rh-awareness"><span>敌方警觉</span><div><i id="raidAlertFill"></i></div><b id="raidIncidentText">楼层清剿 0/4</b></div>
       <div class="rh-noise" id="raidNoiseText">声源 5.2m · 消音器 OFF</div>
-      <div class="rh-keys"><span><kbd>X</kbd> 消音器</span><span><kbd>E</kbd> 门 / 撤离</span><span><kbd>S</kbd> 潜行</span></div>
+      <div class="rh-keys"><span><kbd>W + A/D</kbd> 楼梯攀爬</span><span><kbd>E</kbd> 开门 / 读取终端</span><span><kbd>射击</kbd> 破坏封门</span><span><kbd>S</kbd> 潜行</span><span><kbd>X</kbd> 消音器</span></div>
     </section>
     <button id="raidDialogue" type="button" aria-live="polite" aria-label="行动无线电字幕，点击继续" style="display:none">
       <span class="rd-top"><i aria-hidden="true"></i><span>HERO / SECURE COMMS</span><b>CHANNEL 01</b></span>
