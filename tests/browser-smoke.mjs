@@ -496,7 +496,10 @@ try {
     const g = window.__game();
     const e = window.__lootTestTarget;
     const p = g.player.torso.getPosition();
-    const dx = e.x - p.x, dy = e.y - p.y;
+    // Stand beside the corpse, not in the corpse's ragdoll collision shapes.
+    // Center-overlap made the physics solver shove the player outside the 1.35m loot radius.
+    const side = p.x <= e.x ? -0.85 : 0.85;
+    const dx = e.x + side - p.x, dy = e.y - p.y;
     for (const body of g.player.allBodies) {
       const q = body.getPosition();
       body.setTransform({ x: q.x + dx, y: q.y + dy }, body.getAngle());
@@ -526,7 +529,9 @@ try {
     return el && el.style.display !== 'none' && el.querySelectorAll('.cp-row').length === 3;
   }, undefined, { timeout: 4000 });
   for (const slot of ['body', 'gun', 'head']) {
-    await gameplayPage.locator('#corpse .cp-take[data-k="' + slot + '"]').click();
+    await gameplayPage.locator('#corpse .cp-take[data-k="' + slot + '"]').waitFor({ state: 'visible', timeout: 4000 });
+    await gameplayPage.locator('#corpse .cp-take[data-k="' + slot + '"]').click({ timeout: 5000 });
+    await gameplayPage.waitForFunction((k) => window.__lootTestTarget?.lootTaken?.[k] === true, slot, { timeout: 4000 });
   }
   const lootedInventory = await gameplayPage.evaluate(() => {
     const inv = JSON.parse(localStorage.getItem('contra-inv') || 'null');
