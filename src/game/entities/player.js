@@ -9,12 +9,11 @@ import { CAT, groundYAt } from '../world/level.js';
 import { particles, addDecal, bloodJet } from '../systems/fx.js';
 import { loadSavedGun, loadEquip, loadAssets, loadGunBuild, GUN_PRESETS, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
-import { skinImg, skinXf, skinPartLayout } from '../domain/skin.js';
 import { loadAppearance, appearancePalette, appearanceRevision } from '../domain/appearance.js';
 import { equipmentPartCenter } from '../domain/equipmentGeometry.js';
 import { RIG_DIMS as D, RIG_ANCHORS as A, DEFAULT_RIG_POSE } from '../domain/rigGeometry.js';
 
-// Rig dimensions/anchors are shared with the skin-studio preview.
+// Rig dimensions/anchors are shared with the operator studio's Canvas2D reference preview.
 
 const COLOR = {
   skin: '#e2b088', skinDark: '#b8885f',
@@ -42,8 +41,8 @@ export class Player {
     this.loadoutOpt = opts.loadout || null;
     this.gunDefOpt = opts.gunDef || null;
     this.persistPlayerData = opts.persistPlayerData !== false;
-    this.useSkin = !opts.palette; // 自绘皮肤/程序化外观只给主角:敌人带 palette 进来,跳过玩家 DIY
-    this.appearance = this.persistPlayerData && this.useSkin ? loadAppearance() : null;
+    this.useAppearance = !opts.palette; // 程序化外观只给主角；敌人由各自 palette 驱动
+    this.appearance = this.persistPlayerData && this.useAppearance ? loadAppearance() : null;
     this._appearanceRevision = appearanceRevision();
     this.C = { ...COLOR, ...(opts.palette || {}), ...(this.appearance ? appearancePalette(this.appearance) : {}) };
     this.build();
@@ -1069,7 +1068,7 @@ export class Player {
 
   // ---- 绘制(世界坐标 -> 屏幕由 w2s 提供,ppm 为像素/米)----
   draw(ctx, w2s, ppm, time) {
-    if (this.persistPlayerData && this.useSkin && this._appearanceRevision !== appearanceRevision()) {
+    if (this.persistPlayerData && this.useAppearance && this._appearanceRevision !== appearanceRevision()) {
       this.appearance = loadAppearance();
       this.C = { ...COLOR, ...appearancePalette(this.appearance) };
       this._appearanceRevision = appearanceRevision();
