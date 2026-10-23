@@ -124,10 +124,20 @@ try {
     frameError: window.__lastFrameError?.msg || null,
     fog: window.__fog.state(),
     stairCount: window.__level().filter((r) => r.type === 'stair').length,
+    stairLandings: [10.25, 6.75, 3.25].map((y) => window.__level()
+      .filter((r) => r.type === 'concrete' && Math.abs(r.y - y) < 0.01)
+      .map((r) => ({ left: +(r.x - r.w / 2).toFixed(3), right: +(r.x + r.w / 2).toFixed(3) }))),
   }));
   assert(boot.canvases >= 1, 'game canvas was not created');
   assert(boot.fog?.scene === 'raid' && boot.fog.visiblePixelCount > 100, 'raid fog of war did not reveal a local visibility region');
-  assert(boot.stairCount === 21, `raid traversal stairs missing: ${boot.stairCount}`);
+  assert(boot.stairCount === 36, `raid traversal stairs missing: ${boot.stairCount}`);
+  for (const [i, spans] of boot.stairLandings.entries()) {
+    assert(spans.length === 2 && spans[0].left === 0 && spans[0].right === 47
+      && spans[1].left === 53 && spans[1].right === 74,
+      `raid floor ${i + 1} does not leave the shared 6m stair opening: ${JSON.stringify(spans)}`);
+  }
+  assert(!window.__raid?.().campaign?.completed, 'raid campaign should start incomplete');
+  assert(document.getElementById('raidDialogue') && document.getElementById('raidMissionStatus'), 'raid campaign HUD/dialogue elements are missing');
   assert(boot.scene === 'raid', `raid scene did not initialize: ${boot.scene}`);
   for (const key of ['renderError', 'renderLayerErrors', 'raidVisionError', 'frameError']) {
     if (boot[key] && (key !== 'renderLayerErrors' || Object.keys(boot[key]).length)) {
@@ -189,6 +199,15 @@ try {
   // Leave the menu if it is open; wait for the insertion animation before moving the test actor.
   await page.keyboard.press('Enter');
   await page.waitForTimeout(3600);
+  const openingBriefing = await page.evaluate(() => ({
+    campaign: window.__raid().campaign,
+    objective: document.getElementById('raidMissionStatus')?.textContent || '',
+    dialogueVisible: getComputedStyle(document.getElementById('raidDialogue')).display !== 'none',
+  }));
+  assert(openingBriefing.campaign?.stage === 'assault', `campaign did not advance after roof insertion: ${JSON.stringify(openingBriefing.campaign)}`);
+  assert(openingBriefing.dialogueVisible && /夜幕|失联名单/.test(document.getElementById('raidDialogueText').textContent),
+    `opening radio briefing did not appear: ${JSON.stringify(openingBriefing)}`);
+  assert(/目标 01\/04/.test(openingBriefing.objective), `initial mission objective missing: ${openingBriefing.objective}`);
 
   await page.keyboard.press('n');
   await page.waitForTimeout(80);
