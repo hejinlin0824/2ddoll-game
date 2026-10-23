@@ -124,6 +124,7 @@ try {
     frameError: window.__lastFrameError?.msg || null,
     fog: window.__fog.state(),
     stairCount: window.__level().filter((r) => r.type === 'stair').length,
+    campaign: window.__raid().campaign,
     stairLandings: [10.25, 6.75, 3.25].map((y) => window.__level()
       .filter((r) => r.type === 'concrete' && Math.abs(r.y - y) < 0.01)
       .map((r) => ({ left: +(r.x - r.w / 2).toFixed(3), right: +(r.x + r.w / 2).toFixed(3) }))),
@@ -136,7 +137,7 @@ try {
       && spans[1].left === 53 && spans[1].right === 74,
       `raid floor ${i + 1} does not leave the shared 6m stair opening: ${JSON.stringify(spans)}`);
   }
-  assert(!window.__raid?.().campaign?.completed, 'raid campaign should start incomplete');
+  assert(!boot.campaign?.completed, 'raid campaign should start incomplete');
   assert(document.getElementById('raidDialogue') && document.getElementById('raidMissionStatus'), 'raid campaign HUD/dialogue elements are missing');
   assert(boot.scene === 'raid', `raid scene did not initialize: ${boot.scene}`);
   for (const key of ['renderError', 'renderLayerErrors', 'raidVisionError', 'frameError']) {
