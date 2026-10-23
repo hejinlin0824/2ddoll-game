@@ -288,9 +288,9 @@ try {
   // Start on the actual floor landing, not on the first stair tread. This verifies that the
   // player can discover/enter the stair flight as well as climb it with hold-W + movement.
   const stairFlights = [
-    { floor: 'ground-to-level-2', x: 53.25, y: 0.9, direction: 'left', targetY: 4.0 },
-    { floor: 'level-2-to-level-3', x: 46.75, y: 4.4, direction: 'right', targetY: 7.5 },
-    { floor: 'level-3-to-roof', x: 53.25, y: 7.9, direction: 'left', targetY: 11.0 },
+    { floor: 'ground-to-level-2', x: 53.25, y: 0.9, direction: 'left', targetY: 4.25 },
+    { floor: 'level-2-to-level-3', x: 46.75, y: 4.4, direction: 'right', targetY: 7.75 },
+    { floor: 'level-3-to-roof', x: 53.25, y: 7.9, direction: 'left', targetY: 11.25 },
   ];
   for (const flight of stairFlights) {
     await page.evaluate((route) => {
@@ -310,8 +310,10 @@ try {
       input.jumpHeld = true;
       input.jumpPressed = true;
     }, flight);
-    await page.waitForFunction((targetY) => window.__game().player.torso.getPosition().y > targetY,
-      flight.targetY, { timeout: 6500 });
+    await page.waitForFunction((targetY) => {
+      const { player } = window.__game();
+      return player.torso.getPosition().y > targetY && player.grounded;
+    }, flight.targetY, { timeout: 8000 });
     const climb = await page.evaluate(() => {
       const { player, input } = window.__game();
       const p = player.torso.getPosition();
