@@ -1,5 +1,5 @@
 // 程序化角色外观：不依赖图片素材，颜色/发型/脸型全部叠加在现有主动布娃娃骨架上。
-// 存档与自绘部件皮肤(contra-skin)分离，清除 DIY 不会删除玩家上传的皮肤图。
+// 当前外观档案保存程序化装备结构与配色；旧 contra-skin 位图系统已从 dev 移除。
 const KEY = 'contra-appearance-v1';
 const DEFAULTS = Object.freeze({
   hairStyle: 'short', hairColor: '#202733', faceShape: 'oval', kitStyle: 'plate', helmetStyle: 'highcut', eyewear: 'goggles', pads: 'full', backpack: 'assault', armorColor: '#263744',
