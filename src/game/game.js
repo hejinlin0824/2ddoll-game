@@ -24,7 +24,7 @@ import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginR
 import { lightingState, resetLightingState, updateLighting, drawLighting, lightLevelAt, toggleBuildingPower, toggleNightVision as toggleNightVisionMode, toggleFlashlight as toggleFlashlightMode } from './systems/lighting.js';
 import { raidVisionProfile } from './domain/raidVisibility.js';
 import { RAID_CAMPAIGN_CHECKPOINT_KEY, RAID_CAMPAIGN_SAVE_KEY, RAID_CAMPAIGN_TITLE, createRaidCampaignCheckpoint, createRaidCampaignState, getRaidCampaignResumeSpawn, normalizeRaidCampaignCheckpoint, resetRaidCampaignState, restoreRaidCampaignCheckpoint, updateRaidCampaign, getRaidObjective, advanceRaidDialogue, secureRaidIntel, completeRaidCampaign } from './domain/raidCampaign.js';
-import { isRaidStairStepAt, keepRaidSpawnOutOfStairwell } from './domain/raidLayout.js';
+import { keepRaidSpawnOutOfStairwell } from './domain/raidLayout.js';
 import { resetFogOfWar, updateFogOfWar, drawFogOfWar, isWorldCurrentlyVisible, getFogDiagnostics } from './systems/fogOfWar.js';
 import { createGrappleState, fireGrapple, stepGrapple, drawGrapple, releaseGrapple } from './systems/grapple.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
@@ -801,14 +801,7 @@ function step(dt) {
     input.left = input.right = input.down = input.fire = false;
     input.jumpPressed = false;
   }
-  // Stair-only auto-hop: holding W/Up while moving on a raid stair flight repeats a jump on each landed tread.
-  // Normal ground/platform jumps remain edge-triggered; this only assists the deliberately narrow return route.
-  if (raidState.enabled && input.jumpHeld && player.grounded && !player.ragdoll && !raidIntro) {
-    const p = player.torso.getPosition();
-    const footY = p.y - (player.crouched ? 0.48 : 0.78);
-    const onStair = isRaidStairStepAt(p.x, footY, LEVEL.rects);
-    if (onStair) input.jumpPressed = true;
-  }
+  // Raid stairs use a continuous hidden ramp under the visible metal treads; ordinary A/D movement is enough.
   player.update(dt, input);
   if (raidIntro) advanceRaidRappel(dt, !menuIsOpen());
   if (menuIsOpen() || bpIsOpen() || corpseIsOpen()) releaseGrapple(grappleState, 0.1);
