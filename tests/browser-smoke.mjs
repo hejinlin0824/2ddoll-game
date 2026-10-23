@@ -21,7 +21,7 @@ try {
   const previewBefore = await appearancePage.locator('#preview').evaluate((cv) => cv.toDataURL());
   await appearancePage.locator('[data-field="kitStyle"][data-value="chest"]').click();
   await appearancePage.locator('[data-field="helmetStyle"][data-value="full"]').click();
-  await appearancePage.locator('[data-color-input="armorColor"]').fill('#4b5b67');
+  await appearancePage.locator('[data-color-input="armorColor"]').evaluate((el) => { el.value = '#4b5b67'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   const previewAfter = await appearancePage.locator('#preview').evaluate((cv) => cv.toDataURL());
   assert(previewAfter !== previewBefore, 'modular kit selections did not redraw the Canvas2D preview');
   await appearancePage.locator('#apply').click();
