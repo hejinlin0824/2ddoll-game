@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  RAID_CAMPAIGN_CHECKPOINT_KEY,
   RAID_CAMPAIGN_SAVE_KEY,
   RAID_CAMPAIGN_TITLE,
+  createRaidCampaignCheckpoint,
+  getRaidCampaignResumeSpawn,
+  normalizeRaidCampaignCheckpoint,
+  restoreRaidCampaignCheckpoint,
   createRaidCampaignState,
   updateRaidCampaign,
   getRaidObjective,
@@ -63,4 +68,48 @@ test('dialogue can be dismissed and extraction cannot be completed early', () =>
 test('campaign identifies its persistent record key and chapter title', () => {
   assert.equal(RAID_CAMPAIGN_SAVE_KEY, 'contra-raid-campaign-v1');
   assert.match(RAID_CAMPAIGN_TITLE, /失联名单/);
+});
+
+
+test('campaign checkpoint resumes the next objective and preserves cleared floors', () => {
+  const campaign = createRaidCampaignState(true);
+  campaign.stage = 'assault';
+  campaign.announcedFloors = [3, 2];
+  campaign.elapsedSeconds = 47.8;
+  const checkpoint = createRaidCampaignCheckpoint(campaign, { 3: true, 2: true, 1: false, 0: false });
+  assert.equal(checkpoint.stage, 'assault');
+  assert.deepEqual(checkpoint.announcedFloors, [3, 2]);
+  assert.equal(checkpoint.elapsedSeconds, 47.8);
+  assert.deepEqual(getRaidCampaignResumeSpawn(checkpoint), { x: 46.8, y: 3.5 });
+
+  const restored = createRaidCampaignState(true);
+  const result = restoreRaidCampaignCheckpoint(restored, checkpoint);
+  assert.equal(result.clearedFloors[3], true);
+  assert.equal(result.clearedFloors[2], true);
+  assert.equal(result.clearedFloors[1], false);
+  assert.equal(restored.stage, 'assault');
+  assert.deepEqual(restored.announcedFloors, [3, 2]);
+  assert.equal(restored.elapsedSeconds, 47.8);
+  assert.match(restored.activeDialogue.text, /屋顶与三层已肃清/);
+  assert.match(getRaidObjective(restored, result.clearedFloors), /清剿二层/);
+});
+
+test('checkpoint resumes at evidence or extraction controls and rejects malformed data', () => {
+  const evidence = normalizeRaidCampaignCheckpoint({
+    version: 1, campaign: RAID_CAMPAIGN_TITLE, stage: 'assault',
+    clearedFloors: { 3: true, 2: true, 1: true, 0: true }, intelSecured: false, elapsedSeconds: 99,
+  });
+  assert.equal(evidence.stage, 'assault');
+  assert.deepEqual(getRaidCampaignResumeSpawn(evidence), { x: 34.3, y: 3.5 });
+
+  const extract = normalizeRaidCampaignCheckpoint({
+    version: 1, campaign: RAID_CAMPAIGN_TITLE, stage: 'assault',
+    clearedFloors: { 3: true, 2: true, 1: true, 0: true }, intelSecured: true, elapsedSeconds: 120,
+  });
+  assert.equal(extract.stage, 'extract');
+  assert.deepEqual(getRaidCampaignResumeSpawn(extract), { x: 3.6, y: 0 });
+  assert.equal(RAID_CAMPAIGN_CHECKPOINT_KEY, 'contra-raid-checkpoint-v1');
+  assert.equal(normalizeRaidCampaignCheckpoint({ ...extract, campaign: 'wrong' }), null);
+  assert.equal(normalizeRaidCampaignCheckpoint({ ...extract, version: 99 }), null);
+  assert.equal(createRaidCampaignCheckpoint({ ...createRaidCampaignState(true), completed: true }, {}), null);
 });
