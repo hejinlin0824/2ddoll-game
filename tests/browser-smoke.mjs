@@ -45,11 +45,25 @@ try {
   const skinGameResponse = await skinGamePage.goto(baseURL + '/game.html', { waitUntil: 'networkidle', timeout: 30000 });
   assert(!!skinGameResponse && skinGameResponse.status() === 200, 'operator kit game page returned ' + (skinGameResponse?.status() ?? 'no response'));
   await skinGamePage.waitForFunction(() => typeof window.__game === 'function', undefined, { timeout: 10000 });
-  await skinGamePage.keyboard.press('Enter');
-  await skinGamePage.waitForFunction(() => !window.__feel().menu, undefined, { timeout: 8000 });
+  // Click the actual deployment control; a bare Enter can be swallowed by the menu/focus layer.
+  await skinGamePage.locator('#menuStart').click();
+  await skinGamePage.waitForFunction(() => !document.body.classList.contains('in-menu'), undefined, { timeout: 8000 });
+  await skinGamePage.waitForTimeout(450); // Let the leave transition clear before capturing the live operator.
   const gameAppearance = await skinGamePage.evaluate(() => JSON.parse(localStorage.getItem('contra-appearance-v1') || 'null'));
+  const liveAppearance = await skinGamePage.evaluate(() => {
+    const p = window.__game()?.player;
+    return p?.appearance ? {
+      kitStyle: p.appearance.kitStyle, helmetStyle: p.appearance.helmetStyle,
+      eyewear: p.appearance.eyewear, pads: p.appearance.pads, backpack: p.appearance.backpack,
+      torsoPosition: p.torso.getPosition().clone ? {
+        x: p.torso.getPosition().x, y: p.torso.getPosition().y,
+      } : null,
+    } : null;
+  });
   assert(gameAppearance?.kitStyle === 'chest' && gameAppearance?.helmetStyle === 'full',
     'game did not retain the new procedural appearance configuration');
+  assert(liveAppearance?.kitStyle === 'chest' && liveAppearance?.helmetStyle === 'full',
+    'live Player did not load the new modular appearance configuration: ' + JSON.stringify(liveAppearance));
   await skinGamePage.locator('#game').screenshot({ path: 'artifacts/skin-game-rig.png' });
   await skinGamePage.close();
   await appearancePage.close();
