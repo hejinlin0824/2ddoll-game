@@ -4,26 +4,16 @@ on:
   push:
     branches: [dev]
     paths:
-      - "src/game/domain/equipmentGeometry.js"
-      - "src/game/domain/rigGeometry.js"
-      - "src/game/domain/raidVisibility.js"
-      - "src/game/domain/raidLayout.js"
-      - "src/game/systems/lighting.js"
-      - "src/game/systems/raid.js"
-      - "src/game/systems/fogOfWar.js"
-      - "src/game/systems/grapple.js"
-      - "src/game/systems/input.js"
-      - "src/game/world/level.js"
-      - "src/game/game.js"
-      - "AGENT.md"
-      - "src/game/entities/player.js"
-      - "src/designer/studio.js"
-      - "src/designer/skinStudio.js"
-      - "skin-studio.html"
-      - "game.html"
-      - "asset-studio.html"
+      - "src/**"
       - "tests/**"
-      - ".github/workflows/appearance-alignment.yml"
+      - "public/**"
+      - "**.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.js"
+      - ".github/workflows/**"
+      - "AGENT.md"
+      - "ARCHITECTURE.md"
   pull_request:
     branches: [dev]
   workflow_dispatch:
