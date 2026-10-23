@@ -204,9 +204,10 @@ try {
     campaign: window.__raid().campaign,
     objective: document.getElementById('raidMissionStatus')?.textContent || '',
     dialogueVisible: getComputedStyle(document.getElementById('raidDialogue')).display !== 'none',
+    dialogueText: document.getElementById('raidDialogueText')?.textContent || '',
   }));
   assert(openingBriefing.campaign?.stage === 'assault', `campaign did not advance after roof insertion: ${JSON.stringify(openingBriefing.campaign)}`);
-  assert(openingBriefing.dialogueVisible && /夜幕|失联名单/.test(document.getElementById('raidDialogueText').textContent),
+  assert(openingBriefing.dialogueVisible && /夜幕|失联名单/.test(openingBriefing.dialogueText),
     `opening radio briefing did not appear: ${JSON.stringify(openingBriefing)}`);
   assert(/目标 01\/04/.test(openingBriefing.objective), `initial mission objective missing: ${openingBriefing.objective}`);
 
