@@ -392,7 +392,7 @@ function switchScene(sceneId) {
   if (raidState.enabled && (!raidResumeCheckpoint || raidResumeCheckpoint.stage === 'insertion')) beginRaidRappel();
   waves = createWaveDirector();
 
-  cam.x = sceneId === 'raid' ? 4.2 : 0; cam.y = sceneId === 'raid' ? 12.1 : 3.4; cam.zoom = 1; cam.scoped = 0;
+  cam.x = sceneId === 'raid' ? LEVEL.spawn.x : 0; cam.y = sceneId === 'raid' ? LEVEL.spawn.y + 1.6 : 3.4; cam.zoom = 1; cam.scoped = 0;
   cam.oX = 0; cam.oY = 0; cam.oR = 0; cam.kx = 0; cam.ky = 0;
   input.left = input.right = input.down = input.fire = input.jumpPressed = input.jumpHeld = false;
   mouse.active = false;
