@@ -7,6 +7,7 @@ import {
   updateRaidCampaign,
   getRaidObjective,
   advanceRaidDialogue,
+  secureRaidIntel,
   completeRaidCampaign,
 } from '../src/game/domain/raidCampaign.js';
 
@@ -32,14 +33,20 @@ test('floors clear from roof to ground, with no false completion before extracti
     assert.notEqual(state.stage, 'complete');
     assert.ok(state.announcedFloors.includes(floorId));
   }
-  assert.match(getRaidObjective(state, cleared), /清理地面入口/);
+  assert.match(getRaidObjective(state, cleared), /回收 COMMS 终端/);
   cleared[0] = true;
+  updateRaidCampaign(state, 0.1, { enabled: true, rappelDone: true, playerAlive: true, clearedFloors: cleared });
+  assert.equal(state.stage, 'assault', 'all floors alone must not skip evidence recovery');
+  assert.equal(completeRaidCampaign(state), false, 'extraction must remain locked until the intel is recovered');
+  assert.equal(secureRaidIntel(state), true);
+  assert.equal(secureRaidIntel(state), false, 'the same evidence cannot be collected twice');
   updateRaidCampaign(state, 0.1, { enabled: true, rappelDone: true, playerAlive: true, clearedFloors: cleared });
   assert.equal(state.stage, 'extract');
   assert.match(getRaidObjective(state, cleared), /按 E 呼叫撤离/);
   assert.equal(completeRaidCampaign(state), true);
   assert.equal(state.stage, 'complete');
   assert.match(getRaidObjective(state, cleared), /记录已保存/);
+  assert.equal(state.intelSecured, true);
   assert.match(state.activeDialogue.text, /正在离开建筑/);
 });
 
