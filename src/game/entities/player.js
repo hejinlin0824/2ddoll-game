@@ -1103,6 +1103,14 @@ export class Player {
       ctx.restore();
     };
 
+    const armorPad = (b, d, kind) => {
+      if (!this.appearance || (this.appearance.pads !== 'full' && !(kind === 'knee' && this.appearance.pads === 'knees'))) return;
+      const [x,y]=P(b);ctx.save();ctx.translate(x,y);ctx.rotate(R(b));
+      const w=d.w*ppm*(kind==='shoulder'?1.04:.76),h=d.h*ppm*(kind==='shoulder'?.42:.24),ac=this.appearance.armorColor||'#263744';
+      ctx.fillStyle=shadeKit(ac,1.25);ctx.strokeStyle='#0a1118';ctx.lineWidth=1.2;
+      ctx.beginPath();ctx.roundRect(-w/2,-h/2,w,h,Math.min(w,h)*.32);ctx.fill();ctx.stroke();
+      ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.lineWidth=Math.max(.8,ppm*.014);ctx.beginPath();ctx.moveTo(-w*.24,0);ctx.lineTo(w*.24,0);ctx.stroke();ctx.restore();
+    };
     const hand = (fb) => {
       const [x, y] = P(fb);
       ctx.save();
@@ -1253,11 +1261,24 @@ export class Player {
 
     // 远侧肢体(暗色)→ 躯干 → 头 → 近侧腿 → 枪 → 近侧臂
     if (!skinCap(this.armUB, 'upperArm', true)) cap(this.armUB, D.upperArm, this.C.shirtDark || this.C.skinDark);
+    armorPad(this.armUB,D.upperArm,'shoulder');
     if (!skinCap(this.armLB, 'foreArm', true)) cap(this.armLB, D.foreArm, this.C.skinDark);
     if (!hasSkin('foreArm')) hand(this.armLB);
     if (!skinCap(this.legLB, 'calf', true)) boot(this.legLB, this.C.pantsDark, this.C.bootDark);
     if (!skinCap(this.legUB, 'thigh', true)) cap(this.legUB, D.thigh, this.C.pantsDark);
+    armorPad(this.legUB,D.thigh,'knee');
 
+    // Backpack is attached behind the torso pivot, not a screen-space decoration.
+    if (this.appearance && this.appearance.backpack && this.appearance.backpack !== 'none') {
+      const [bx,by]=P(this.torso), bw=(this.appearance.backpack==='radio'?.23:.29)*ppm, bh=(this.appearance.backpack==='radio'?.43:.52)*ppm;
+      ctx.save();ctx.translate(bx,by);ctx.rotate(R(this.torso));ctx.translate(-this.facing*(D.torso.w*.50*ppm),-.02*ppm);
+      ctx.fillStyle=shadeKit(this.appearance.armorColor||'#263744',.68);ctx.strokeStyle='#080e14';ctx.lineWidth=1.4;
+      ctx.beginPath();ctx.roundRect(-bw/2,-bh/2,bw,bh,bw*.16);ctx.fill();ctx.stroke();
+      ctx.fillStyle=shadeKit(this.appearance.armorColor||'#263744',1.25);ctx.beginPath();ctx.roundRect(-bw*.34,-bh*.36,bw*.68,bh*.35,bw*.08);ctx.fill();ctx.stroke();
+      ctx.strokeStyle='rgba(228,237,240,.25)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-bw*.28,-bh*.25);ctx.lineTo(-bw*.28,bh*.34);ctx.moveTo(bw*.28,-bh*.25);ctx.lineTo(bw*.28,bh*.34);ctx.stroke();
+      if(this.appearance.backpack==='radio'){ctx.fillStyle='#4d5e67';ctx.fillRect(-bw*.13,-bh*.62,bw*.26,bh*.38);ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.beginPath();ctx.moveTo(0,-bh*.58);ctx.lineTo(bw*.25,-bh*.88);ctx.stroke();}
+      ctx.restore();
+    }
     // 躯干(自绘皮肤优先,随朝向镜像;无皮肤画程序躯体+弹药带)
     {
       const [x, y] = P(this.torso);
@@ -1441,8 +1462,10 @@ export class Player {
 
     if (!skinCap(this.legLF, 'calf')) boot(this.legLF, this.C.pants, this.C.boot);
     if (!skinCap(this.legUF, 'thigh')) cap(this.legUF, D.thigh, this.C.pants);
+    armorPad(this.legUF,D.thigh,'knee');
     gun();
     if (!skinCap(this.armUF, 'upperArm')) cap(this.armUF, D.upperArm, this.C.shirt || this.C.skin);
+    armorPad(this.armUF,D.upperArm,'shoulder');
     if (!skinCap(this.armLF, 'foreArm')) cap(this.armLF, D.foreArm, this.C.skin);
     if (!hasSkin('foreArm')) hand(this.armLF);
 
