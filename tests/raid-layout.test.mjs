@@ -19,8 +19,8 @@ test('each floor transition has a complete 3.5m switchback stair flight within i
     assert.equal(flight[11].stairStep, 11);
     assert.ok(flight.every((step) => step.x + 1e-9 < shaft.xHigh && step.x - 1e-9 > shaft.xLow));
     assert.ok(flight.every((step) => step.destructible === false && step.type === 'stair'));
-    assert.equal(flight[0].x, (shaft.xStart + shaft.xEnd) / 2 + (shaft.xStart - shaft.xEnd) / 24);
-    assert.equal(flight.at(-1).x, (shaft.xStart + shaft.xEnd) / 2 - (shaft.xStart - shaft.xEnd) / 24);
+    assert.equal(flight[0].x, (shaft.xStart + shaft.xEnd) / 2 + (shaft.xStart - shaft.xEnd) * 11 / 24);
+    assert.equal(flight.at(-1).x, (shaft.xStart + shaft.xEnd) / 2 - (shaft.xStart - shaft.xEnd) * 11 / 24);
     for (let i = 1; i < flight.length; i++) {
       const direction = Math.sign(shaft.xEnd - shaft.xStart);
       assert.equal(Math.sign(flight[i].x - flight[i - 1].x), direction, 'treads must follow the flight direction');
