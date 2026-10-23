@@ -1289,7 +1289,6 @@ export class Player {
     armorPad(this.armUB,D.upperArm,'shoulder');
     armorPad(this.armUB,D.upperArm,'elbow');
     cap(this.armLB, D.foreArm, this.C.shirtDark || this.C.shirt || this.C.skinDark);
-    armorPad(this.armLB,D.foreArm,'elbow');
     hand(this.armLB);
     boot(this.legLB, this.C.pantsDark, this.C.bootDark);
     cap(this.legUB, D.thigh, this.C.pantsDark);
@@ -1441,7 +1440,8 @@ export class Player {
         }
         if (look.hairStyle === 'bun') { ctx.fillStyle = look.hairColor || '#202733'; ctx.beginPath(); ctx.arc(-this.facing * r * 0.46, -r * 0.78, r * 0.22, 0, Math.PI * 2); ctx.fill(); }
         // 头带 / 通讯耳机由选项控制；不影响真正装备槽里的头盔属性。
-        if (look.headwear === 'bandana') {
+        // A full helmet hides the bandana; never let an old tail poke through the shell.
+        if (look.headwear === 'bandana' && (!this.appearance || this.appearance.helmetStyle === 'none')) {
           ctx.fillStyle = this.C.bandana; ctx.beginPath();
           ctx.roundRect(-r * 0.98, -r * 0.54, r * 1.96, r * 0.28, [r * 0.2, r * 0.2, r * 0.08, r * 0.08]); ctx.fill();
           const flap = Math.sin(time * 8) * 1.7;
@@ -1461,13 +1461,26 @@ export class Player {
           else{ctx.moveTo(-r*.98,-r*.08);ctx.lineTo(-r*.85,-r*.66);ctx.quadraticCurveTo(-r*.35,-r*1.18,r*.35,-r*.98);ctx.quadraticCurveTo(r*.91,-r*.75,r*.92,-r*.1);ctx.lineTo(r*.58,-r*.02);ctx.lineTo(-r*.72,-r*.02);}
           ctx.closePath();ctx.fill();ctx.stroke();ctx.strokeStyle='rgba(240,246,248,.24)';ctx.lineWidth=Math.max(.8,r*.06);ctx.beginPath();ctx.moveTo(-r*.62,-r*.68);ctx.quadraticCurveTo(0,-r*.96,r*.56,-r*.63);ctx.stroke();
           if(hs!=='cap'){ctx.fillStyle=hi;ctx.beginPath();ctx.roundRect(-r*.98,-r*.18,r*.35,r*.55,r*.12);ctx.fill();ctx.stroke();ctx.beginPath();ctx.roundRect(r*.60,-r*.18,r*.35,r*.55,r*.12);ctx.fill();ctx.stroke();}
-          if(this.appearance.eyewear&&this.appearance.eyewear!=='none'){ctx.fillStyle=this.appearance.eyewear==='clear'?'rgba(171,215,224,.62)':'#243b48';ctx.strokeStyle='#0a1118';ctx.lineWidth=Math.max(.8,r*.06);ctx.beginPath();ctx.roundRect(r*.25,-r*.08,r*.65,r*.28,r*.08);ctx.fill();ctx.stroke();ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.beginPath();ctx.moveTo(r*.31,r*.02);ctx.lineTo(r*.78,r*.02);ctx.stroke();}
         }
         // 侧视只显一只眼：白色眼白 + 可配置虹膜 + 瞳孔，尺寸随屏幕缩放而收敛。
         const ex = this.facing * r * 0.43, ey = r * 0.08;
         ctx.fillStyle = '#f5f0e8'; ctx.beginPath(); ctx.ellipse(ex, ey, Math.max(1.25, r * 0.22), Math.max(1.05, r * 0.15), 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = look.eyeColor || '#222222'; ctx.beginPath(); ctx.arc(ex + this.facing * r * 0.045, ey, Math.max(0.85, r * 0.105), 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#0b1018'; ctx.beginPath(); ctx.arc(ex + this.facing * r * 0.06, ey, Math.max(0.55, r * 0.06), 0, Math.PI * 2); ctx.fill();
+        // Draw the lenses last so that the eye is visibly behind the tactical eyewear.
+        if (this.appearance?.eyewear && this.appearance.eyewear !== 'none') {
+          const clear = this.appearance.eyewear === 'clear';
+          const gx = this.facing * r * 0.36, gy = r * 0.055;
+          const gw = r * 0.72, gh = r * 0.30;
+          ctx.fillStyle = clear ? 'rgba(171,215,224,0.56)' : '#243b48';
+          ctx.strokeStyle = '#0a1118'; ctx.lineWidth = Math.max(0.8, r * 0.07);
+          ctx.beginPath(); ctx.roundRect(gx - gw / 2, gy - gh / 2, gw, gh, gh * 0.24); ctx.fill(); ctx.stroke();
+          ctx.strokeStyle = this.appearance.accentColor || '#ffb34d';
+          ctx.lineWidth = Math.max(0.6, r * 0.045);
+          ctx.beginPath(); ctx.moveTo(gx - gw * 0.31, gy - gh * 0.10); ctx.lineTo(gx + gw * 0.31, gy - gh * 0.10); ctx.stroke();
+          ctx.strokeStyle = 'rgba(231,239,242,0.30)'; ctx.lineWidth = Math.max(0.5, r * 0.035);
+          ctx.beginPath(); ctx.moveTo(gx - gw * 0.23, gy + gh * 0.20); ctx.lineTo(gx + gw * 0.20, gy + gh * 0.20); ctx.stroke();
+        }
       }
       // The real inventory helmet was rendered underneath the cosmetic shell.
       ctx.restore();
@@ -1481,7 +1494,6 @@ export class Player {
     armorPad(this.armUF,D.upperArm,'shoulder');
     armorPad(this.armUF,D.upperArm,'elbow');
     cap(this.armLF, D.foreArm, this.C.shirtDark || this.C.shirt || this.C.skin);
-    armorPad(this.armLF,D.foreArm,'elbow');
     hand(this.armLF);
 
     // 轻量战术换弹指示:在操作员头部上方显示渐进式进度,不使用 DOM/滤镜动画。
