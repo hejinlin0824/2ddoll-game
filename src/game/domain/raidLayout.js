@@ -25,14 +25,6 @@ export function keepRaidSpawnOutOfStairwell(candidateX, callerX, bounds = {}) {
   return clamp(landingX, low, high);
 }
 
-export function isRaidStairStepAt(x, footY, rects, horizontalMargin = 0.34, verticalTolerance = 0.28) {
-  if (!Number.isFinite(x) || !Number.isFinite(footY) || !Array.isArray(rects)) return false;
-  return rects.some((r) => r?.type === 'stair'
-    && Number.isFinite(r.x) && Number.isFinite(r.y)
-    && Number.isFinite(r.w) && Number.isFinite(r.h)
-    && Math.abs(x - r.x) <= r.w / 2 + horizontalMargin
-    && Math.abs(footY - (r.y + r.h / 2)) <= verticalTolerance);
-}
 export const RAID_STAIR_SHAFTS = Object.freeze([
   Object.freeze({ id: 'stair-ground-level02', xLow: RAID_STAIR_OPENING.left, xHigh: RAID_STAIR_OPENING.right, xStart: RAID_STAIR_OPENING.right, xEnd: RAID_STAIR_OPENING.left, lowerTop: 0 }),
   Object.freeze({ id: 'stair-level02-level03', xLow: RAID_STAIR_OPENING.left, xHigh: RAID_STAIR_OPENING.right, xStart: RAID_STAIR_OPENING.left, xEnd: RAID_STAIR_OPENING.right, lowerTop: 3.5 }),
@@ -59,11 +51,38 @@ export function createSwitchbackStairs(xStart, xEnd, lowerTop, id, steps = RAID_
       stairId: id,
       stairStep: i,
       destructible: false,
+      collision: false,
     };
   });
 }
 
+export function createSwitchbackRamp(xStart, xEnd, lowerTop, id) {
+  if (![xStart, xEnd, lowerTop].every(Number.isFinite)
+      || xStart === xEnd || lowerTop < 0) return null;
+  const rise = 3.5;
+  const run = Math.abs(xEnd - xStart);
+  const length = Math.hypot(run, rise);
+  const angle = Math.atan2(Math.sign(xEnd - xStart) * rise, run);
+  const thickness = 0.24;
+  // Position the rotated box so its upper edge exactly joins the lower and upper floor edges.
+  const normalX = -Math.sin(angle);
+  const normalY = Math.cos(angle);
+  return {
+    x: (xStart + xEnd) / 2 - normalX * thickness / 2,
+    y: lowerTop + rise / 2 - normalY * thickness / 2,
+    w: length,
+    h: thickness,
+    angle,
+    type: 'stairRamp',
+    stairRampId: id,
+    collisionOnly: true,
+    destructible: false,
+  };
+}
+
 export function createRaidTraversalStairs() {
-  return RAID_STAIR_SHAFTS.flatMap(({ id, xStart, xEnd, lowerTop }) =>
-    createSwitchbackStairs(xStart, xEnd, lowerTop, id, RAID_STAIR_STEPS_PER_FLIGHT));
+  return RAID_STAIR_SHAFTS.flatMap(({ id, xStart, xEnd, lowerTop }) => [
+    createSwitchbackRamp(xStart, xEnd, lowerTop, id),
+    ...createSwitchbackStairs(xStart, xEnd, lowerTop, id, RAID_STAIR_STEPS_PER_FLIGHT),
+  ]);
 }
