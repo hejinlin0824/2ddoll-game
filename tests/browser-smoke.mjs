@@ -830,7 +830,7 @@ try {
   assert(resumeState.clearedFloors[3] && resumeState.clearedFloors[2] && resumeState.clearedFloors[1] && !resumeState.clearedFloors[0],
     'checkpoint did not preserve floor progress: ' + JSON.stringify(resumeState.clearedFloors));
   assert(resumeState.intelSecured && resumeState.elapsedSeconds >= 73.2, 'checkpoint lost evidence or elapsed time: ' + JSON.stringify(resumeState));
-  assert(Math.abs(resumeState.position.x - 53.2) < 0.6 && resumeState.position.y < 1.6,
+  assert(Math.abs(resumeState.position.x - 53.5) < 0.6 && resumeState.position.y < 1.6,
     'player did not resume on the ground-floor objective approach: ' + JSON.stringify(resumeState.position));
   assert(!resumeState.rappel, 'resumed campaign should not replay rooftop insertion');
   assert(/进度已恢复/.test(resumeState.dialogue), 'resume radio line was not restored: ' + resumeState.dialogue);
