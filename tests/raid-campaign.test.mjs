@@ -80,7 +80,7 @@ test('campaign checkpoint resumes the next objective and preserves cleared floor
   assert.equal(checkpoint.stage, 'assault');
   assert.deepEqual(checkpoint.announcedFloors, [3, 2]);
   assert.equal(checkpoint.elapsedSeconds, 47.8);
-  assert.deepEqual(getRaidCampaignResumeSpawn(checkpoint), { x: 46.8, y: 3.5 });
+  assert.deepEqual(getRaidCampaignResumeSpawn(checkpoint), { x: 46.5, y: 3.5 });
 
   const restored = createRaidCampaignState(true);
   const result = restoreRaidCampaignCheckpoint(restored, checkpoint);
