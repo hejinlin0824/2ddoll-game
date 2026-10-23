@@ -23,7 +23,7 @@ import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanD
 import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
 import { lightingState, resetLightingState, updateLighting, drawLighting, lightLevelAt, toggleBuildingPower, toggleNightVision as toggleNightVisionMode, toggleFlashlight as toggleFlashlightMode } from './systems/lighting.js';
 import { raidVisionProfile } from './domain/raidVisibility.js';
-import { RAID_CAMPAIGN_SAVE_KEY, RAID_CAMPAIGN_TITLE, createRaidCampaignState, resetRaidCampaignState, updateRaidCampaign, getRaidObjective, advanceRaidDialogue, completeRaidCampaign } from './domain/raidCampaign.js';
+import { RAID_CAMPAIGN_SAVE_KEY, RAID_CAMPAIGN_TITLE, createRaidCampaignState, resetRaidCampaignState, updateRaidCampaign, getRaidObjective, advanceRaidDialogue, secureRaidIntel, completeRaidCampaign } from './domain/raidCampaign.js';
 import { resetFogOfWar, updateFogOfWar, drawFogOfWar, isWorldCurrentlyVisible, getFogDiagnostics } from './systems/fogOfWar.js';
 import { createGrappleState, fireGrapple, stepGrapple, drawGrapple, releaseGrapple } from './systems/grapple.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
@@ -381,12 +381,31 @@ function interactWithRaidDoor() {
   const p = player.torso.getPosition();
   let nearest = null, best = Infinity;
   for (const r of LEVEL.rects) {
-    if (!['door', 'breaker'].includes(r.type) || !r.body) continue;
+    if (!['door', 'breaker', 'intel'].includes(r.type) || !r.body) continue;
     const d = Math.hypot(p.x - r.x, (p.y - r.y) * 0.72);
     if (d < best) { best = d; nearest = r; }
   }
   if (nearest && best < 1.85) {
     const { x, y } = nearest;
+    if (nearest.type === 'intel') {
+      if (raidCampaign.intelSecured || nearest.intelSecured) {
+        floaters.push({ x, y: y + 0.95, vy: 0.4, age: 0, text: '失联名单已回收 · 数据已封存', color: '#8cce97', size: 13, bold: true, life: 1.5, max: 1.5 });
+        return true;
+      }
+      if (!raidState.clearedFloors[1]) {
+        floaters.push({ x, y: y + 0.95, vy: 0.4, age: 0, text: '二层守军尚未肃清 · 暂不能读取终端', color: '#ffcb79', size: 12, bold: true, life: 1.4, max: 1.4 });
+        return true;
+      }
+      if (secureRaidIntel(raidCampaign)) {
+        nearest.intelSecured = true;
+        raidState.message = '失联名单已回收 · 内部审批编号已同步';
+        raidState.messageT = 4.5;
+        emitRaidNoise(raidState, { x, y, floorId: 1, radius: 2.4, intensity: 0.18, kind: 'intel', faction: 'player' });
+        floaters.push({ x, y: y + 1.1, vy: 0.5, age: 0, text: '失联名单 · 数据回收完成', color: '#8cce97', size: 16, bold: true, life: 2.2, max: 2.2 });
+        beep(480, 920, 0.20, 'triangle', 0.055);
+      }
+      return true;
+    }
     if (nearest.type === 'breaker') {
       if (raidCampaign.stage === 'extract' && completeRaidCampaign(raidCampaign)) {
         raidState.message = '撤离信号已发出 · 行动完成';
@@ -399,6 +418,8 @@ function interactWithRaidDoor() {
             completedAt: new Date().toISOString(),
             clearedFloors: Object.values(raidState.clearedFloors).filter(Boolean).length,
             durationSeconds: Math.round(raidCampaign.elapsedSeconds),
+            intelSecured: raidCampaign.intelSecured,
+            evidenceId: 'missing-list',
             outcome: 'extracted',
           }));
         } catch { /* 存档不可用时，当前任务仍正常结算 */ }
@@ -683,7 +704,7 @@ window.__combat = { spawnBullet, stepBullets, applyHitscanDamage, onEnemyDied, s
 window.__corpse = { nearby: () => corpseNearby(), open: openCorpse, close: closeCorpse, isOpen: corpseIsOpen }; // 调试:搜尸管线直调
 window.__actx = getActx; // 调试:声音问题先看 state('suspended' = 自动播放策略拦住)
 window.__feel = () => ({ ...feel, timeScale, menu: menuIsOpen() }); // 调试:手感层状态
-window.__level = () => LEVEL.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, hp: r.hp ?? null, max: r.maxHp ?? null, type: r.type, doorId: r.doorId ?? null, doorOpen: r.doorOpen ?? false, doorAngle: r.doorAngle ?? 0, breakerId: r.breakerId ?? null })); // 调试:地形/门/配电柜状态
+window.__level = () => LEVEL.rects.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, hp: r.hp ?? null, max: r.maxHp ?? null, type: r.type, doorId: r.doorId ?? null, doorOpen: r.doorOpen ?? false, doorAngle: r.doorAngle ?? 0, breakerId: r.breakerId ?? null, intelId: r.intelId ?? null, intelSecured: r.intelSecured ?? false, sensor: !!r.sensor })); // 调试:地形/门/配电柜状态
 window.__spawnGunship = (hp = 260) => { // 调试:直接召一架母体机(从右缘飞入)
   enemies.push(new Gunship(world, { x: LEVEL.bounds.right - 2, y: 9.5 }, { enemies, hp }));
 }; // 调试:空中部队管线直调
