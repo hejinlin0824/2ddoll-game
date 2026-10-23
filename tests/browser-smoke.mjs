@@ -498,10 +498,7 @@ try {
     const g = window.__game();
     const e = window.__lootTestTarget;
     const p = g.player.torso.getPosition();
-    // Stand beside the corpse, not in the corpse's ragdoll collision shapes.
-    // Center-overlap made the physics solver shove the player outside the 1.35m loot radius.
-    const side = p.x <= e.x ? -0.85 : 0.85;
-    const dx = e.x + side - p.x, dy = e.y - p.y;
+    const dx = e.x - p.x, dy = e.y - p.y;
     for (const body of g.player.allBodies) {
       const q = body.getPosition();
       body.setTransform({ x: q.x + dx, y: q.y + dy }, body.getAngle());
@@ -524,7 +521,10 @@ try {
   assert(postPickupCoins > 30,
     'death-drop coins did not enter the persistent economy: baseline=30, after=' + postPickupCoins);
 
-  // Use the actual proximity/Tab corpse flow and the real loot-taking buttons.
+  // Use the actual proximity/Tab corpse flow and real loot-taking buttons.
+  // Pin the player bodies only during this deterministic UI assertion: starting exactly at
+  // the corpse allows the real Tab proximity route to open, while physics can't eject it mid-click.
+  await gameplayPage.evaluate(() => window.__game().player.allBodies.forEach((b) => b.setActive(false)));
   await gameplayPage.keyboard.press('Tab');
   await gameplayPage.waitForFunction(() => {
     const el = document.getElementById('corpse');
@@ -551,6 +551,7 @@ try {
     'corpse loot was not transferred into the persistent inventory: ' + JSON.stringify(lootedInventory));
 
   await gameplayPage.keyboard.press('Escape'); // Close corpse panel without opening the pause menu.
+  await gameplayPage.evaluate(() => window.__game().player.allBodies.forEach((b) => b.setActive(true)));
   await gameplayPage.keyboard.press('g');
   await gameplayPage.waitForFunction(() => document.getElementById('bp')?.style.display === 'flex', undefined, { timeout: 4000 });
   await gameplayPage.locator('#bagBody .ic-card').first().waitFor({ state: 'visible', timeout: 4000 });
