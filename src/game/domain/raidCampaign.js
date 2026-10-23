@@ -26,6 +26,10 @@ const FLOOR_DIALOGUE = {
 };
 const EXTRACTION = [
   { speaker: '夜隼', text: '入口控制柜已接入。现场记录加密封存，正在发出撤离信号。' },
+  { speaker: '指挥台 · 黑匣', text: '撤离通道已确认。别停留在入口，按计划向集合点回撤。' },
+];
+const EPILOGUE = [
+  { speaker: '夜隼', text: '撤离信号已发出。现场最后一份记录已封存，我正在离开建筑。' },
   { speaker: '指挥台 · 黑匣', text: '数据已收到。名单里多出的那些名字，说明这不是一次普通的剿匪行动。带着证据回来，夜隼——下一站，我们去找签字的人。' },
 ];
 const CLEAR_ORDER = [3, 2, 1, 0];
@@ -72,7 +76,7 @@ export function updateRaidCampaign(campaign, dt, facts = {}) {
   if (!campaign || !facts.enabled) return campaign;
   campaign.enabled = true;
   const safeDt = Number.isFinite(dt) ? Math.max(0, dt) : 0;
-  if (facts.playerAlive) campaign.elapsedSeconds += safeDt;
+  if (facts.playerAlive && !campaign.completed) campaign.elapsedSeconds += safeDt;
 
   // Radio starts only after the insertion animation finishes and the player can act.
   if (campaign.stage === 'insertion' && facts.rappelDone && facts.playerAlive) {
@@ -120,7 +124,7 @@ export function completeRaidCampaign(campaign) {
   campaign.activeDialogue = null;
   campaign.dialogueRemaining = 0;
   campaign.dialogueQueue.length = 0;
-  enqueue(campaign, EXTRACTION);
+  enqueue(campaign, EPILOGUE);
   campaign.activeDialogue = campaign.dialogueQueue.shift() || null;
   campaign.dialogueRemaining = campaign.activeDialogue?.duration || 0;
   return true;
