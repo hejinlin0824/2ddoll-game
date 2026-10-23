@@ -240,10 +240,16 @@ export function buildLevel(world) {
   }
   for (const r of LEVEL.rects) {
     ensureRectHp(r);
-    const b = world.createBody({ type: 'static', position: Vec2(r.x, r.y) });
+    // Stair treads are a render-only steel detail; one rotated box below them supplies the continuous walkable ramp.
+    if (r.collision === false) { r.body = null; continue; }
+    const b = world.createBody({
+      type: 'static',
+      position: Vec2(r.x, r.y),
+      angle: Number.isFinite(r.angle) ? r.angle : 0,
+    });
     b.createFixture(new Box(r.w / 2, r.h / 2), {
       isSensor: !!r.sensor,
-      friction: 0.4,
+      friction: r.type === 'stairRamp' ? 0.55 : 0.4,
       filterCategoryBits: CAT.GROUND,
       filterMaskBits: 0xffff,
     });
@@ -802,6 +808,7 @@ export function drawTerrain(ctx, rects, w2s, ppm, time = 0, lighting = null) {
   }
   ctx.restore();
   for (const r of rects) {
+    if (r.collisionOnly) continue; // Physics-only ramp underneath the visually separate treads.
     const [sx, sy] = w2s(r.x - r.w / 2, r.y + r.h / 2);
     const w = r.w * ppm, h = r.h * ppm;
     // 受损裂纹:耐久低于一半出现,越低越密
