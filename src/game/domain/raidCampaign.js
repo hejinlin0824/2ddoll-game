@@ -1,12 +1,16 @@
 // Narrative state machine for the first playable HERO campaign chapter.
 // Kept free of DOM, timers, and storage so progression can be tested in Node.
 export const RAID_CAMPAIGN_SAVE_KEY = 'contra-raid-campaign-v1';
+export const RAID_CAMPAIGN_CHECKPOINT_KEY = 'contra-raid-checkpoint-v1';
 export const RAID_CAMPAIGN_TITLE = '夜幕行动：失联名单';
+
+const CHECKPOINT_STAGES = new Set(['insertion', 'assault', 'extract']);
+const FLOOR_IDS = [3, 2, 1, 0];
 
 const BRIEFING = [
   { speaker: '指挥台 · 黑匣', text: '夜隼，目标楼内藏着一份“失联名单”。名单记录了被转移人员的去向。取回线索，确认现场安全后撤离。' },
   { speaker: '夜隼', text: '收到。绳降完成后，我先清理屋顶，再沿中央楼梯逐层推进。' },
-  { speaker: '技术员 · 小麦', text: '建筑供电和敌方警戒相连。断电能压低照明，但枪声和被发现的尸体仍可能引来增援。别让楼梯口变成火力陷阱。' },
+  { speaker: '技术员 · 小麦', text: '建筑供电和敌方警戒相连。断电能压低照明，但枪声和被发现的尸体仍可能引来增援。锁门按 E 打开，打不开的薄门可以直接射击破坏；楼梯要从平台口进入，别对着高台边缘硬挤。' },
 ];
 const FLOOR_DIALOGUE = {
   3: [
@@ -64,6 +68,82 @@ export function resetRaidCampaignState(state, enabled = false) {
   const fresh = createRaidCampaignState(enabled);
   Object.assign(state, fresh);
   return state;
+}
+
+export function normalizeRaidCampaignCheckpoint(raw) {
+  if (!raw || raw.version !== 1 || raw.campaign !== RAID_CAMPAIGN_TITLE
+      || !CHECKPOINT_STAGES.has(raw.stage) || raw.completed === true) return null;
+  const clearedFloors = Object.fromEntries(FLOOR_IDS.map((id) => [id, raw.clearedFloors?.[id] === true]));
+  const intelSecured = raw.intelSecured === true && clearedFloors[1];
+  const allClear = FLOOR_IDS.every((id) => clearedFloors[id]);
+  const anyProgress = FLOOR_IDS.some((id) => clearedFloors[id]) || intelSecured;
+  const stage = allClear && intelSecured ? 'extract'
+    : raw.stage === 'insertion' && !anyProgress ? 'insertion' : 'assault';
+  const elapsedSeconds = Number.isFinite(raw.elapsedSeconds)
+    ? Math.max(0, Math.min(60 * 60 * 24 * 365, raw.elapsedSeconds)) : 0;
+  return {
+    version: 1,
+    campaign: RAID_CAMPAIGN_TITLE,
+    stage,
+    clearedFloors,
+    announcedFloors: FLOOR_IDS.filter((id) => clearedFloors[id]),
+    intelSecured,
+    elapsedSeconds,
+    completed: false,
+  };
+}
+
+export function createRaidCampaignCheckpoint(campaign, clearedFloors = {}) {
+  if (!campaign?.enabled || campaign.completed || campaign.stage === 'complete') return null;
+  return normalizeRaidCampaignCheckpoint({
+    version: 1,
+    campaign: RAID_CAMPAIGN_TITLE,
+    stage: campaign.stage,
+    clearedFloors,
+    intelSecured: campaign.intelSecured,
+    elapsedSeconds: campaign.elapsedSeconds,
+  });
+}
+
+export function getRaidCampaignResumeSpawn(checkpoint) {
+  const cleared = checkpoint?.clearedFloors || {};
+  if (!cleared[3]) return { x: 4.2, y: 10.5 };
+  if (!cleared[2]) return { x: 53.2, y: 7 };
+  if (!cleared[1]) return { x: 46.8, y: 3.5 };
+  if (!checkpoint?.intelSecured) return { x: 34.3, y: 3.5 };
+  if (!cleared[0]) return { x: 53.2, y: 0 };
+  return { x: 3.6, y: 0 };
+}
+
+export function restoreRaidCampaignCheckpoint(campaign, raw) {
+  const checkpoint = normalizeRaidCampaignCheckpoint(raw);
+  if (!campaign || !checkpoint) return null;
+  campaign.enabled = true;
+  campaign.stage = checkpoint.stage;
+  campaign.announcedFloors = [...checkpoint.announcedFloors];
+  campaign.intelSecured = checkpoint.intelSecured;
+  campaign.elapsedSeconds = checkpoint.elapsedSeconds;
+  campaign.completed = false;
+  campaign.dialogueQueue.length = 0;
+  campaign.activeDialogue = null;
+  campaign.dialogueRemaining = 0;
+  if (checkpoint.stage !== 'insertion') {
+    const cleared = checkpoint.clearedFloors;
+    const line = checkpoint.stage === 'extract'
+      ? '进度已恢复。失联名单已经封存，地面入口的撤离信号还需要确认。'
+      : checkpoint.intelSecured
+        ? '进度已恢复。名单已回收；继续清理尚未肃清的楼层。'
+        : cleared[1]
+          ? '进度已恢复。二层守军已清理，回到 COMMS 机柜取回失联名单。'
+          : cleared[2]
+            ? '进度已恢复。屋顶与三层已肃清，继续向二层推进。'
+            : cleared[3]
+              ? '进度已恢复。屋顶已肃清，继续沿中央楼梯向下推进。'
+              : '进度已恢复。绳降已经完成，屋顶守军仍是当前目标。';
+    campaign.activeDialogue = { speaker: '指挥台 · 黑匣', text: line, duration: 5.8 };
+    campaign.dialogueRemaining = 5.8;
+  }
+  return checkpoint;
 }
 
 export function getRaidObjective(campaign, clearedFloors = {}) {
