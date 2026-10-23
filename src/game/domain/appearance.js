@@ -80,7 +80,7 @@ export function appearancePalette(a = loadAppearance()) {
     pants: a.pantsColor, pantsDark: shade(a.pantsColor, 0.72),
     boot: a.bootColor, bootDark: shade(a.bootColor, 0.70),
     bandana: a.bandanaColor, bandanaDark: shade(a.bandanaColor, 0.72),
-    wood: a.accentColor,
+    wood: a.accentColor, accent: a.accentColor,
     armor: a.armorColor || '#263744', armorDark: shade(a.armorColor || '#263744', 0.62), armorHi: shade(a.armorColor || '#263744', 1.38),
   };
 }
