@@ -1306,6 +1306,8 @@ export class Player {
           ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
         }
       }
+      // Real inventory armor is the base layer; cosmetic modular kit is drawn over it.
+      if (this.loadout.torso) drawEquip(this.loadout.torso);
       // Anatomy-locked modular carrier: procedural plates, webbing and pouches follow the torso joint.
       if (this.appearance) {
         const a=this.appearance,w=D.torso.w*ppm,h=D.torso.h*ppm,armor=a.armorColor||'#263744',accent=a.accentColor||'#ffb34d';
@@ -1327,8 +1329,7 @@ export class Player {
         ctx.fillStyle=lo;ctx.fillRect(-w*.48,h*.31,w*.96,h*.12);ctx.strokeStyle='#080e14';ctx.lineWidth=1;ctx.strokeRect(-w*.48,h*.31,w*.96,h*.12);
         ctx.fillStyle=hi;ctx.beginPath();ctx.roundRect(-w*.09,h*.315,w*.18,h*.10,2);ctx.fill();ctx.strokeStyle='#0a1118';ctx.stroke();ctx.fillStyle=accent;ctx.fillRect(-w*.025,h*.34,w*.05,Math.max(1,ppm*.012));
       }
-      // Real equipment retains its own visual and defensive stats.
-      if (this.loadout.torso) drawEquip(this.loadout.torso);
+      // The real inventory armor was rendered underneath the cosmetic carrier.
       ctx.restore();
     }
 
@@ -1438,6 +1439,8 @@ export class Player {
           ctx.fillStyle = '#252e39'; ctx.beginPath(); ctx.arc(-this.facing * r * 0.78, 0, r * 0.28, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = this.C.accent || '#d99447'; ctx.fillRect(-this.facing * r * 0.92 - 1, -1, 4, 3);
         }
+        // Real inventory helmet is the base layer; the chosen silhouette is drawn above it.
+        if (this.loadout.head) drawEquip(this.loadout.head);
         // Modular helmet and eyewear are procedural parts attached to the live head transform.
         if(this.appearance&&this.appearance.helmetStyle&&this.appearance.helmetStyle!=='none'){
           const hs=this.appearance.helmetStyle,ac=this.appearance.armorColor||'#263744',hi=shadeKit(ac,1.35);
@@ -1454,8 +1457,7 @@ export class Player {
         ctx.fillStyle = look.eyeColor || '#222222'; ctx.beginPath(); ctx.arc(ex + this.facing * r * 0.045, ey, Math.max(0.85, r * 0.105), 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#0b1018'; ctx.beginPath(); ctx.arc(ex + this.facing * r * 0.06, ey, Math.max(0.55, r * 0.06), 0, Math.PI * 2); ctx.fill();
       }
-      // 头盔外观层:自绘图(仅戴盔时)优先,否则视觉预设
-      if (!(this.loadout.head && skinEquip('helmet'))) drawEquip(this.loadout.head);
+      // The real inventory helmet was rendered underneath the cosmetic shell.
       ctx.restore();
     }
 
