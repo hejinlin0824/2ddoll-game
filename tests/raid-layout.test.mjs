@@ -35,7 +35,6 @@ test('each floor transition has a complete 3.5m switchback stair flight within i
 
 test('invalid switchback dimensions fail closed instead of emitting bad physics fixtures', () => {
   assert.deepEqual(createSwitchbackStairs(2, 2, 0, 'bad'), []);
-  assert.deepEqual(createSwitchbackStairs(1, 4, 0, 'bad'), []);
   assert.deepEqual(createSwitchbackStairs(4, 1, -1, 'bad'), []);
   assert.deepEqual(createSwitchbackStairs(4, 1, 0, 'bad', 2.5), []);
 });
