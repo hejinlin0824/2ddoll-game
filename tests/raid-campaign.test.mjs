@@ -40,6 +40,7 @@ test('floors clear from roof to ground, with no false completion before extracti
   assert.equal(completeRaidCampaign(state), true);
   assert.equal(state.stage, 'complete');
   assert.match(getRaidObjective(state, cleared), /记录已保存/);
+  assert.match(state.activeDialogue.text, /正在离开建筑/);
 });
 
 test('dialogue can be dismissed and extraction cannot be completed early', () => {
