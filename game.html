@@ -360,6 +360,29 @@
       /* Building raid: unobtrusive stealth telemetry, independent of the general HUD. */
       #raidHud { position:fixed; right:20px; top:20px; z-index:8; width:min(360px,calc(100vw - 32px)); box-sizing:border-box; flex-direction:column; gap:9px; padding:13px 15px 12px; color:#e8edf4; border:1px solid rgba(162,190,218,.24); border-top:2px solid var(--raid-accent,#ffb14a); background:linear-gradient(145deg,rgba(8,15,24,.91),rgba(8,13,21,.76)); box-shadow:0 12px 32px rgba(0,0,0,.22); backdrop-filter:blur(7px); font-family:var(--font-body); pointer-events:none; animation:raidHudIn .45s cubic-bezier(.2,.8,.2,1) both; }
       #raidHud::before { content:""; position:absolute; left:-1px; top:11px; width:2px; height:30px; background:var(--raid-accent,#ffb14a); }
+      #raidDialogue {
+        position:fixed; left:50%; bottom:clamp(24px,5.8vh,58px); z-index:15;
+        width:min(620px,calc(100vw - 28px)); box-sizing:border-box;
+        display:none; padding:13px 17px 10px; text-align:left; cursor:pointer;
+        color:#e8edf4; border:1px solid rgba(150,182,212,.3); border-left:3px solid #ffb14a;
+        background:linear-gradient(145deg,rgba(7,14,23,.96),rgba(13,20,31,.91));
+        box-shadow:0 16px 44px rgba(0,0,0,.42); backdrop-filter:blur(9px);
+        font:inherit; transform:translateX(-50%); animation:raidHudIn .24s ease-out both;
+      }
+      #raidDialogue:focus-visible { outline:2px solid #ffb14a; outline-offset:3px; }
+      .rd-top { display:flex; align-items:center; gap:8px; padding-bottom:8px; margin-bottom:8px; border-bottom:1px solid rgba(148,178,214,.16); color:rgba(190,208,230,.64); font-size:9px; font-weight:900; letter-spacing:1.35px; }
+      .rd-top i { width:6px; height:6px; display:inline-block; background:#ffb14a; box-shadow:0 0 9px rgba(255,177,74,.7); transform:rotate(45deg); }
+      .rd-top b { margin-left:auto; font-size:9px; color:#ffcb79; }
+      .rd-speaker { display:block; color:#ffcb79; font-size:11px; font-weight:900; letter-spacing:.7px; margin-bottom:5px; }
+      .rd-text { display:block; color:#edf2f8; font-size:13px; line-height:1.85; letter-spacing:.15px; }
+      .rd-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:9px; margin-top:8px; border-top:1px solid rgba(148,178,214,.11); color:rgba(173,192,217,.42); font-size:9px; letter-spacing:.7px; }
+      .rd-footer kbd { display:inline-grid; place-items:center; min-width:17px; height:16px; padding:0 3px; border:1px solid rgba(148,178,214,.25); color:rgba(226,235,247,.78); font:800 9px var(--font-body); }
+      body.in-menu #raidDialogue { display:none !important; }
+      @media (max-width: 680px) {
+        #raidDialogue { bottom:74px; padding:11px 12px 9px; }
+        .rd-text { font-size:12px; line-height:1.7; }
+        .rd-footer { font-size:8px; }
+      }
       #raidHud[data-mode="alarm"] { --raid-accent:#ff6256; border-color:rgba(255,98,86,.44); }
       #raidHud[data-mode="search"] { --raid-accent:#ffc56e; }
       .rh-top { display:flex; align-items:center; gap:8px; color:rgba(190,208,230,.62); font-size:9px; font-weight:900; letter-spacing:1.4px; }
@@ -963,11 +986,17 @@
     <div id="hud-ragdoll" class="hud"></div>
     <section id="raidHud" aria-live="polite" data-mode="stealth" style="display:none">
       <div class="rh-top"><span class="rh-mark"></span><span>OPERATION / BUILDING RAID</span><b id="raidFloorText">ROOFTOP</b></div>
-      <div class="rh-status" id="raidMissionStatus">未暴露 · 可以潜行</div>
-      <div class="rh-awareness"><span>敌方警觉</span><div><i id="raidAlertFill"></i></div><b id="raidIncidentText">已清理楼层 0/4</b></div>
+      <div class="rh-status" id="raidMissionStatus">目标 01/04 · 清理屋顶守军，找到中央楼梯入口</div>
+      <div class="rh-awareness"><span>敌方警觉</span><div><i id="raidAlertFill"></i></div><b id="raidIncidentText">楼层清剿 0/4</b></div>
       <div class="rh-noise" id="raidNoiseText">声源 5.2m · 消音器 OFF</div>
-      <div class="rh-keys"><span><kbd>X</kbd> 消音器</span><span><kbd>E</kbd> 门</span><span><kbd>S</kbd> 潜行</span></div>
+      <div class="rh-keys"><span><kbd>X</kbd> 消音器</span><span><kbd>E</kbd> 门 / 撤离</span><span><kbd>S</kbd> 潜行</span></div>
     </section>
+    <button id="raidDialogue" type="button" aria-live="polite" aria-label="行动无线电字幕，点击继续" style="display:none">
+      <span class="rd-top"><i aria-hidden="true"></i><span>HERO / SECURE COMMS</span><b>CHANNEL 01</b></span>
+      <span class="rd-speaker" id="raidSpeaker"></span>
+      <span class="rd-text" id="raidDialogueText"></span>
+      <span class="rd-footer"><span>加密战术链路 · 行动记录同步</span><span>点击继续 <kbd>↵</kbd></span></span>
+    </button>
 
     <div id="streak"><div id="streakLabel">双杀</div><div class="odo" id="streakOdo"></div></div>
     <div id="lootToasts"></div>
@@ -1240,7 +1269,7 @@
             <div class="help-row"><b>Tab</b> 武器轮盘(子弹时间)</div>
             <div class="help-row"><b>站尸上 Tab</b> 战场回收装备</div>
             <div class="help-row"><b>G</b> 背包 · <b>Esc/P/M</b> 暂停</div>
-            <div class="help-row"><b>R</b> 换弹 · <b>Shift+R</b> 失控测试 · <b>E</b> 复位</div>
+            <div class="help-row"><b>R</b> 换弹 · <b>Shift+R</b> 失控测试 · <b>E</b> 剿匪时交互门/配电柜，其余战区复位</div>
             <div class="help-row"><b>Enter / 空格</b> 菜单开始 · <b>B</b> 调试视图</div>
           </div>
         </div>
