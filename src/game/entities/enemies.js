@@ -8,7 +8,7 @@ import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from '../domain/g
 import { rollAffixes } from '../domain/affixes.js';
 import { LEVEL, groundYAt } from '../world/level.js';
 import { hasLOS as segHasLOS } from '../systems/combat.js';
-import { isRaidStairStepAt } from '../domain/raidLayout.js';
+
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -448,11 +448,7 @@ export class Dummy {
     if (vx < -0.05) ai.left = true;
     if (vx > 0.05) ai.right = true;
 
-    // Use the same low-rise stair rule for guards instead of waiting for the stuck timer.
-    if (this.raidMode && this.p.grounded && (ai.left || ai.right)) {
-      const footY = tp.y - (this.p.crouched ? 0.48 : 0.78);
-      if (isRaidStairStepAt(tp.x, footY, LEVEL.rects)) ai.jumpPressed = true;
-    }
+    // Guards use the same continuous ramp collider as the player, so they can pursue between floors without stair-hop jitter.
 
     // 卡墙检测:想走但实际速度≈0 → 跳一下脱困 + 掉头(巡逻换向 / 战斗换边)
     const avx = Math.abs(this.p.torso.getLinearVelocity().x);
