@@ -311,10 +311,32 @@ try {
       input.jumpHeld = false;
       input.jumpPressed = false;
     }, flight);
-    await page.waitForFunction((targetY) => {
-      const { player } = window.__game();
-      return player.torso.getPosition().y > targetY && player.grounded;
-    }, flight.targetY, { timeout: 8000 });
+    try {
+      await page.waitForFunction((targetY) => {
+        const { player } = window.__game();
+        return player.torso.getPosition().y > targetY && player.grounded;
+      }, flight.targetY, { timeout: 8000 });
+    } catch (error) {
+      const diagnostic = await page.evaluate((route) => {
+        const { player, input } = window.__game();
+        const p = player.torso.getPosition();
+        const v = player.torso.getLinearVelocity();
+        return {
+          route,
+          position: { x: p.x, y: p.y },
+          velocity: { x: v.x, y: v.y },
+          grounded: player.grounded,
+          rayGrounded: player.checkGrounded(),
+          input: { left: input.left, right: input.right, jumpHeld: input.jumpHeld, jumpPressed: input.jumpPressed },
+          ramps: window.__level().filter((r) => r.type === 'stairRamp')
+            .map((r) => ({ id: r.stairRampId, x: r.x, y: r.y, w: r.w, h: r.h, angle: r.angle,
+              bodyAngle: r.body?.getAngle?.(), bodyType: r.body?.getType?.() })),
+          scene: localStorage.getItem('contra-scene'),
+          introActive: !!window.__raid()?.rappel,
+        };
+      }, flight);
+      throw new Error(`${flight.floor} stair traversal timeout: ${JSON.stringify(diagnostic)}; ${error.message}`);
+    }
     const climb = await page.evaluate(() => {
       const { player, input } = window.__game();
       const p = player.torso.getPosition();
