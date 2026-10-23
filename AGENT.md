@@ -140,7 +140,7 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
 | `contra-skill` | 熟练度 |
 | `contra-shield` / `contra-shield-hp` | 盾牌是否装备 / 耐久 |
 | `contra-inv` | 背包(金币+装备实例,inventory.js) |
-| `contra-skin` | **旧版位图皮肤存档(已停用)**；仅历史兼容/几何测试使用，不再由游戏或干员装备工坊绘制 |
+| `contra-skin` | **旧版位图皮肤存档(已停用)**；只作为旧浏览器存档遗留数据保留，不再由游戏读取或绘制 |
 | `contra-scene` | 选中的场景('wild'/'custom';level.js 的自定义关卡守卫拿它当事实来源) |
 
 - 主武器:双手 IK 持枪,8.5 发/秒,弹 6→34 m/s,镜头微震;副武器手枪:单手 0.22m、4 发/秒。
@@ -643,5 +643,5 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
 - 当前入口仍是 `skin-studio.html`，但页面与 `src/designer/skinStudio.js` 已完全改为**干员装备工坊**：Canvas2D 程序化绘制插板背心/胸挂/轻型载具、头盔轮廓、护目镜、肩甲、护膝、背包、腰带、弹匣袋、识别贴与配色；无外部图片素材依赖。
 - 当前正式存档键仍为 `contra-appearance-v1`，以兼容原角色配色/发型；新增 `kitStyle`、`helmetStyle`、`eyewear`、`pads`、`backpack`、`armorColor` 字段。A/B/C 槽保留在 `contra-appearance-profiles-v1`，草稿键仍为 `contra-appearance-draft-v2`。
 - 游戏端 `player.js` 使用同一份外观字段，在躯干/头部局部坐标中 Canvas2D 绘制模块化载具和头盔；骨骼、关节、碰撞体、命中与真实护甲数值不变。真实 `contra-equip-head` / `contra-equip-torso` 装备仍单独绘制并保留数值。
-- 旧版 `contra-skin` 位图拼件渲染已经停用；其源代码与重做前工作树完整保存在分支 `archive/skin-system-before-redesign-2026-10-23`，不要直接删除历史模块/旧测试，以便追溯和回滚。此分支是备份，不是发布分支。
-- 回归：`tests/browser-smoke.mjs` 现在验证新工坊 Canvas 重绘、模块字段保存、游戏页读取和控制台错误；`skin-studio-rig.png` / `skin-game-rig.png` 是新系统截图。运行 `node --test tests/*.test.mjs`、`npm run build`，并查看 GitHub Actions；不要再运行旧版 `__skinTest` / 透明图 pivot 的 UI 测试流程。
+- 旧版 `contra-skin` 位图拼件渲染已经停用；其源代码、旧几何测试与重做前工作树完整保存在分支 `archive/skin-system-before-redesign-2026-10-23`；已从 `dev` 删除旧 `skin.js` 模块与 `skin-geometry.test.mjs`，避免死代码继续维护。此分支是备份，不是发布分支。
+- 回归：`tests/browser-smoke.mjs` 现在验证新工坊 Canvas 重绘、模块字段保存、游戏页读取和控制台错误；`skin-studio-rig.png` / `skin-game-rig.png` 是新系统截图。运行 `node --test tests/*.test.mjs`、`npm run build`，并查看 GitHub Actions；旧版 `__skinTest` / 透明图 pivot UI 测试及位图几何单测已删除，历史实现仅在备份分支内。
