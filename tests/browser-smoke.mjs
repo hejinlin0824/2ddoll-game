@@ -511,19 +511,24 @@ try {
   await gameplayPage.locator('#bagBody .ic-card').first().waitFor({ state: 'visible', timeout: 4000 });
   const bodyItemBeforeDecompose = await gameplayPage.evaluate(() => {
     const inv = JSON.parse(localStorage.getItem('contra-inv') || 'null');
-    return inv.items.find((it) => it.slot === 'body' && !it.equipped) || null;
+    const expected = window.__lootTestTarget?.loot?.body?.affixes || [];
+    return inv.items.find((it) => it.slot === 'body' && !it.equipped
+      && Array.isArray(it.affixes) && it.affixes.length === expected.length
+      && expected.every((a, i) => it.affixes[i]?.id === a.id && it.affixes[i]?.v === a.v)) || null;
   });
   assert(bodyItemBeforeDecompose?.affixes?.length === 2,
-    'looted armor missing its expected affixes before decompose: ' + JSON.stringify(bodyItemBeforeDecompose));
+    'the exact corpse-looted armor (matched by affixes) is missing before decompose: ' + JSON.stringify(bodyItemBeforeDecompose));
   const coinsBeforeDecompose = await gameplayPage.evaluate(() => JSON.parse(localStorage.getItem('contra-inv') || 'null').coins);
-  const expectedDecomposeValue = ({ broken: 5, normal: 12, fine: 25, rare: 50, epic: 100, legendary: 200 }[bodyItemBeforeDecompose.quality] ?? 10)
-    + bodyItemBeforeDecompose.affixes.length * 10;
-  await gameplayPage.locator('#bagBody .ic-card .op-cut').first().click();
-  await gameplayPage.locator('#bagBody .ic-card .op-cut').first().click();
+  const expectedDecomposeValue = ({ broken: 5, normal: 12, fine: 25, rare: 50, epic: 100, legendary: 200 }[bodyItemBeforeDecompose?.quality] ?? 10)
+    + (bodyItemBeforeDecompose?.affixes?.length || 0) * 10;
+  const bodyCardForDecompose = gameplayPage.locator('#bagBody .ic-card[data-item-id="' + bodyItemBeforeDecompose?.id + '"]');
+  await bodyCardForDecompose.waitFor({ state: 'visible', timeout: 4000 });
+  await bodyCardForDecompose.locator('.op-cut').click();
+  await bodyCardForDecompose.locator('.op-cut').click();
   await gameplayPage.waitForFunction((before) => {
     const inv = JSON.parse(localStorage.getItem('contra-inv') || 'null');
     return inv && inv.items.every((it) => it.id !== before) && inv.coins > 0;
-  }, bodyItemBeforeDecompose.id, { timeout: 4000 });
+  }, bodyItemBeforeDecompose?.id, { timeout: 4000 });
   const coinsAfterDecompose = await gameplayPage.evaluate(() => JSON.parse(localStorage.getItem('contra-inv') || 'null').coins);
   assert(coinsAfterDecompose >= coinsBeforeDecompose + expectedDecomposeValue,
     'decomposing real corpse loot did not return its configured value: ' + JSON.stringify({ coinsBeforeDecompose, coinsAfterDecompose, expectedDecomposeValue }));
