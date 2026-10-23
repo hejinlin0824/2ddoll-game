@@ -307,8 +307,9 @@ try {
       input.fire = false;
       input.left = route.direction === 'left';
       input.right = route.direction === 'right';
-      input.jumpHeld = true;
-      input.jumpPressed = true;
+      // Verify the continuous collision ramp works with normal movement alone; no repeated jumps.
+      input.jumpHeld = false;
+      input.jumpPressed = false;
     }, flight);
     await page.waitForFunction((targetY) => {
       const { player } = window.__game();
