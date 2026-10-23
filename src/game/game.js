@@ -23,6 +23,7 @@ import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanD
 import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
 import { lightingState, resetLightingState, updateLighting, drawLighting, lightLevelAt, toggleBuildingPower, toggleNightVision as toggleNightVisionMode, toggleFlashlight as toggleFlashlightMode } from './systems/lighting.js';
 import { raidVisionProfile } from './domain/raidVisibility.js';
+import { RAID_CAMPAIGN_SAVE_KEY, RAID_CAMPAIGN_TITLE, createRaidCampaignState, resetRaidCampaignState, updateRaidCampaign, getRaidObjective, advanceRaidDialogue, completeRaidCampaign } from './domain/raidCampaign.js';
 import { resetFogOfWar, updateFogOfWar, drawFogOfWar, isWorldCurrentlyVisible, getFogDiagnostics } from './systems/fogOfWar.js';
 import { createGrappleState, fireGrapple, stepGrapple, drawGrapple, releaseGrapple } from './systems/grapple.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
@@ -72,6 +73,7 @@ function freshPstate() { return { hp: 30, maxHp: 30, deadT: 0 }; }
 const pickups = [];    // 掉落物:金币 / 0 耐久装备
 let respawnFx = null; // 玩家重生/手动复位的轻量战术部署效果(真实时间计时)
 const raidState = createRaidState((localStorage.getItem('contra-scene') || 'wild') === 'raid');
+const raidCampaign = createRaidCampaignState((localStorage.getItem('contra-scene') || 'wild') === 'raid');
 const grappleState = createGrappleState();
 resetFogOfWar(localStorage.getItem('contra-scene') || 'wild');
 let raidIntro = null; // 剿匪行动：开局/重生的屋顶绳降动画
@@ -132,11 +134,11 @@ const GARRISONS = {
     { x: 66.5, y: 0, floor: 0, face: -1, behavior: 'guard', role: 'rifleman' },
     { x: 8.2, y: 3.5, floor: 1, face: 1, behavior: 'guard', role: 'rifleman' },
     { x: 25.5, y: 3.5, floor: 1, face: -1, behavior: 'patrol', min: -1.2, max: 1.2, role: 'rusher' },
-    { x: 47.5, y: 3.5, floor: 1, face: 1, behavior: 'guard', role: 'support' },
+    { x: 42, y: 3.5, floor: 1, face: 1, behavior: 'guard', role: 'support' },
     { x: 68.3, y: 3.5, floor: 1, face: -1, behavior: 'patrol', min: -1.2, max: 1.2, role: 'rifleman' },
     { x: 9.3, y: 7, floor: 2, face: -1, behavior: 'patrol', min: -1.5, max: 1.5, role: 'rifleman' },
     { x: 31.5, y: 7, floor: 2, face: -1, behavior: 'guard', role: 'support' },
-    { x: 51.7, y: 7, floor: 2, face: 1, behavior: 'guard', role: 'rifleman' },
+    { x: 57.5, y: 7, floor: 2, face: 1, behavior: 'guard', role: 'rifleman' },
     { x: 68.4, y: 7, floor: 2, face: -1, behavior: 'patrol', min: -1.1, max: 1.1, role: 'rusher' },
     { x: 28.5, y: 10.5, floor: 3, face: 1, behavior: 'guard', role: 'rifleman' },
     { x: 61.5, y: 10.5, floor: 3, face: -1, behavior: 'patrol', min: -1.3, max: 1.3, role: 'support' },
@@ -334,6 +336,7 @@ function switchScene(sceneId) {
   syncArmorFromInventory();
   pstate.hp = pstate.maxHp;
   resetRaidState(raidState, sceneId === 'raid');
+  resetRaidCampaignState(raidCampaign, sceneId === 'raid');
   spawnGarrisons(sceneId);
   if (raidState.enabled) beginRaidRappel();
   waves = createWaveDirector();
@@ -385,6 +388,29 @@ function interactWithRaidDoor() {
   if (nearest && best < 1.85) {
     const { x, y } = nearest;
     if (nearest.type === 'breaker') {
+      if (raidCampaign.stage === 'extract' && completeRaidCampaign(raidCampaign)) {
+        raidState.message = '撤离信号已发出 · 行动完成';
+        raidState.messageT = 5;
+        try {
+          localStorage.setItem(RAID_CAMPAIGN_SAVE_KEY, JSON.stringify({
+            version: 1,
+            campaign: RAID_CAMPAIGN_TITLE,
+            completed: true,
+            completedAt: new Date().toISOString(),
+            clearedFloors: Object.values(raidState.clearedFloors).filter(Boolean).length,
+            durationSeconds: Math.round(raidCampaign.elapsedSeconds),
+            outcome: 'extracted',
+          }));
+        } catch { /* 存档不可用时，当前任务仍正常结算 */ }
+        emitRaidNoise(raidState, { x, y, floorId: 0, radius: 3.5, intensity: 0.12, kind: 'radio', faction: 'player' });
+        floaters.push({ x, y: y + 1.05, vy: 0.55, age: 0, text: '撤离信号已发出 · 第一章完成', color: '#8cce97', size: 16, bold: true, life: 2.4, max: 2.4 });
+        beep(420, 880, 0.24, 'triangle', 0.06);
+        return true;
+      }
+      if (raidCampaign.completed) {
+        floaters.push({ x, y: y + 0.9, vy: 0.45, age: 0, text: '本章已完成 · 返回作战台可重新部署', color: '#8cce97', size: 13, bold: true, life: 1.8, max: 1.8 });
+        return true;
+      }
       const powerOn = toggleBuildingPower();
       emitRaidNoise(raidState, { x, y, floorId: floorForY(y), radius: 7.5, intensity: 0.42, kind: 'breaker', faction: 'player' });
       floaters.push({ x, y: y + 0.9, vy: 0.55, age: 0, text: powerOn ? '主电源恢复 · 主照明启动' : '主电源切断 · 应急照明启动', color: powerOn ? '#ffcb79' : '#ff756b', size: 15, bold: true, life: 1.25, max: 1.25 });
@@ -400,7 +426,6 @@ function interactWithRaidDoor() {
   } else {
     floaters.push({ x: p.x, y: p.y + 1.2, vy: 0.35, age: 0, text: '附近没有可交互的门或配电箱', color: '#bdc8d7', size: 12, life: 0.75, max: 0.75 });
   }
-  // 剿匪行动里 E 专用于门/配电箱交互，避免误把玩家重置回屋顶。
   return true;
 }
 
@@ -604,26 +629,40 @@ let debugDraw = false;
 let raidHudStamp = 0;
 function updateRaidHUD(now) {
   const root = document.getElementById('raidHud');
+  const dialogueRoot = document.getElementById('raidDialogue');
   if (!root) return;
   const display = raidState.enabled ? 'flex' : 'none';
   if (root.style.display !== display) root.style.display = display;
+  const dialogue = raidCampaign.activeDialogue;
+  const showDialogue = raidState.enabled && !!dialogue && !menuIsOpen();
+  if (dialogueRoot && dialogueRoot.style.display !== (showDialogue ? 'block' : 'none')) {
+    dialogueRoot.style.display = showDialogue ? 'block' : 'none';
+  }
+  if (showDialogue) {
+    const speaker = document.getElementById('raidSpeaker');
+    const text = document.getElementById('raidDialogueText');
+    if (speaker && speaker.textContent !== dialogue.speaker) speaker.textContent = dialogue.speaker;
+    if (text && text.textContent !== dialogue.text) text.textContent = dialogue.text;
+  }
   if (!raidState.enabled || now - raidHudStamp < 140) return;
   raidHudStamp = now;
   const active = raidState.activeIncident;
   const profile = raidShotProfile(player.weapon === 'pistol' ? '手枪' : (player.gunDef?.name || '主武器'), player.isSuppressorOn(), player.weapon);
   const mode = active ? 'alarm' : raidState.awareness > 0.22 ? 'search' : 'stealth';
   if (root.dataset.mode !== mode) root.dataset.mode = mode;
-  const status = raidState.messageT > 0 ? raidState.message : active ? '局部增援交战中' : raidState.awareness > 0.22 ? '守军正在搜索' : '未暴露 · 可以潜行';
   const set = (id, value) => { const el = document.getElementById(id); if (el && el.textContent !== value) el.textContent = value; };
-  set('raidMissionStatus', status);
+  set('raidMissionStatus', getRaidObjective(raidCampaign, raidState.clearedFloors));
   set('raidFloorText', floorLabel(raidState.floorId));
   const shotStats = player.stats();
   const soundMul = player.isSuppressorOn() ? (shotStats.suppressionRadiusMul ?? 1) : (shotStats.soundRadiusMul ?? 1);
   set('raidNoiseText', `声源 ${(profile.radius * soundMul).toFixed(1)}m · ${player.isSuppressorOn() ? '消音器 ON' : '标准枪声'}`);
-  set('raidIncidentText', active ? `支援事件 ${raidState.incidents.length} · ${active.response.toUpperCase()}` : `已清理楼层 ${Object.values(raidState.clearedFloors).filter(Boolean).length}/4`);
+  const clearCount = Object.values(raidState.clearedFloors).filter(Boolean).length;
+  set('raidIncidentText', raidCampaign.completed ? '第一章已完成 · 记录已保存' : active ? `支援事件 ${raidState.incidents.length} · ${active.response.toUpperCase()}` : `楼层清剿 ${clearCount}/4`);
   const fill = document.getElementById('raidAlertFill');
   if (fill) fill.style.width = `${Math.round(clamp(raidState.awareness, 0, 1) * 100)}%`;
 }
+
+document.getElementById('raidDialogue')?.addEventListener('click', () => advanceRaidDialogue(raidCampaign));
 
 // ---- 世界坐标(狙击开镜时整体按 cam.zoom 放大)----
 // 震动不再随机抖:trauma² × 平滑噪声,每帧算好 cam.oX/oY/oR,全画面共用(带轻微旋转让打击更"沉")
@@ -636,7 +675,7 @@ const C = {
   invAddCoins, syncArmorFromInventory, setHitFlash, addDecal,
 };
 window.__game = () => ({ player, world, input, bullets, beams, debris, floaters, pickups, cam, wheel, enemies, pstate, waves, decals, particles }); // 调试句柄
-window.__raid = () => ({ ...raidState, incidents: raidState.incidents.map((i) => ({ ...i })), rappel: !!raidIntro }); // 剿匪行动调试状态
+window.__raid = () => ({ ...raidState, incidents: raidState.incidents.map((i) => ({ ...i })), campaign: { ...raidCampaign, announcedFloors: [...raidCampaign.announcedFloors], dialogueQueue: raidCampaign.dialogueQueue.map((line) => ({ ...line })), activeDialogue: raidCampaign.activeDialogue && { ...raidCampaign.activeDialogue } }, rappel: !!raidIntro }); // 剿匪行动调试状态
 window.__lighting = () => ({ ...lightingState }); // 调试：光照、电力、夜视与手电状态
 window.__grapple = { state: () => ({ ...grappleState, anchor: grappleState.anchor && { ...grappleState.anchor } }), fire: (target) => fireGrapple(grappleState, { player, target, rects: LEVEL.rects }), release: () => releaseGrapple(grappleState), step: (dt = STEP) => stepGrapple(grappleState, dt, player) };
 window.__fog = { state: getFogDiagnostics, visibleAt: isWorldCurrentlyVisible };
@@ -841,7 +880,10 @@ function step(dt) {
   // 波次推进 + 敌人更新 + 开火事件(敌人是 AI 驱动的 Player 实例,开枪走同一套弹道管线)
   // 主菜单待机时 playerAlive=false:敌人不警戒不射击,纯巡逻当背景演示
   const playerAlive = !menuIsOpen() && !raidIntro && pstate.hp > 0 && !player.ragdoll;
-  if (raidState.enabled) updateRaid(dt, { state: raidState, player, enemies, playerAlive, rects: LEVEL.rects });
+  if (raidState.enabled) {
+    updateRaid(dt, { state: raidState, player, enemies, playerAlive, rects: LEVEL.rects });
+    updateRaidCampaign(raidCampaign, dt, { enabled: true, rappelDone: raidState.rappelDone, clearedFloors: raidState.clearedFloors, playerAlive });
+  }
   waves.update(dt, enemies, player, playerAlive);
   for (const e of enemies) {
     const preUpdateSet = raidState.enabled && raidState.activeIncident ? new Set(enemies) : null;
