@@ -28,7 +28,110 @@ try {
   await appearancePage.locator('#appearanceSave').click();
   const appearanceSaved = await appearancePage.evaluate(() => JSON.parse(localStorage.getItem('contra-appearance-v1') || 'null'));
   assert(appearanceSaved?.hairStyle === 'spiky', 'appearance Apply did not save the selected hairstyle');
-  await appearancePage.screenshot({ path: 'artifacts/skin-studio.png', fullPage: true });
+
+  // Build an intentionally asymmetric hand-painted rig fixture in all eight DIY slots.
+  // The shaft is the anatomical axis; the side pouch makes the cropped image bbox center wrong.
+  await appearancePage.locator('#legacyPainter').evaluate((el) => { el.open = true; });
+  const skinPartNames = ['head', 'torso', 'upperArm', 'foreArm', 'thigh', 'calf', 'helmet', 'vest'];
+  for (const part of skinPartNames) {
+    await appearancePage.evaluate((partName) => {
+      window.__skinTest(partName, (c) => {
+        c.fillStyle = '#344a5b';
+        c.fillRect(104, 38, 32, 224);
+        c.fillStyle = '#ffb14a';
+        c.fillRect(112, 44, 6, 208);
+        c.fillStyle = '#6b8393';
+        c.fillRect(130, 46, 62, 36); // asymmetric side plate / pouch
+        c.fillStyle = '#1c2935';
+        c.fillRect(91, 83, 25, 24);
+        c.fillStyle = '#e8d4b5';
+        c.fillRect(106, 57, 21, 7);
+      }, 240, 300);
+    }, part);
+    await appearancePage.waitForFunction((partName) => {
+      const info = window.__skinInfo(partName);
+      return info && info.w > 0 && info.h > 0;
+    }, part, { timeout: 5000 });
+    const info = await appearancePage.evaluate((partName) => window.__skinInfo(partName), part);
+    // Marks track the narrow bone shaft, not the deliberately offset transparency/content bbox.
+    const marked = await appearancePage.evaluate(({ partName, w, h }) =>
+      window.__skinMark(partName, w * 0.30, h * 0.10, w * 0.30, h * 0.90), { partName: part, ...info });
+    assert(marked?.ok === true, 'skin DIY could not orient asymmetric fixture ' + part + ': ' + JSON.stringify(marked));
+  }
+  await appearancePage.waitForTimeout(250);
+  const assembledSkinPreview = await appearancePage.locator('#assembled').evaluate((cv) => cv.toDataURL());
+  assert(assembledSkinPreview.startsWith('data:image/png'), 'assembled skeletal DIY preview was not painted');
+  await appearancePage.locator('#assembled').screenshot({ path: 'artifacts/skin-studio-rig.png' });
+  await appearancePage.evaluate(() => window.__skinSave());
+  const savedSkinForE2E = await appearancePage.evaluate(() => {
+    const value = JSON.parse(localStorage.getItem('contra-skin') || 'null');
+    const slots = value?.parts || {};
+    return {
+      value,
+      slotNames: Object.keys(slots),
+      pivotReport: Object.fromEntries(Object.entries(slots).map(([part, slot]) => [part, slot.pivot || null])),
+    };
+  });
+  assert(savedSkinForE2E.value?.version === 3 && skinPartNames.every((part) => savedSkinForE2E.slotNames.includes(part)),
+    'saving the advanced skin DIY did not persist all 8 v3 parts: ' + JSON.stringify(savedSkinForE2E));
+  assert(skinPartNames.every((part) => {
+    const p = savedSkinForE2E.pivotReport[part];
+    return p && Number.isFinite(p.x) && Number.isFinite(p.y);
+  }), 'one or more DIY parts lost their anatomical pivot: ' + JSON.stringify(savedSkinForE2E.pivotReport));
+  for (const part of ['head', 'torso', 'upperArm', 'thigh', 'helmet', 'vest']) {
+    assert(Math.abs(savedSkinForE2E.pivotReport[part].x - 0.30) < 0.06
+      && Math.abs(savedSkinForE2E.pivotReport[part].y - 0.50) < 0.08,
+      'middle-of-bone pivot drifted for ' + part + ': ' + JSON.stringify(savedSkinForE2E.pivotReport[part]));
+  }
+  for (const part of ['foreArm', 'calf']) {
+    assert(Math.abs(savedSkinForE2E.pivotReport[part].x - 0.30) < 0.06
+      && Math.abs(savedSkinForE2E.pivotReport[part].y - 0.90) < 0.08,
+      'hand/foot endpoint pivot drifted for ' + part + ': ' + JSON.stringify(savedSkinForE2E.pivotReport[part]));
+  }
+
+  // Feed the actual v3 DIY save to the game in a separate isolated browser context and verify
+  // all art decodes and the ragdoll renderer consumes the shared pivot helper without errors.
+  const skinGamePage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  skinGamePage.on('pageerror', (error) => failures.push('DIY game pageerror: ' + (error.stack || error.message)));
+  skinGamePage.on('response', (r) => { if (r.status() >= 400) badResponses.push({ status: r.status(), url: r.url() }); });
+  skinGamePage.on('requestfailed', (r) => failedRequests.push({ url: r.url(), error: r.failure()?.errorText || 'unknown' }));
+  skinGamePage.on('console', (message) => {
+    if (message.type() === 'error') failures.push('DIY game console.error: ' + message.text());
+  });
+  await skinGamePage.addInitScript((skinJson) => {
+    localStorage.setItem('contra-skin', skinJson);
+    localStorage.setItem('contra-scene', 'wild');
+  }, JSON.stringify(savedSkinForE2E.value));
+  const skinGameResponse = await skinGamePage.goto(baseURL + '/game.html', { waitUntil: 'networkidle', timeout: 30000 });
+  assert(!!skinGameResponse && skinGameResponse.status() === 200, 'DIY game page returned ' + (skinGameResponse?.status() ?? 'no response'));
+  await skinGamePage.waitForFunction(() => typeof window.__skin?.skinPartLayout === 'function'
+    && typeof window.__game === 'function', undefined, { timeout: 10000 });
+  await skinGamePage.keyboard.press('Enter');
+  await skinGamePage.waitForFunction(() => !window.__feel().menu, undefined, { timeout: 8000 });
+  await skinGamePage.waitForFunction(() => {
+    const data = window.__skin.loadSkin();
+    return data && ['head', 'torso', 'upperArm', 'foreArm', 'thigh', 'calf', 'helmet', 'vest']
+      .every((part) => window.__skin.skinImg(part)?.naturalWidth > 0);
+  }, undefined, { timeout: 10000 });
+  const renderedSkinReport = await skinGamePage.evaluate(() => {
+    const skin = window.__skin.loadSkin();
+    const layoutReport = Object.fromEntries(Object.entries(skin.parts).map(([part, info]) => {
+      const im = window.__skin.skinImg(part);
+      const xf = window.__skin.skinXf(part);
+      const layout = window.__skin.skinPartLayout(part, im.naturalWidth, im.naturalHeight, 52, xf);
+      return [part, {
+        width: layout?.w, height: layout?.h, x: layout?.x, y: layout?.y,
+        pivot: layout?.pivot, imageReady: !!im?.naturalWidth,
+      }];
+    }));
+    return { version: skin.version, layoutReport, gameScene: window.__lighting().scene };
+  });
+  assert(renderedSkinReport.version === 3
+    && skinPartNames.every((part) => renderedSkinReport.layoutReport[part]?.imageReady
+      && [renderedSkinReport.layoutReport[part].x, renderedSkinReport.layoutReport[part].y,
+        renderedSkinReport.layoutReport[part].width, renderedSkinReport.layoutReport[part].height].every(Number.isFinite)),
+    'game did not render all eight DIY parts through the shared layout: ' + JSON.stringify(renderedSkinReport));
+  await skinGamePage.locator('#game').screenshot({ path: 'artifacts/skin-game-rig.png' });
 
   // Regression: legacy image-part x/y are CENTER coordinates in old studio saves.
   // New saves serialize TOP-LEFT coordinates under an explicit schema marker.
