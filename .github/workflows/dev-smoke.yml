@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: dev
       - name: Report main baseline and verify protected tag
@@ -34,9 +34,9 @@ jobs:
           echo "v0.5.0 ref=$actual_tag"
           test "$actual_tag" = "$expected_tag" || { echo "v0.5.0 tag ref moved"; exit 1; }
           echo "PASS: protected v0.5.0 tag ref unchanged; proceeding with dev smoke tests."
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - name: Run domain regression tests
