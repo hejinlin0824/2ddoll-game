@@ -108,10 +108,10 @@ export function createRaidCampaignCheckpoint(campaign, clearedFloors = {}) {
 export function getRaidCampaignResumeSpawn(checkpoint) {
   const cleared = checkpoint?.clearedFloors || {};
   if (!cleared[3]) return { x: 4.2, y: 10.5 };
-  if (!cleared[2]) return { x: 53.2, y: 7 };
-  if (!cleared[1]) return { x: 46.8, y: 3.5 };
+  if (!cleared[2]) return { x: 53.5, y: 7 };
+  if (!cleared[1]) return { x: 46.5, y: 3.5 };
   if (!checkpoint?.intelSecured) return { x: 34.3, y: 3.5 };
-  if (!cleared[0]) return { x: 53.2, y: 0 };
+  if (!cleared[0]) return { x: 53.5, y: 0 };
   return { x: 3.6, y: 0 };
 }
 
