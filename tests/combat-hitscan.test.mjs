@@ -7,6 +7,7 @@ globalThis.localStorage = {
   setItem(key, value) { storage.set(key, String(value)); },
   removeItem(key) { storage.delete(key); },
 };
+globalThis.window = globalThis;
 globalThis.Image = class TestImage {
   set src(value) { this._src = value; }
   get src() { return this._src; }
