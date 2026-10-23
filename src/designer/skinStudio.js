@@ -1,6 +1,6 @@
 // HERO Character Lab — 轻量外观工坊。程序化外观与旧版自绘部件分离，保留 contra-skin 存档。
 import {
-  SKIN_PARTS, SKIN_LABEL, SKIN_BOX, SKIN_END_ANCHORED, skinFitScale, loadSkin, saveSkin, clearSkin, processSkinImage, orientSkinImage,
+  SKIN_PARTS, SKIN_LABEL, SKIN_BOX, SKIN_END_ANCHORED, skinFitScale, skinPartLayout, loadSkin, saveSkin, clearSkin, processSkinImage, orientSkinImage,
 } from '../game/domain/skin.js';
 import { RIG_DIMS, RIG_ANCHORS, DEFAULT_RIG_POSE, segmentCenterFromCanvasTop, segmentTipFromCanvasTop } from '../game/domain/rigGeometry.js';
 import { loadAppearance, saveAppearance, clearAppearance, DEFAULT_APPEARANCE } from '../game/domain/appearance.js';
@@ -496,16 +496,22 @@ function renderEditor() {
     mCtx.textAlign = 'center';
     mCtx.fillText(ed.part === 'foreArm' ? '↑手/枪握点对齐这条线' : '↑脚底对齐这条线', cx, tipY + 14);
   }
-  // 贴图(与 player.js skinCap 同一套适配数学:四肢拉伸填充/其余长度定标 + 端点锚定/居中)
+  // The same pivot/fit/offset layout is consumed by live game rendering and assembly preview.
+  // Marks stay attached to the art's anatomy even when the transparent crop is asymmetrical.
   const im = ed.img;
   if (im.complete && im.naturalWidth) {
-    const f = skinFitScale(ed.part, im.naturalWidth, im.naturalHeight);
-    const s0x = f.sx * mEPPM * ed.xf.scale, s0y = f.sy * mEPPM * ed.xf.scale;
-    const dw = im.naturalWidth * s0x, dh = im.naturalHeight * s0y;
-    const dx = cx - dw / 2 + ed.xf.ox * mEPPM;
-    const dy = (SKIN_END_ANCHORED[ed.part] ? tipY - dh : cy - dh / 2) + ed.xf.oy * mEPPM;
-    mCtx.drawImage(im, dx, dy, dw, dh);
-    ed._fit = { s0x, s0y, dx, dy }; // 供命中/逆变换
+    const layout = skinPartLayout(ed.part, im.naturalWidth, im.naturalHeight, mEPPM, ed.xf);
+    if (layout) {
+      const dx = cx + layout.x, dy = cy + layout.y;
+      mCtx.drawImage(im, dx, dy, layout.w, layout.h);
+      ed._fit = {
+        s0x: layout.w / im.naturalWidth,
+        s0y: layout.h / im.naturalHeight,
+        dx, dy,
+      }; // click-to-source mapping uses this exact rectangle
+    }
+  } else if (im) {
+    im.onload = () => { if (ed?.img === im) renderEditor(); };
   }
   // 标记点
   const drawPt = (p, color, label) => {
@@ -566,11 +572,19 @@ function applyMark() {
   const toImg = (p) => [(p[0] - dx) / s0x, (p[1] - dy) / s0y];
   const [ax, ay] = toImg(ed.markA);
   const [bx, by] = toImg(ed.markB);
-  const r = orientSkinImage(ed.img, ax, ay, bx, by);  if (!r.ok) { toast(r.msg); ed.markA = ed.markB = null; renderEditor(); return; }
-  slots[ed.part] = { src: r.dataURL, ox: 0, oy: 0, scale: 1 };
+  const r = orientSkinImage(ed.img, ax, ay, bx, by);
+  if (!r.ok) { toast(r.msg); ed.markA = ed.markB = null; renderEditor(); return; }
+  const root = r.anchors?.root || { x: 0.5, y: 0 };
+  const end = r.anchors?.tip || { x: 0.5, y: 1 };
+  // End-point parts must land their tip at the hand/foot attachment. Other parts pivot
+  // around the marked anatomical midpoint (head center, torso center, shoulder/hip joint).
+  const pivot = SKIN_END_ANCHORED[ed.part]
+    ? { x: end.x, y: end.y }
+    : { x: (root.x + end.x) / 2, y: (root.y + end.y) / 2 };
+  slots[ed.part] = { src: r.dataURL, ox: 0, oy: 0, scale: 1, pivot };
   delete rawKeep[ed.part]; // 已转正,不再参与"调容差重处理"(那会丢掉转正)
   const im = imgOf(ed.part);
-  ed.img = im; ed.xf = { ox: 0, oy: 0, scale: 1 };
+  ed.img = im; ed.xf = { ox: 0, oy: 0, scale: 1, pivot };
   ed.markA = ed.markB = null;
   $('mScale').value = 100; $('mScaleV').textContent = '1.00×';
   setMode('drag');
@@ -583,7 +597,8 @@ $('mDrag').onclick = () => { if (ed) setMode('drag'); };
 $('mScale').oninput = () => { if (ed) setScale(+$('mScale').value / 100); };
 $('mReset').onclick = () => {
   if (!ed) return;
-  ed.xf = { ox: 0, oy: 0, scale: 1 };
+  // Reset placement without discarding the anatomical pivot established by endpoint marks.
+  ed.xf = { ox: 0, oy: 0, scale: 1, pivot: slots[ed.part]?.pivot ?? ed.xf.pivot };
   $('mScale').value = 100; $('mScaleV').textContent = '1.00×';
   renderEditor();
 };
@@ -626,14 +641,12 @@ function drawAssembled() {
     actx.setLineDash([]);
     const im = imgOf(part);
     if (im && im.complete && im.naturalWidth) {
-      const xf = slots[part];
-      const f = skinFitScale(part, im.naturalWidth, im.naturalHeight);
-      const dw = im.naturalWidth * f.sx * ppm * (xf.scale || 1);
-      const dh = im.naturalHeight * f.sy * ppm * (xf.scale || 1);
-      const dy = SKIN_END_ANCHORED[part] ? (SKIN_BOX[part].h / 2 - (SKIN_BOX[part].tip || 0)) * ppm - dh : -dh / 2;
-      if (dark) actx.filter = 'brightness(0.72) saturate(0.85)';
-      actx.drawImage(im, -dw / 2 + (xf.ox || 0) * ppm, dy + (xf.oy || 0) * ppm, dw, dh);
-      actx.filter = 'none';
+      const layout = skinPartLayout(part, im.naturalWidth, im.naturalHeight, ppm, slots[part]);
+      if (layout) {
+        if (dark) actx.filter = 'brightness(0.72) saturate(0.85)';
+        actx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
+        actx.filter = 'none';
+      }
     } else {
       actx.fillStyle = 'rgba(244,233,216,0.14)';
       actx.fillRect(-bw / 2, -bh / 2, bw, bh);
@@ -705,9 +718,16 @@ $('bClearAll').onclick = () => {
 };
 function saveAll() {
   const parts = {};
-  for (const p of SKIN_PARTS) if (slots[p]) parts[p] = { src: slots[p].src, ox: +slots[p].ox.toFixed(3), oy: +slots[p].oy.toFixed(3), scale: +slots[p].scale.toFixed(3) };
+  for (const p of SKIN_PARTS) if (slots[p]) {
+    const s = slots[p];
+    const entry = { src: s.src, ox: +s.ox.toFixed(3), oy: +s.oy.toFixed(3), scale: +s.scale.toFixed(3) };
+    if (s.pivot && Number.isFinite(s.pivot.x) && Number.isFinite(s.pivot.y)) {
+      entry.pivot = { x: +s.pivot.x.toFixed(5), y: +s.pivot.y.toFixed(5) };
+    }
+    parts[p] = entry;
+  }
   if (!Object.keys(parts).length) { clearSkin(); toast('没有皮肤部件,已清档(游戏用程序绘制)'); return; }
-  const ok = saveSkin({ version: 2, parts });
+  const ok = saveSkin({ version: 3, parts });
   toast(ok ? `已保存 ${Object.keys(parts).length} 件 — 切到游戏页即刻生效` : '保存失败:浏览器存储不可用/超出配额');
 }
 SKIN_PARTS.forEach(redrawSlot);
@@ -731,8 +751,17 @@ window.__skinTest = (part, drawFn, w = 240, h = 300) => {
 // 端点标记直调(自动化测试用,坐标 = 源图像素)
 window.__skinMark = (part, ax, ay, bx, by) => {
   const im = imgOf(part);
+  if (!im?.complete || !im.naturalWidth) return { ok: false, msg: '素材还在解码,请再试一次' };
   const r = orientSkinImage(im, ax, ay, bx, by);
-  if (r.ok) { slots[part] = { src: r.dataURL, ox: 0, oy: 0, scale: 1 }; redrawSlot(part); }
+  if (r.ok) {
+    const root = r.anchors?.root || { x: 0.5, y: 0 };
+    const end = r.anchors?.tip || { x: 0.5, y: 1 };
+    const pivot = SKIN_END_ANCHORED[part]
+      ? { x: end.x, y: end.y }
+      : { x: (root.x + end.x) / 2, y: (root.y + end.y) / 2 };
+    slots[part] = { src: r.dataURL, ox: 0, oy: 0, scale: 1, pivot };
+    redrawSlot(part);
+  }
   return r;
 };
 window.__skinXf = (part, xf) => { if (slots[part]) Object.assign(slots[part], xf); redrawSlot(part); };
