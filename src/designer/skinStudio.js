@@ -1,4 +1,4 @@
-import { loadAppearance, saveAppearance, clearAppearance, DEFAULT_APPEARANCE } from '../game/domain/appearance.js';
+import { loadAppearance, saveAppearance, DEFAULT_APPEARANCE } from '../game/domain/appearance.js';
 
 const $ = (id) => document.getElementById(id);
 const PRESETS = {
@@ -12,11 +12,9 @@ const PRESETS = {
 const COLOR_KEYS = ['shirtColor','pantsColor','armorColor','accentColor'];
 const defaults = { ...DEFAULT_APPEARANCE, kitStyle:'plate', helmetStyle:'highcut', eyewear:'goggles', pads:'full', backpack:'assault', armorColor:'#263744' };
 let draft = { ...defaults, ...loadAppearance() };
-let applied = { ...draft };
 let activePreset = 'night';
 const canvas = $('preview'), ctx = canvas.getContext('2d');
 const profilesKey = 'contra-appearance-profiles-v1';
-const valid = (v, arr) => arr.includes(v);
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 function toast(message){const e=$('toast');e.textContent=message;e.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('show'),2100);}
 function setStatus(text){$('status').innerHTML='● '+text+'<br>外观不影响碰撞与伤害数值';}
@@ -110,7 +108,7 @@ document.querySelectorAll('[data-color-input]').forEach(i=>i.addEventListener('i
 function randomize(){const pick=a=>a[Math.floor(Math.random()*a.length)];const a={...draft};for(const k of COLOR_KEYS)a[k]=pick(k==='shirtColor'?['#283b35','#35495b','#5c5946','#292e36','#a4aaa5']:k==='pantsColor'?['#29372f','#2b394b','#645b49','#222831']:k==='armorColor'?['#202a32','#3e505d','#5a5947','#777d78']:['#ffb34d','#72cde3','#91bc8b','#d16d5c','#d4d7d2']);a.kitStyle=pick(['plate','chest','slick']);a.helmetStyle=pick(['highcut','full','cap','none']);a.eyewear=pick(['goggles','clear','none']);a.pads=pick(['full','knees','none']);a.backpack=pick(['assault','radio','none']);setDraft(a);toast('已生成新装备组合');}
 $('random').onclick=randomize;$('random2').onclick=randomize;
 $('reset').onclick=()=>{setDraft({...DEFAULT_APPEARANCE,kitStyle:'plate',helmetStyle:'highcut',eyewear:'goggles',pads:'full',backpack:'assault',armorColor:'#263744'});toast('当前草稿已重置');};
-$('apply').onclick=()=>{const ok=saveAppearance(draft);if(!ok){toast('保存失败：浏览器本地存储不可用');return;}applied={...draft};try{localStorage.removeItem('contra-appearance-draft-v2')}catch{}setStatus('已应用到游戏');toast('装备外观已保存；返回游戏后生效');};
+$('apply').onclick=()=>{const ok=saveAppearance(draft);if(!ok){toast('保存失败：浏览器本地存储不可用');return;}try{localStorage.removeItem('contra-appearance-draft-v2')}catch{}setStatus('已应用到游戏');toast('装备外观已保存；返回游戏后生效');};
 document.querySelectorAll('[data-slot-save]').forEach(b=>b.onclick=()=>{const s=readSlots(),k=b.dataset.slotSave;s[k]={name:'已保存 · '+new Date().toLocaleDateString(),appearance:{...draft}};if(!writeSlots(s)){toast('槽位保存失败');return;}syncUi();toast('造型 '+k+' 已保存');});
 document.querySelectorAll('[data-slot-load]').forEach(b=>b.onclick=()=>{const s=readSlots()[b.dataset.slotLoad];if(!s?.appearance){toast('该造型槽为空');return;}setDraft(s.appearance);toast('造型已载入草稿，请保存并应用');});
 try{const d=JSON.parse(localStorage.getItem('contra-appearance-draft-v2')||'null');if(d)draft={...draft,...d};}catch{}
