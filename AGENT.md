@@ -457,7 +457,7 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
   头盔锚在头部局部空间(框中心=头圆心)、防弹衣锚在躯干局部空间。
 - **分层**:皮肤=底层,头盔/防弹衣=外层;某件没画就回退该件的程序绘制/预设。有小臂图隐藏程序小手、
   有小腿图隐藏程序靴。**只给主角**:`useSkin = !opts.palette`,敌人不吃皮肤。
-- **存档 v3**:`parts[p] = { src, ox, oy, scale, pivot:{x,y} }`;pivot 是归一化到裁后 PNG 的解剖挂点,`skinPartLayout(part,iw,ih,ppm,xf)` 是游戏 / 编辑器 / 组装预览共用的唯一 Canvas2D 放置变换。标记根→末端后,头/躯干/大臂/大腿/头盔/背心使用两点中点作为骨骼枢轴;小臂/小腿使用末端点,使手/脚始终落在握点/落地点。拖动/缩放只改变骨骼局部空间的 ox/oy/scale,不改解剖 pivot。v1/v2 无 pivot 时兼容旧的中心/底边锚点,打开再保存后可渐进迁移。
+- **存档 v3**:`parts[p] = { src, ox, oy, scale, pivot:{x,y} }`;pivot 是归一化到裁后 PNG 的解剖挂点,`skinPartLayout(part,iw,ih,ppm,xf)` 是游戏 / 编辑器 / 组装预览共用的唯一 Canvas2D 放置变换。标记根→末端后,头/躯干/大臂/大腿/头盔/背心使用两点中点作为骨骼枢轴;小臂/小腿使用末端点,使手/脚始终落在握点/落地点。拖动/缩放只改变骨骼局部空间的 ox/oy/scale,不改解剖 pivot。v1/v2 无 pivot 时兼容旧的中心/底边锚点;需要让旧素材使用新解剖挂点时,在工坊重新标记并保存即可。
 - ⚠️ 上屏很小(全身 ~81px):提醒用户笔画粗、颜色亮;素材比标准框细长时 contain 会缩得更小,属正常。
 - ⚠️ 工坊页模块级调用顺序:`SKIN_PARTS.forEach(redrawSlot)` 必须在 `drawAssembled` 定义之后(TDZ)。
 - 调试:`window.__skinTest(part, drawFn)` 注入合成白底图;`__skinMark(part, ax,ay, bx,by)` 直调端点
