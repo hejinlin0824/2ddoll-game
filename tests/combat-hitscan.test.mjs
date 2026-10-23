@@ -7,6 +7,10 @@ globalThis.localStorage = {
   setItem(key, value) { storage.set(key, String(value)); },
   removeItem(key) { storage.delete(key); },
 };
+globalThis.Image = class TestImage {
+  set src(value) { this._src = value; }
+  get src() { return this._src; }
+};
 const { applyHitscanDamage } = await import('../src/game/systems/combat.js');
 
 function makeEnemy(x, zone) {
