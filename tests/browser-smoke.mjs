@@ -62,6 +62,20 @@ try {
   const assembledSkinPreview = await appearancePage.locator('#assembled').evaluate((cv) => cv.toDataURL());
   assert(assembledSkinPreview.startsWith('data:image/png'), 'assembled skeletal DIY preview was not painted');
   await appearancePage.locator('#assembled').screenshot({ path: 'artifacts/skin-studio-rig.png' });
+  // The modal's cyan pivot crosshair must be visible at the same point the game consumes.
+  await appearancePage.locator('.slot[data-part="upperArm"] [data-a="edit"]').click();
+  await appearancePage.locator('#mDrag').click();
+  const pivotCrossPixels = await appearancePage.locator('#mCv').evaluate((cv) => {
+    const data = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cv.width, cv.height).data;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] < 145 && data[i + 1] > 145 && data[i + 2] > 170 && data[i + 3] > 180) count++;
+    }
+    return count;
+  });
+  assert(pivotCrossPixels > 0, 'skin editor is missing the cyan bone-pivot crosshair');
+  await appearancePage.locator('#mCv').screenshot({ path: 'artifacts/skin-editor-pivot.png' });
+  await appearancePage.locator('#mClose').click();
   await appearancePage.evaluate(() => window.__skinSave());
   const savedSkinForE2E = await appearancePage.evaluate(() => {
     const value = JSON.parse(localStorage.getItem('contra-skin') || 'null');
