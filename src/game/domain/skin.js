@@ -44,6 +44,43 @@ export function skinFitScale(part, iw, ih) {
 // 小臂底端=手=枪的握把(枪系统锚定在 armLF 刚体末端),小腿底端=脚底=落地点。
 // 手画在小臂素材最下端,自动握在握把上(用户实测:居中时手飘到撞针那头,毙过)。
 export const SKIN_END_ANCHORED = { foreArm: true, calf: true };
+
+// A skin texture's pivot is stored in normalized image coordinates (0..1).
+// Newly marked art uses the midpoint of its root→tip markers, except foreArm/calf,
+// whose terminal point must land on the hand / foot attachment. Legacy v1/v2 art
+// has no pivot metadata, so keep its historical center / bottom-edge behavior.
+export function skinPartPivot(part, pivot = null) {
+  const x = Number(pivot?.x), y = Number(pivot?.y);
+  if (Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+    return { x, y };
+  }
+  return SKIN_END_ANCHORED[part] ? { x: 0.5, y: 1 } : { x: 0.5, y: 0.5 };
+}
+
+// Canonical Canvas2D placement contract shared by the editor, assembly preview,
+// and live ragdoll renderer. The returned rect is local to the body pivot, in pixels.
+// ox/oy remain body-local meters; old saves without pivot metadata are pixel-identical.
+export function skinPartLayout(part, imageWidth, imageHeight, pixelsPerMeter, xf = {}) {
+  if (!SKIN_BOX[part] || !(imageWidth > 0) || !(imageHeight > 0)
+    || !(pixelsPerMeter > 0) || !Number.isFinite(pixelsPerMeter)) return null;
+  const fit = skinFitScale(part, imageWidth, imageHeight);
+  const scale = Number.isFinite(Number(xf.scale)) && Number(xf.scale) > 0 ? Number(xf.scale) : 1;
+  const w = imageWidth * fit.sx * pixelsPerMeter * scale;
+  const h = imageHeight * fit.sy * pixelsPerMeter * scale;
+  const pivot = skinPartPivot(part, xf.pivot);
+  const targetY = SKIN_END_ANCHORED[part]
+    ? (SKIN_BOX[part].h / 2 - (SKIN_BOX[part].tip || 0)) * pixelsPerMeter
+    : 0;
+  const ox = Number.isFinite(Number(xf.ox)) ? Number(xf.ox) * pixelsPerMeter : 0;
+  const oy = Number.isFinite(Number(xf.oy)) ? Number(xf.oy) * pixelsPerMeter : 0;
+  return {
+    x: -pivot.x * w + ox,
+    y: targetY - pivot.y * h + oy,
+    w, h, pivot,
+    targetX: ox,
+    targetY: targetY + oy,
+  };
+}
 const KEY = 'contra-skin';
 
 export function loadSkin() {
@@ -67,7 +104,12 @@ export function clearSkin() {
 // 用户微调变换(v1 存档/缺字段 → 全默认)
 export function skinXf(part) {
   const p = loadSkin()?.parts?.[part];
-  return { ox: p?.ox || 0, oy: p?.oy || 0, scale: p?.scale || 1 };
+  return {
+    ox: Number.isFinite(Number(p?.ox)) ? Number(p.ox) : 0,
+    oy: Number.isFinite(Number(p?.oy)) ? Number(p.oy) : 0,
+    scale: Number.isFinite(Number(p?.scale)) && Number(p.scale) > 0 ? Number(p.scale) : 1,
+    pivot: skinPartPivot(part, p?.pivot),
+  };
 }
 
 // ---- 游戏端图像缓存(part -> HTMLImageElement;同标签页重存/跨标签页 storage 都会失效) ----
@@ -86,7 +128,7 @@ export function skinImg(part) {
   }
   return im.complete && im.naturalWidth ? im : null;
 }
-window.__skin = { skinImg, skinXf, loadSkin }; // 调试句柄
+window.__skin = { skinImg, skinXf, loadSkin, skinPartPivot, skinPartLayout, SKIN_BOX, SKIN_END_ANCHORED }; // 调试与几何回归
 
 // ---- 上传处理管线(皮肤工坊用):抠白底 + 自动裁边,纯 canvas 无依赖 ----
 // 白底判定:取四边不透明像素的平均色当背景参考(抗纸面偏色);
@@ -197,7 +239,15 @@ export function orientSkinImage(src, ax, ay, bx, by) {
   c.translate(diag / 2, diag / 2);
   c.rotate(th);
   c.drawImage(src, -iw / 2, -ih / 2);
-  // 转完重裁透明边(+2px)
+  // 转完重裁透明边(+2px)。同时保留标记点变换结果，不能只保留裁后图片框中心：
+  // 肩垫/手掌/靴跟等不对称轮廓会让可见内容的 bbox 中心偏离真正的骨骼轴。
+  const cos = Math.cos(th), sin = Math.sin(th);
+  const transformedPoint = (x, y) => {
+    const rx = x - iw / 2, ry = y - ih / 2;
+    return { x: diag / 2 + rx * cos - ry * sin, y: diag / 2 + rx * sin + ry * cos };
+  };
+  const rootRotated = transformedPoint(ax, ay);
+  const tipRotated = transformedPoint(bx, by);
   const d = c.getImageData(0, 0, diag, diag).data;
   let x0 = diag, y0 = diag, x1 = -1, y1 = -1;
   for (let y = 0; y < diag; y++) for (let x = 0; x < diag; x++) {
@@ -212,5 +262,16 @@ export function orientSkinImage(src, ax, ay, bx, by) {
   const out = document.createElement('canvas');
   out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
   out.getContext('2d').drawImage(cv, -x0, -y0);
-  return { ok: true, dataURL: out.toDataURL('image/png'), w: out.width, h: out.height, rotatedDeg: +(th * 180 / Math.PI).toFixed(1) };
+  const normalizePoint = (p) => ({
+    x: (p.x - x0) / out.width,
+    y: (p.y - y0) / out.height,
+  });
+  return {
+    ok: true,
+    dataURL: out.toDataURL('image/png'),
+    w: out.width, h: out.height,
+    rotatedDeg: +(th * 180 / Math.PI).toFixed(1),
+    // Points are normalized to the actual cropped PNG so resize/stretch stays accurate.
+    anchors: { root: normalizePoint(rootRotated), tip: normalizePoint(tipRotated) },
+  };
 }
