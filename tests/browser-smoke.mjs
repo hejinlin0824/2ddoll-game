@@ -800,6 +800,8 @@ try {
     'blackout should visibly darken the same viewpoint: powered=' + powered.pixels.meanLuma + ', blackout=' + blackout.pixels.meanLuma);
   assert(flashlight.pixels.meanLuma > blackout.pixels.meanLuma,
     'flashlight should lift detail relative to blackout: flashlight=' + flashlight.pixels.meanLuma + ', blackout=' + blackout.pixels.meanLuma);
+  assert(flashlight.flashlightROI.meanLuma > blackout.flashlightROI.meanLuma + 2,
+    'flashlight cone did not improve local target readability: flashlight=' + flashlight.flashlightROI.meanLuma + ', blackout=' + blackout.flashlightROI.meanLuma);
   assert(nightVision.pixels.greenDominance > blackout.pixels.greenDominance,
     'night vision should shift the frame toward green: nvg=' + nightVision.pixels.greenDominance + ', blackout=' + blackout.pixels.greenDominance);
   await writeFile('artifacts/lighting-comparison.json', JSON.stringify({
@@ -808,6 +810,7 @@ try {
     assertions: {
       blackoutDarkerThanPowered: blackout.pixels.meanLuma < powered.pixels.meanLuma,
       flashlightLiftsBlackout: flashlight.pixels.meanLuma > blackout.pixels.meanLuma,
+      flashlightLiftsLocalROI: flashlight.flashlightROI.meanLuma > blackout.flashlightROI.meanLuma + 2,
       nightVisionGreenerThanBlackout: nightVision.pixels.greenDominance > blackout.pixels.greenDominance,
     },
   }, null, 2));
