@@ -281,7 +281,8 @@ try {
   await page.evaluate(() => {
     const { player, input } = window.__game();
     const p = player.torso.getPosition();
-    const dx = 51.7142857143 - p.x, dy = 1.28 - p.y;
+    // Start on the first tread of the shared 47–53 shaft (12 treads per floor, 3.5m rise).
+    const dx = 52.75 - p.x, dy = 1.0716666667 - p.y;
     for (const body of player.allBodies) {
       const q = body.getPosition();
       body.setTransform({ x: q.x + dx, y: q.y + dy }, body.getAngle());
