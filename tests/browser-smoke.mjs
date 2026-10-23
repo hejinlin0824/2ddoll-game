@@ -29,8 +29,10 @@ try {
   assert(appearanceSaved?.kitStyle === 'chest', 'kit style was not persisted');
   assert(appearanceSaved?.helmetStyle === 'full', 'helmet style was not persisted');
   assert(appearanceSaved?.armorColor === '#4b5b67', 'armor color was not persisted');
-  await appearancePage.locator('#preview').screenshot({ path: 'artifacts/skin-studio-rig.png' });
-  await appearancePage.locator('#preview').screenshot({ path: 'artifacts/skin-kit-detail.png' });
+  const cleanCanvasPng = await appearancePage.locator('#preview').evaluate((cv) => cv.toDataURL('image/png'));
+  await writeFile('artifacts/skin-studio-rig.png', Buffer.from(cleanCanvasPng.split(',')[1], 'base64'));
+  // Capture the surrounding control panel separately; avoid sticky-header overlays contaminating canvas-only art.
+  await appearancePage.locator('.panel').first().screenshot({ path: 'artifacts/skin-kit-detail.png' });
   const savedProfile = await appearancePage.evaluate(() => JSON.parse(localStorage.getItem('contra-appearance-v1') || 'null'));
   assert(savedProfile?.backpack && savedProfile?.pads, 'modular equipment fields missing from appearance save');
   const skinGamePage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
