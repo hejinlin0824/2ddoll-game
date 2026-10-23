@@ -93,6 +93,7 @@ jobs:
           name: appearance-equipment-browser-smoke
           path: |
             artifacts/*.png
+            artifacts/*.json
             /tmp/hero-vite-dev.log
             /tmp/hero-vite-preview.log
           if-no-files-found: warn
