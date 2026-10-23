@@ -37,15 +37,15 @@ try {
     await appearancePage.evaluate((partName) => {
       window.__skinTest(partName, (c) => {
         c.fillStyle = '#344a5b';
-        c.fillRect(104, 38, 32, 224);
+        c.fillRect(82, 38, 76, 224);
         c.fillStyle = '#ffb14a';
-        c.fillRect(112, 44, 6, 208);
+        c.fillRect(101, 44, 9, 208);
         c.fillStyle = '#6b8393';
-        c.fillRect(130, 46, 62, 36); // asymmetric side plate / pouch
+        c.fillRect(134, 46, 88, 36); // asymmetric side plate / pouch extends past the bone axis
         c.fillStyle = '#1c2935';
-        c.fillRect(91, 83, 25, 24);
+        c.fillRect(80, 83, 38, 30);
         c.fillStyle = '#e8d4b5';
-        c.fillRect(106, 57, 21, 7);
+        c.fillRect(105, 57, 27, 9);
       }, 240, 300);
     }, part);
     await appearancePage.waitForFunction((partName) => {
