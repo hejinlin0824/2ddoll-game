@@ -69,7 +69,7 @@ export function getRaidObjective(campaign, clearedFloors = {}) {
 }
 
 export function updateRaidCampaign(campaign, dt, facts = {}) {
-  if (!campaign || !facts.enabled || campaign.completed) return campaign;
+  if (!campaign || !facts.enabled) return campaign;
   campaign.enabled = true;
   const safeDt = Number.isFinite(dt) ? Math.max(0, dt) : 0;
   if (facts.playerAlive) campaign.elapsedSeconds += safeDt;
