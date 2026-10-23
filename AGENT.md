@@ -644,4 +644,4 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
 - 当前正式存档键仍为 `contra-appearance-v1`，以兼容原角色配色/发型；新增 `kitStyle`、`helmetStyle`、`eyewear`、`pads`、`backpack`、`armorColor` 字段。A/B/C 槽保留在 `contra-appearance-profiles-v1`，草稿键仍为 `contra-appearance-draft-v2`。
 - 游戏端 `player.js` 使用同一份外观字段，在躯干/头部局部坐标中 Canvas2D 绘制模块化载具和头盔；骨骼、关节、碰撞体、命中与真实护甲数值不变。真实 `contra-equip-head` / `contra-equip-torso` 装备仍单独绘制并保留数值。
 - 旧版 `contra-skin` 位图拼件渲染已经停用；其源代码、旧几何测试与重做前工作树完整保存在分支 `archive/skin-system-before-redesign-2026-10-23`；已从 `dev` 删除旧 `skin.js` 模块与 `skin-geometry.test.mjs`，避免死代码继续维护。此分支是备份，不是发布分支。
-- 回归：`tests/browser-smoke.mjs` 现在验证新工坊 Canvas 重绘、模块字段保存、游戏页读取和控制台错误；`skin-studio-rig.png` / `skin-game-rig.png` 是新系统截图。运行 `node --test tests/*.test.mjs`、`npm run build`，并查看 GitHub Actions；旧版 `__skinTest` / 透明图 pivot UI 测试及位图几何单测已删除，历史实现仅在备份分支内。
+- 回归：`tests/browser-smoke.mjs` 现在验证新工坊 Canvas 重绘、模块字段保存、游戏页读取和控制台错误；`skin-studio-rig.png` / `skin-kit-detail.png` / `skin-game-rig.png` 是新系统截图。运行 `node --test tests/*.test.mjs`、`npm run build`，并查看 GitHub Actions；旧版 `__skinTest` / 透明图 pivot UI 测试及位图几何单测已删除，历史实现仅在备份分支内。
