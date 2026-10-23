@@ -134,7 +134,7 @@ try {
   }));
   assert(boot.canvases >= 1, 'game canvas was not created');
   assert(boot.fog?.scene === 'raid' && boot.fog.visiblePixelCount > 100, 'raid fog of war did not reveal a local visibility region');
-  assert(boot.stairCount === 36, `raid traversal stairs missing: ${boot.stairCount}`);
+  assert(boot.stairCount === 60, `raid traversal stairs missing: ${boot.stairCount}`);
   for (const [i, spans] of boot.stairLandings.entries()) {
     assert(spans.length === 2 && spans[0].left === 0 && spans[0].right === 47
       && spans[1].left === 53 && spans[1].right === 74,
@@ -285,13 +285,12 @@ try {
   assert(grappleCheck.active, `Ctrl-click did not latch the grappling hook: ${JSON.stringify(grappleCheck)}`);
   assert(!grappleCheck.fireHeld, 'Ctrl-click accidentally fired the weapon');
 
-  // Exercise actual traversal in both directions through all three alternating flights.
-  // Each spawn is the first tread at the correct side of its landing; this catches a visually
-  // connected but physically impossible stairwell.
+  // Start on the actual floor landing, not on the first stair tread. This verifies that the
+  // player can discover/enter the stair flight as well as climb it with hold-W + movement.
   const stairFlights = [
-    { floor: 'ground-to-level-2', x: 52.75, y: 1.0716666667, direction: 'left', targetY: 4.0 },
-    { floor: 'level-2-to-level-3', x: 47.25, y: 4.5716666667, direction: 'right', targetY: 7.5 },
-    { floor: 'level-3-to-roof', x: 52.75, y: 8.0716666667, direction: 'left', targetY: 11.0 },
+    { floor: 'ground-to-level-2', x: 53.25, y: 0.9, direction: 'left', targetY: 4.0 },
+    { floor: 'level-2-to-level-3', x: 46.75, y: 4.4, direction: 'right', targetY: 7.5 },
+    { floor: 'level-3-to-roof', x: 53.25, y: 7.9, direction: 'left', targetY: 11.0 },
   ];
   for (const flight of stairFlights) {
     await page.evaluate((route) => {
@@ -312,7 +311,7 @@ try {
       input.jumpPressed = true;
     }, flight);
     await page.waitForFunction((targetY) => window.__game().player.torso.getPosition().y > targetY,
-      flight.targetY, { timeout: 3200 });
+      flight.targetY, { timeout: 6500 });
     const climb = await page.evaluate(() => {
       const { player, input } = window.__game();
       const p = player.torso.getPosition();
@@ -792,6 +791,52 @@ try {
   console.log('HERO four-state lighting comparison:', JSON.stringify(lightingSnapshots.map((s) => ({
     name: s.name, state: s.state, player: s.player, camera: s.camera, pixels: s.pixels,
   })), null, 2));
+
+  // Restore a mid-mission checkpoint in a clean browser context: cleared floors must remain empty,
+  // the evidence state and elapsed time must survive, and the player must appear near the next goal.
+  const resumePage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  resumePage.on('pageerror', (error) => failures.push(`checkpoint pageerror: ${error.stack || error.message}`));
+  resumePage.on('response', (r) => { if (r.status() >= 400) badResponses.push({ status: r.status(), url: r.url() }); });
+  resumePage.on('console', (message) => { if (message.type() === 'error') failures.push(`checkpoint console.error: ${message.text()}`); });
+  await resumePage.addInitScript(() => {
+    localStorage.setItem('contra-scene', 'raid');
+    localStorage.setItem('contra-raid-checkpoint-v1', JSON.stringify({
+      version: 1, campaign: '夜幕行动：失联名单', stage: 'assault',
+      clearedFloors: { 3: true, 2: true, 1: true, 0: false },
+      intelSecured: true, elapsedSeconds: 73.2,
+    }));
+  });
+  const resumeResponse = await resumePage.goto(baseURL + '/game.html', { waitUntil: 'networkidle', timeout: 30000 });
+  assert(!!resumeResponse && resumeResponse.status() === 200, 'checkpoint game page returned ' + (resumeResponse?.status() ?? 'no response'));
+  await resumePage.waitForFunction(() => typeof window.__raid === 'function' && typeof window.__game === 'function'
+    && window.__raid().campaign.stage === 'assault', undefined, { timeout: 10000 });
+  const resumeState = await resumePage.evaluate(() => {
+    const raid = window.__raid();
+    const p = window.__game().player.torso.getPosition();
+    return {
+      stage: raid.campaign.stage,
+      clearedFloors: { ...raid.clearedFloors },
+      intelSecured: raid.campaign.intelSecured,
+      elapsedSeconds: raid.campaign.elapsedSeconds,
+      position: { x: p.x, y: p.y },
+      rappel: raid.rappel,
+      dialogue: raid.campaign.activeDialogue?.text || '',
+      unclearedFloorGuards: window.__game().enemies
+        .filter((e) => e.raidMode && !e.isReinforcement && [1, 2, 3].includes(e.raidFloorId))
+        .map((e) => e.raidFloorId),
+    };
+  });
+  assert(resumeState.stage === 'assault', 'checkpoint stage was not restored: ' + JSON.stringify(resumeState));
+  assert(resumeState.clearedFloors[3] && resumeState.clearedFloors[2] && resumeState.clearedFloors[1] && !resumeState.clearedFloors[0],
+    'checkpoint did not preserve floor progress: ' + JSON.stringify(resumeState.clearedFloors));
+  assert(resumeState.intelSecured && resumeState.elapsedSeconds >= 73.2, 'checkpoint lost evidence or elapsed time: ' + JSON.stringify(resumeState));
+  assert(Math.abs(resumeState.position.x - 53.2) < 0.6 && resumeState.position.y < 1.6,
+    'player did not resume on the ground-floor objective approach: ' + JSON.stringify(resumeState.position));
+  assert(!resumeState.rappel, 'resumed campaign should not replay rooftop insertion');
+  assert(/进度已恢复/.test(resumeState.dialogue), 'resume radio line was not restored: ' + resumeState.dialogue);
+  assert(resumeState.unclearedFloorGuards.length === 0,
+    'garrisons from previously cleared floors respawned: ' + JSON.stringify(resumeState.unclearedFloorGuards));
+  await resumePage.close();
 
   if (badResponses.length) failures.push(`HTTP errors: ${JSON.stringify(badResponses)}`);
   if (failedRequests.length) failures.push(`Failed requests: ${JSON.stringify(failedRequests)}`);
