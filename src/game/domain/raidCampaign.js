@@ -17,13 +17,17 @@ const FLOOR_DIALOGUE = {
   ],
   1: [
     { speaker: '夜隼', text: '二层发现转运箱，里面的标签全被撕掉了。名单还没找到。' },
-    { speaker: '指挥台 · 黑匣', text: '明白。地面入口配电柜仍在线，清场后回到那里，我会用它发出撤离信号。' },
+    { speaker: '技术员 · 小麦', text: '等等，二层 COMMS 机柜还有待机灯。真正的转运记录可能被藏进终端，不在那些箱子里。' },
   ],
   0: [
     { speaker: '夜隼', text: '地面已清，通路安全。准备封存现场记录。' },
     { speaker: '指挥台 · 黑匣', text: '别急着离开。返回地面入口的配电柜，按 E 发出撤离信号。' },
   ],
 };
+const INTEL_DIALOGUE = [
+  { speaker: '夜隼', text: '终端里有三批转运记录，还有一串内部审批编号。名单不是被烧掉了，是有人把它藏起来了。' },
+  { speaker: '指挥台 · 黑匣', text: '数据已收到。这个编号不属于现场匪帮。先清理地面入口，再去配电柜发撤离信号。' },
+];
 const EXTRACTION = [
   { speaker: '夜隼', text: '入口控制柜已接入。现场记录加密封存，正在发出撤离信号。' },
   { speaker: '指挥台 · 黑匣', text: '撤离通道已确认。别停留在入口，按计划向集合点回撤。' },
@@ -47,6 +51,7 @@ export function createRaidCampaignState(enabled = false) {
     enabled: !!enabled,
     stage: enabled ? 'insertion' : 'inactive',
     announcedFloors: [],
+    intelSecured: false,
     dialogueQueue: [],
     activeDialogue: null,
     dialogueRemaining: 0,
@@ -67,7 +72,8 @@ export function getRaidObjective(campaign, clearedFloors = {}) {
   if (campaign.stage === 'insertion') return '正在绳降 · 稳住姿态，准备进入屋顶';
   if (!clearedFloors[3]) return '目标 01/04 · 清理屋顶守军，找到中央楼梯入口';
   if (!clearedFloors[2]) return '目标 02/04 · 沿中央楼梯进入三层，清剿本层守军';
-  if (!clearedFloors[1]) return '目标 03/04 · 进入二层，压制残余守军';
+  if (!clearedFloors[1]) return '目标 03/04 · 清剿二层守军，调查 COMMS 机柜';
+  if (!campaign.intelSecured) return '目标 03/04 · 按 E 回收 COMMS 终端中的失联名单';
   if (!clearedFloors[0]) return '目标 04/04 · 清理地面入口，确认撤离通路';
   return '返撤目标 · 返回地面入口配电柜旁，按 E 呼叫撤离';
 }
@@ -92,7 +98,7 @@ export function updateRaidCampaign(campaign, dt, facts = {}) {
   }
 
   const allClear = CLEAR_ORDER.every((floorId) => !!cleared[floorId]);
-  if (allClear && campaign.stage !== 'extract' && campaign.stage !== 'complete') {
+  if (allClear && campaign.intelSecured && campaign.stage !== 'extract' && campaign.stage !== 'complete') {
     campaign.stage = 'extract';
     enqueue(campaign, EXTRACTION);
   }
@@ -110,6 +116,13 @@ export function updateRaidCampaign(campaign, dt, facts = {}) {
   return campaign;
 }
 
+export function secureRaidIntel(campaign) {
+  if (!campaign || !campaign.enabled || campaign.completed || campaign.intelSecured) return false;
+  campaign.intelSecured = true;
+  enqueue(campaign, INTEL_DIALOGUE);
+  return true;
+}
+
 export function advanceRaidDialogue(campaign) {
   if (!campaign) return null;
   campaign.activeDialogue = null;
@@ -118,7 +131,7 @@ export function advanceRaidDialogue(campaign) {
 }
 
 export function completeRaidCampaign(campaign) {
-  if (!campaign || !campaign.enabled || campaign.stage !== 'extract' || campaign.completed) return false;
+  if (!campaign || !campaign.enabled || !campaign.intelSecured || campaign.stage !== 'extract' || campaign.completed) return false;
   campaign.completed = true;
   campaign.stage = 'complete';
   campaign.activeDialogue = null;
