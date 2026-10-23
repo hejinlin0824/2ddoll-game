@@ -444,7 +444,7 @@ try {
   assert(armorKill.secondAbsorbed === true && armorKill.secondBroke === 'body'
     && armorKill.hpAfterBreak === armorKill.hp0 && armorKill.armorAfterBreak === 0,
     'body armor break spilled into HP or failed to consume durability: ' + JSON.stringify(armorKill));
-  assert(armorKill.aliveAfterKill === false && !armorKill.deathEventsQueued
+  assert(armorKill.aliveAfterKill === false && armorKill.deathEventsQueued
     && armorKill.lootSlots?.length === 3 && armorKill.lootSlots.includes('gun')
     && armorKill.lootSlots.includes('head') && armorKill.lootSlots.includes('body')
     && armorKill.deathCoins >= 3 && armorKill.deathCoins <= 8,
