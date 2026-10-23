@@ -1081,11 +1081,24 @@ export class Player {
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(R(b));
-      ctx.fillStyle = color;
       const w = (d.w + wGrow) * ppm, h = d.h * ppm;
+      const grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+      grad.addColorStop(0, shadeKit(color, 0.58));
+      grad.addColorStop(0.16, shadeKit(color, 0.82));
+      grad.addColorStop(0.46, color);
+      grad.addColorStop(0.73, shadeKit(color, 1.12));
+      grad.addColorStop(1, shadeKit(color, 0.66));
+      ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(w, h) / 2 * 0.92);
+      ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(w, h) / 2 * 0.32);
       ctx.fill();
+      ctx.strokeStyle = 'rgba(5,10,16,0.62)';
+      ctx.lineWidth = Math.max(0.65, Math.min(1.4, ppm * 0.018));
+      ctx.stroke();
+      // Short seam at the proximal end; remains attached when the physics joint swings.
+      ctx.strokeStyle = 'rgba(226,236,239,0.15)';
+      ctx.lineWidth = Math.max(0.5, Math.min(1, ppm * 0.012));
+      ctx.beginPath(); ctx.moveTo(-w * 0.28, -h * 0.30); ctx.lineTo(w * 0.28, -h * 0.30); ctx.stroke();
       ctx.restore();
     };
 
@@ -1103,21 +1116,39 @@ export class Player {
     };
 
     const armorPad = (b, d, kind) => {
-      if (!this.appearance || (this.appearance.pads !== 'full' && !(kind === 'knee' && this.appearance.pads === 'knees'))) return;
+      if (!this.appearance) return;
+      const allowed = this.appearance.pads === 'full'
+        || (kind === 'knee' && this.appearance.pads === 'knees');
+      if (!allowed) return;
       const [x,y]=P(b);ctx.save();ctx.translate(x,y);ctx.rotate(R(b));
-      // Attach pads at the anatomical end of the limb, not at the limb's bounding-box center.
-      if(kind==='shoulder')ctx.translate(0,-d.h*ppm*.29);else if(kind==='knee')ctx.translate(0,d.h*ppm*.40);
-      const w=d.w*ppm*(kind==='shoulder'?1.04:.76),h=d.h*ppm*(kind==='shoulder'?.42:.24),ac=this.appearance.armorColor||'#263744';
-      ctx.fillStyle=shadeKit(ac,1.25);ctx.strokeStyle='#0a1118';ctx.lineWidth=1.2;
-      ctx.beginPath();ctx.roundRect(-w/2,-h/2,w,h,Math.min(w,h)*.32);ctx.fill();ctx.stroke();
-      ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.lineWidth=Math.max(.8,ppm*.014);ctx.beginPath();ctx.moveTo(-w*.24,0);ctx.lineTo(w*.24,0);ctx.stroke();ctx.restore();
+      // Pads are anchored close to the anatomical joint, rather than floating at segment centers.
+      if(kind==='shoulder')ctx.translate(0,-d.h*ppm*.29);
+      else if(kind==='elbow')ctx.translate(0,d.h*ppm*.36);
+      else if(kind==='knee')ctx.translate(0,d.h*ppm*.40);
+      const widthFactor = kind==='shoulder'?1.08:kind==='elbow'?.88:.82;
+      const heightFactor = kind==='shoulder'?.42:kind==='elbow'?.30:.28;
+      const w=d.w*ppm*widthFactor,h=d.h*ppm*heightFactor,ac=this.appearance.armorColor||'#263744';
+      const grad=ctx.createLinearGradient(-w/2,-h/2,w/2,h/2);
+      grad.addColorStop(0,shadeKit(ac,.62));grad.addColorStop(.38,shadeKit(ac,1.32));grad.addColorStop(1,shadeKit(ac,.74));
+      ctx.fillStyle=grad;ctx.strokeStyle='#080f16';ctx.lineWidth=Math.max(1,Math.min(1.6,ppm*.024));
+      ctx.beginPath();ctx.roundRect(-w/2,-h/2,w,h,Math.min(w,h)*.30);ctx.fill();ctx.stroke();
+      ctx.strokeStyle='rgba(231,239,242,.25)';ctx.lineWidth=Math.max(.5,Math.min(1,ppm*.014));
+      ctx.beginPath();ctx.moveTo(-w*.28,-h*.18);ctx.lineTo(w*.28,-h*.18);ctx.stroke();
+      ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.lineWidth=Math.max(.7,Math.min(1.2,ppm*.019));
+      ctx.beginPath();ctx.moveTo(-w*.24,h*.15);ctx.lineTo(w*.24,h*.15);ctx.stroke();ctx.restore();
     };
     const hand = (fb) => {
       const [x, y] = P(fb);
-      ctx.save();
-      ctx.translate(x, y); ctx.rotate(R(fb));
-      ctx.fillStyle = this.C.skin;
-      ctx.beginPath(); ctx.arc(0, D.foreArm.h / 2 * ppm, 3.6, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(R(fb));
+      const gy = D.foreArm.h * 0.5 * ppm;
+      const glove = this.appearance?.armorColor ? shadeKit(this.appearance.armorColor, 0.70) : '#202831';
+      const gw = Math.max(4.8, Math.min(7.5, ppm * 0.14));
+      const gh = Math.max(4, Math.min(6.5, ppm * 0.12));
+      ctx.fillStyle = glove; ctx.strokeStyle = '#080e14';
+      ctx.lineWidth = Math.max(0.65, Math.min(1.1, ppm * 0.016));
+      ctx.beginPath(); ctx.roundRect(-gw / 2, gy - gh * 0.50, gw, gh, Math.min(2, gh * .25)); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(224,233,237,.27)'; ctx.lineWidth = Math.max(.5, Math.min(.9, ppm * .011));
+      ctx.beginPath(); ctx.moveTo(-gw*.20,gy-gh*.10);ctx.lineTo(gw*.20,gy-gh*.10);ctx.stroke();
       ctx.restore();
     };
 
@@ -1256,7 +1287,9 @@ export class Player {
     // 远侧肢体(暗色)→ 躯干 → 头 → 近侧腿 → 枪 → 近侧臂
     cap(this.armUB, D.upperArm, this.C.shirtDark || this.C.skinDark);
     armorPad(this.armUB,D.upperArm,'shoulder');
-    cap(this.armLB, D.foreArm, this.C.skinDark);
+    armorPad(this.armUB,D.upperArm,'elbow');
+    cap(this.armLB, D.foreArm, this.C.shirtDark || this.C.shirt || this.C.skinDark);
+    armorPad(this.armLB,D.foreArm,'elbow');
     hand(this.armLB);
     boot(this.legLB, this.C.pantsDark, this.C.bootDark);
     cap(this.legUB, D.thigh, this.C.pantsDark);
@@ -1291,8 +1324,9 @@ export class Player {
         ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
       }
 
-      // Real inventory armor is the base layer; cosmetic modular kit is drawn over it.
-      if (this.loadout.torso) drawEquip(this.loadout.torso);
+      // When a visual kit is selected, do not double-stack the old editor's armor mesh.
+      // The real loadout remains intact for defense/durability; only its legacy appearance is suppressed.
+      if (!this.appearance && this.loadout.torso) drawEquip(this.loadout.torso);
       // Anatomy-locked modular carrier: procedural plates, webbing and pouches follow the torso joint.
       if (this.appearance) {
         const a=this.appearance,w=D.torso.w*ppm,h=D.torso.h*ppm,armor=a.armorColor||'#263744',accent=a.accentColor||'#ffb34d';
@@ -1371,7 +1405,7 @@ export class Player {
         ctx.strokeStyle = this.C.skin; ctx.lineWidth = 0.078 * ppm; ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(0, 0.03 * ppm);
-        ctx.lineTo(0, 0.33 * ppm);
+        ctx.lineTo(0, 0.19 * ppm);
         ctx.stroke();
         const look = this.appearance || { hairStyle: 'short', hairColor: '#202733', faceShape: 'round', eyeColor: '#222222', headwear: 'bandana' };
         const backX = -this.facing;
@@ -1417,8 +1451,8 @@ export class Player {
           ctx.fillStyle = '#252e39'; ctx.beginPath(); ctx.arc(-this.facing * r * 0.78, 0, r * 0.28, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = this.C.accent || '#d99447'; ctx.fillRect(-this.facing * r * 0.92 - 1, -1, 4, 3);
         }
-        // Real inventory helmet is the base layer; the chosen silhouette is drawn above it.
-        if (this.loadout.head) drawEquip(this.loadout.head);
+        // Keep the true armor data for stats, but avoid drawing the legacy helmet beneath the new shell.
+        if (!this.appearance && this.loadout.head) drawEquip(this.loadout.head);
         // Modular helmet and eyewear are procedural parts attached to the live head transform.
         if(this.appearance&&this.appearance.helmetStyle&&this.appearance.helmetStyle!=='none'){
           const hs=this.appearance.helmetStyle,ac=this.appearance.armorColor||'#263744',hi=shadeKit(ac,1.35);
@@ -1445,7 +1479,9 @@ export class Player {
     gun();
     cap(this.armUF, D.upperArm, this.C.shirt || this.C.skin);
     armorPad(this.armUF,D.upperArm,'shoulder');
-    cap(this.armLF, D.foreArm, this.C.skin);
+    armorPad(this.armUF,D.upperArm,'elbow');
+    cap(this.armLF, D.foreArm, this.C.shirtDark || this.C.shirt || this.C.skin);
+    armorPad(this.armLF,D.foreArm,'elbow');
     hand(this.armLF);
 
     // 轻量战术换弹指示:在操作员头部上方显示渐进式进度,不使用 DOM/滤镜动画。
