@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RAID_FLOOR_Y, RAID_STAIR_NO_SPAWN_ZONE, RAID_STAIR_OPENING, RAID_STAIR_SHAFTS, RAID_STAIR_STEPS_PER_FLIGHT, createSwitchbackStairs, createRaidTraversalStairs, isRaidStairStepAt, keepRaidSpawnOutOfStairwell } from '../src/game/domain/raidLayout.js';
+import { RAID_FLOOR_Y, RAID_STAIR_NO_SPAWN_ZONE, RAID_STAIR_OPENING, RAID_STAIR_SHAFTS, RAID_STAIR_STEPS_PER_FLIGHT, createSwitchbackStairs, createRaidTraversalStairs, keepRaidSpawnOutOfStairwell } from '../src/game/domain/raidLayout.js';
 
 test('each floor transition has a complete 3.5m switchback stair flight within its shaft', () => {
-  const stairs = createRaidTraversalStairs();
+  const layout = createRaidTraversalStairs();
+  const stairs = layout.filter((r) => r.type === 'stair');
+  const ramps = layout.filter((r) => r.type === 'stairRamp');
   assert.equal(RAID_FLOOR_Y.length, 4);
   assert.equal(RAID_STAIR_SHAFTS.length, 3);
   assert.equal(stairs.length, 60);
+  assert.equal(ramps.length, 3);
   assert.equal(RAID_STAIR_STEPS_PER_FLIGHT, 20);
   assert.deepEqual(RAID_STAIR_OPENING, { left: 47, right: 53 });
   for (const shaft of RAID_STAIR_SHAFTS) {
@@ -20,6 +23,7 @@ test('each floor transition has a complete 3.5m switchback stair flight within i
     assert.equal(flight[19].stairStep, 19);
     assert.ok(flight.every((step) => step.x + 1e-9 < shaft.xHigh && step.x - 1e-9 > shaft.xLow));
     assert.ok(flight.every((step) => step.destructible === false && step.type === 'stair'));
+    assert.ok(flight.every((step) => step.collision === false), 'visible treads should not create snagging physics lips');
     assert.equal(flight[0].x, (shaft.xStart + shaft.xEnd) / 2 + (shaft.xStart - shaft.xEnd) * 19 / 40);
     assert.equal(flight.at(-1).x, (shaft.xStart + shaft.xEnd) / 2 - (shaft.xStart - shaft.xEnd) * 19 / 40);
     for (let i = 1; i < flight.length; i++) {
@@ -54,11 +58,21 @@ test('reinforcements never spawn in the stair shaft or its landing approaches', 
   assert.equal(keepRaidSpawnOutOfStairwell(99, 65), 71.9);
 });
 
-test('player and AI stair assistance share a guarded landing proximity rule', () => {
-  const stairs = createRaidTraversalStairs();
-  const first = stairs.find((r) => r.stairId === 'stair-ground-level02');
-  assert.ok(first);
-  assert.equal(isRaidStairStepAt(first.x, first.y + first.h / 2, stairs), true);
-  assert.equal(isRaidStairStepAt(first.x + 4, first.y + first.h / 2, stairs), false);
-  assert.equal(isRaidStairStepAt(NaN, 0, stairs), false);
+test('each stair flight has a continuous physics-only ramp aligned to both floor landings', () => {
+  const layout = createRaidTraversalStairs();
+  const ramps = layout.filter((r) => r.type === 'stairRamp');
+  assert.equal(ramps.length, RAID_STAIR_SHAFTS.length);
+  for (const shaft of RAID_STAIR_SHAFTS) {
+    const ramp = ramps.find((r) => r.stairRampId === shaft.id);
+    assert.ok(ramp, `missing collision ramp for ${shaft.id}`);
+    assert.equal(ramp.collisionOnly, true);
+    assert.equal(ramp.destructible, false);
+    assert.ok(Math.abs(ramp.h - 0.24) < 1e-9);
+    assert.ok(Math.abs(Math.abs(ramp.angle) - Math.atan2(3.5, 6)) < 1e-9);
+    const upperNormalX = -Math.sin(ramp.angle);
+    const upperNormalY = Math.cos(ramp.angle);
+    const topCenter = { x: ramp.x + upperNormalX * ramp.h / 2, y: ramp.y + upperNormalY * ramp.h / 2 };
+    assert.ok(Math.abs(topCenter.x - 50) < 1e-9);
+    assert.ok(Math.abs(topCenter.y - (shaft.lowerTop + 1.75)) < 1e-9);
+  }
 });
