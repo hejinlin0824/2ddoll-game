@@ -95,6 +95,57 @@ try {
     }
   }
 
+  // Exercise the real hitscan implementation in Chromium with isolated fake targets.
+  // Targets live outside the visible level so the feedback sprites cannot pollute the visual screenshot.
+  await page.waitForFunction(() => typeof window.__combat?.applyHitscanDamage === 'function', undefined, { timeout: 10000 });
+  const hitscanCheck = await page.evaluate(() => {
+    const makeTarget = (x, zone, alive = true) => {
+      const hits = [];
+      return {
+        x, y: 100, radius: 0.4, zone, alive, hits,
+        zoneAt: () => zone,
+        hit(hitZone, damage, dir, armorMul) {
+          hits.push({ zone: hitZone, damage, dir, armorMul });
+          return { broke: null, absorbed: true };
+        },
+      };
+    };
+    const head = makeTarget(1003, 'head');
+    const body = makeTarget(1006, 'body');
+    const beyondRange = makeTarget(1030, 'body');
+    const dead = makeTarget(1002, 'body', false);
+    const behind = makeTarget(998, 'body');
+    const C = {
+      enemies: [body, beyondRange, behind, dead, head],
+      player: { lifestealPct: 0, torso: { getPosition: () => ({ x: 1000, y: 100 }) } },
+      pstate: { hp: 30, maxHp: 30 },
+      particles: [],
+    };
+    window.__combat.applyHitscanDamage(C, {
+      x: 1000, y: 100,
+      parts: [{ dx: 1, dy: 0, damage: 10 }],
+      stats: { range: 20, armorDmgMul: 1.5, falloff: 0.5 },
+    }, 20);
+    return {
+      head: head.hits,
+      body: body.hits,
+      beyondRange: beyondRange.hits,
+      dead: dead.hits,
+      behind: behind.hits,
+    };
+  });
+  assert(hitscanCheck.head.length === 1
+    && hitscanCheck.head[0].zone === 'head'
+    && hitscanCheck.head[0].damage === 20
+    && hitscanCheck.head[0].armorMul === 1.5,
+    `hitscan head-zone damage/armor contract failed: ${JSON.stringify(hitscanCheck)}`);
+  assert(hitscanCheck.body.length === 1
+    && hitscanCheck.body[0].damage === 5
+    && hitscanCheck.body[0].armorMul === 1.5,
+    `hitscan target ordering/falloff contract failed: ${JSON.stringify(hitscanCheck)}`);
+  assert(hitscanCheck.beyondRange.length === 0 && hitscanCheck.dead.length === 0 && hitscanCheck.behind.length === 0,
+    `hitscan must ignore dead, behind-muzzle, and out-of-range targets: ${JSON.stringify(hitscanCheck)}`);
+
   // Leave the menu if it is open; wait for the insertion animation before moving the test actor.
   await page.keyboard.press('Enter');
   await page.waitForTimeout(3600);
