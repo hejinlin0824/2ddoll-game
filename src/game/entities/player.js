@@ -1119,14 +1119,7 @@ export class Player {
       ctx.restore();
     };
 
-    // 自绘皮肤/装备外观:有贴图画贴图,没有回退程序绘制(贴图未解码的帧也回退,就绪后自然出现)。
-    // 贴图 contain(等比)进部件标准框(SKIN_BOX,与工坊编辑器同一份数据 → 所见即所得,不错位),
-    // 再应用用户微调(ox/oy 偏移 + scale 缩放,皮肤工坊里拖出来的就是这三个数)。
-    // 方向约定:竖直、上端=根(肩/髋/头顶)、下端=端(手/脚);远侧肢加滤镜压暗保持纵深
-    // Legacy bitmap skin renderer retired; the historical implementation is preserved on the archive branch.
-    const skinCap = () => false;
-    const hasSkin = () => false;
-    const skinEquip = () => false;
+    // Cosmetic kit components are painted directly in each live bone's local Canvas2D space.
 
     // 装备:在对应身体部件的局部空间里绘制(纸娃娃挂点式)
     // parts 支持两种零件:矩形 {x,y,w,h,color,r} / 图片 {img:素材id,x,y,w,h,rot}
@@ -1259,12 +1252,12 @@ export class Player {
     };
 
     // 远侧肢体(暗色)→ 躯干 → 头 → 近侧腿 → 枪 → 近侧臂
-    if (!skinCap(this.armUB, 'upperArm', true)) cap(this.armUB, D.upperArm, this.C.shirtDark || this.C.skinDark);
+    cap(this.armUB, D.upperArm, this.C.shirtDark || this.C.skinDark);
     armorPad(this.armUB,D.upperArm,'shoulder');
-    if (!skinCap(this.armLB, 'foreArm', true)) cap(this.armLB, D.foreArm, this.C.skinDark);
-    if (!hasSkin('foreArm')) hand(this.armLB);
-    if (!skinCap(this.legLB, 'calf', true)) boot(this.legLB, this.C.pantsDark, this.C.bootDark);
-    if (!skinCap(this.legUB, 'thigh', true)) cap(this.legUB, D.thigh, this.C.pantsDark);
+    cap(this.armLB, D.foreArm, this.C.skinDark);
+    hand(this.armLB);
+    boot(this.legLB, this.C.pantsDark, this.C.bootDark);
+    cap(this.legUB, D.thigh, this.C.pantsDark);
     armorPad(this.legUB,D.thigh,'knee');
 
     // Backpack is attached behind the torso pivot, not a screen-space decoration.
@@ -1285,27 +1278,17 @@ export class Player {
       ctx.translate(x, y); ctx.rotate(R(this.torso));
       {
         // 躯干基底:自绘皮肤(带微调变换)或程序躯体
-        const im = hasSkin('torso') ? skinImg('torso') : null;
-        if (im) {
-          ctx.save();
-          if (this.facing === -1) ctx.scale(-1, 1);
-          const layout = skinPartLayout('torso', im.naturalWidth, im.naturalHeight, ppm, skinXf('torso'));
-          if (layout) ctx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
-          ctx.restore();
-        } else {
-          const w = D.torso.w * ppm, h = D.torso.h * ppm;
-          ctx.fillStyle = this.C.shirt || this.C.skin;
-          ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
-          // 弹药带
-          ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 4;
-          ctx.beginPath(); ctx.moveTo(-w * 0.4, -h * 0.32); ctx.lineTo(w * 0.42, h * 0.05); ctx.stroke();
-          ctx.strokeStyle = '#3d2f21'; ctx.lineWidth = 4;
-          ctx.beginPath(); ctx.moveTo(-w * 0.42, h * 0.02); ctx.lineTo(w * 0.4, h * 0.38); ctx.stroke();
-          // 腰带
-          ctx.fillStyle = '#603a1e';
-          ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
-        }
+        const w = D.torso.w * ppm, h = D.torso.h * ppm;
+        ctx.fillStyle = this.C.shirt || this.C.skin;
+        ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.42); ctx.fill();
+        ctx.strokeStyle = 'rgba(15,22,30,0.78)'; ctx.lineWidth = Math.max(1.5, ppm * 0.055);
+        ctx.beginPath(); ctx.moveTo(-w * 0.36, -h * 0.28); ctx.lineTo(w * 0.34, h * 0.08); ctx.stroke();
+        ctx.strokeStyle = 'rgba(222,232,236,0.13)'; ctx.lineWidth = Math.max(0.7, ppm * 0.018);
+        ctx.beginPath(); ctx.moveTo(-w * 0.28, -h * 0.36); ctx.lineTo(-w * 0.22, h * 0.25); ctx.moveTo(w * 0.28, -h * 0.34); ctx.lineTo(w * 0.21, h * 0.25); ctx.stroke();
+        ctx.fillStyle = this.C.shirtDark || '#263747';
+        ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
       }
+
       // Real inventory armor is the base layer; cosmetic modular kit is drawn over it.
       if (this.loadout.torso) drawEquip(this.loadout.torso);
       // Anatomy-locked modular carrier: procedural plates, webbing and pouches follow the torso joint.
@@ -1380,14 +1363,7 @@ export class Player {
       const [x, y] = P(this.head);
       ctx.save();
       ctx.translate(x, y); ctx.rotate(R(this.head));
-      if (hasSkin('head')) {
-        const im = skinImg('head');
-        const layout = skinPartLayout('head', im.naturalWidth, im.naturalHeight, ppm, skinXf('head'));
-        ctx.save();
-        if (this.facing === -1) ctx.scale(-1, 1);
-        if (layout) ctx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
-        ctx.restore();
-      } else {
+      {
         const r = D.headR * ppm;
         // 脖子(随头旋转,始终连接头与颈关节锚点;画在身体 -y 方向,朝向躯干)
         ctx.strokeStyle = this.C.skin; ctx.lineWidth = 0.078 * ppm; ctx.lineCap = 'round';
@@ -1461,14 +1437,14 @@ export class Player {
       ctx.restore();
     }
 
-    if (!skinCap(this.legLF, 'calf')) boot(this.legLF, this.C.pants, this.C.boot);
-    if (!skinCap(this.legUF, 'thigh')) cap(this.legUF, D.thigh, this.C.pants);
+    boot(this.legLF, this.C.pants, this.C.boot);
+    cap(this.legUF, D.thigh, this.C.pants);
     armorPad(this.legUF,D.thigh,'knee');
     gun();
-    if (!skinCap(this.armUF, 'upperArm')) cap(this.armUF, D.upperArm, this.C.shirt || this.C.skin);
+    cap(this.armUF, D.upperArm, this.C.shirt || this.C.skin);
     armorPad(this.armUF,D.upperArm,'shoulder');
-    if (!skinCap(this.armLF, 'foreArm')) cap(this.armLF, D.foreArm, this.C.skin);
-    if (!hasSkin('foreArm')) hand(this.armLF);
+    cap(this.armLF, D.foreArm, this.C.skin);
+    hand(this.armLF);
 
     // 轻量战术换弹指示:在操作员头部上方显示渐进式进度,不使用 DOM/滤镜动画。
     if (this.reloadT > 0 && this.reloadTotalT > 0) {
