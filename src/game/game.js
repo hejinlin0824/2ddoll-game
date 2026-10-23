@@ -23,7 +23,8 @@ import { bullets, spawnBullet, castRay, rayAABB, alertEnemiesNear, applyHitscanD
 import { createRaidState, resetRaidState, emitRaidNoise, raidShotProfile, beginRaidIncident, updateRaid, floorForY, floorLabel, RAID_FLOORS } from './systems/raid.js';
 import { lightingState, resetLightingState, updateLighting, drawLighting, lightLevelAt, toggleBuildingPower, toggleNightVision as toggleNightVisionMode, toggleFlashlight as toggleFlashlightMode } from './systems/lighting.js';
 import { raidVisionProfile } from './domain/raidVisibility.js';
-import { RAID_CAMPAIGN_SAVE_KEY, RAID_CAMPAIGN_TITLE, createRaidCampaignState, resetRaidCampaignState, updateRaidCampaign, getRaidObjective, advanceRaidDialogue, secureRaidIntel, completeRaidCampaign } from './domain/raidCampaign.js';
+import { RAID_CAMPAIGN_CHECKPOINT_KEY, RAID_CAMPAIGN_SAVE_KEY, RAID_CAMPAIGN_TITLE, createRaidCampaignCheckpoint, createRaidCampaignState, getRaidCampaignResumeSpawn, normalizeRaidCampaignCheckpoint, resetRaidCampaignState, restoreRaidCampaignCheckpoint, updateRaidCampaign, getRaidObjective, advanceRaidDialogue, secureRaidIntel, completeRaidCampaign } from './domain/raidCampaign.js';
+import { isRaidStairStepAt, keepRaidSpawnOutOfStairwell } from './domain/raidLayout.js';
 import { resetFogOfWar, updateFogOfWar, drawFogOfWar, isWorldCurrentlyVisible, getFogDiagnostics } from './systems/fogOfWar.js';
 import { createGrappleState, fireGrapple, stepGrapple, drawGrapple, releaseGrapple } from './systems/grapple.js';
 import { particles, beams, debris, decals, floaters, flash, burst, rings, explosion, spawnHelmetDebris, spawnVestDebris, addDecal, gibBurst, stepFx, decayTimers, setGhost, setHitFlash, ghostT, hitFlashT } from './systems/fx.js';
@@ -43,6 +44,18 @@ const SCV = 448;
 const scopeCv = document.createElement('canvas');
 scopeCv.width = SCV; scopeCv.height = SCV;
 const sctx = scopeCv.getContext('2d');
+function readRaidCheckpoint() {
+  try {
+    return normalizeRaidCampaignCheckpoint(JSON.parse(localStorage.getItem(RAID_CAMPAIGN_CHECKPOINT_KEY) || 'null'));
+  } catch {
+    return null;
+  }
+}
+
+let raidResumeCheckpoint = (localStorage.getItem('contra-scene') || 'wild') === 'raid'
+  ? readRaidCheckpoint() : null;
+if (raidResumeCheckpoint) LEVEL.spawn = getRaidCampaignResumeSpawn(raidResumeCheckpoint);
+
 if (!ctx.roundRect) {
   ctx.roundRect = function (x, y, w, h, r) {
     const rr = typeof r === 'number' ? r : Math.min(w, h) / 2;
@@ -74,6 +87,35 @@ const pickups = [];    // 掉落物:金币 / 0 耐久装备
 let respawnFx = null; // 玩家重生/手动复位的轻量战术部署效果(真实时间计时)
 const raidState = createRaidState((localStorage.getItem('contra-scene') || 'wild') === 'raid');
 const raidCampaign = createRaidCampaignState((localStorage.getItem('contra-scene') || 'wild') === 'raid');
+if (raidState.enabled && raidResumeCheckpoint) {
+  const restored = restoreRaidCampaignCheckpoint(raidCampaign, raidResumeCheckpoint);
+  if (restored) {
+    Object.assign(raidState.clearedFloors, restored.clearedFloors);
+    raidState.rappelDone = restored.stage !== 'insertion';
+  }
+}
+let raidCheckpointSignature = '';
+function persistRaidCheckpoint() {
+  if (!raidState.enabled) return;
+  if (raidCampaign.completed) {
+    try { localStorage.removeItem(RAID_CAMPAIGN_CHECKPOINT_KEY); } catch { /* storage may be disabled */ }
+    raidCheckpointSignature = '';
+    raidResumeCheckpoint = null;
+    return;
+  }
+  const checkpoint = createRaidCampaignCheckpoint(raidCampaign, raidState.clearedFloors);
+  if (!checkpoint) return;
+  const clearedKey = [3, 2, 1, 0].map((id) => checkpoint.clearedFloors[id] ? '1' : '0').join('');
+  const signature = [checkpoint.stage, clearedKey, checkpoint.intelSecured ? '1' : '0',
+    Math.floor(checkpoint.elapsedSeconds / 5)].join(':');
+  if (signature === raidCheckpointSignature) return;
+  raidCheckpointSignature = signature;
+  try {
+    localStorage.setItem(RAID_CAMPAIGN_CHECKPOINT_KEY, JSON.stringify(checkpoint));
+    raidResumeCheckpoint = checkpoint;
+    LEVEL.spawn = getRaidCampaignResumeSpawn(checkpoint);
+  } catch { /* current mission remains playable when persistence is unavailable */ }
+}
 const grappleState = createGrappleState();
 resetFogOfWar(localStorage.getItem('contra-scene') || 'wild');
 let raidIntro = null; // 剿匪行动：开局/重生的屋顶绳降动画
@@ -149,6 +191,7 @@ function spawnGarrisons(sceneId = (localStorage.getItem('contra-scene') || 'wild
   // custom 自建关卡的守军坐标没有逐点校准,该模式从第一波运输机开始。
   if (sceneId === 'custom') return;
   for (const g of (GARRISONS[sceneId] || GARRISONS.wild)) {
+    if (sceneId === 'raid' && raidState.clearedFloors[g.floor]) continue;
     enemies.push(new Dummy(world, { x: g.x, y: g.y }, {
       behavior: g.behavior, min: g.min, max: g.max, face: g.face,
       role: g.role, raidMode: sceneId === 'raid', raidFloorId: g.floor,
@@ -159,9 +202,8 @@ function spawnGarrisons(sceneId = (localStorage.getItem('contra-scene') || 'wild
 }
 spawnGarrisons();
 if (raidState.enabled) {
-  beginRaidRappel();
-  // 已保存为剿匪行动时，首帧就把镜头放在屋顶插入点，避免先闪出野外原点。
-  cam.x = 4.2; cam.y = 12.1; cam.zoom = 1;
+  if (!raidResumeCheckpoint || raidResumeCheckpoint.stage === 'insertion') beginRaidRappel();
+  cam.x = LEVEL.spawn.x; cam.y = LEVEL.spawn.y + 1.6; cam.zoom = 1;
 }
 
 function beginRaidRappel() {
@@ -238,7 +280,7 @@ function resetPlayer() {
   resetStreak(); // 死亡清空连杀
   const sp = player.torso.getPosition();
   respawnFx = { x: sp.x, y: sp.y, t: 0, duration: 1.12 };
-  if (raidState.enabled) beginRaidRappel();
+  if (raidState.enabled && !raidState.rappelDone) beginRaidRappel();
 }
 
 // 玩家装备视觉/耐久绑定到背包里的"已装备"实例;防具词缀聚合为玩家属性
@@ -296,6 +338,8 @@ function switchScene(sceneId) {
   if (raidInsertionAudioActive) { updateAircraftLoop(raidInsertionAudioEmitter, 0, 0, 0, 0, false, 'transport', 0); raidInsertionAudioActive = false; }
   // 先校验/准备布局,自定义地图存档异常时不要先销毁当前战场。
   if (!setActiveLayout(sceneId)) return false;
+  raidResumeCheckpoint = sceneId === 'raid' ? readRaidCheckpoint() : null;
+  if (raidResumeCheckpoint) LEVEL.spawn = getRaidCampaignResumeSpawn(raidResumeCheckpoint);
   // 先关闭所有持有旧实体引用的浮层/轮盘,再销毁旧物理世界中的刚体。
   wheel.forceClose();
   stopAllWorldLoops();
@@ -337,8 +381,15 @@ function switchScene(sceneId) {
   pstate.hp = pstate.maxHp;
   resetRaidState(raidState, sceneId === 'raid');
   resetRaidCampaignState(raidCampaign, sceneId === 'raid');
+  if (raidState.enabled && raidResumeCheckpoint) {
+    const restored = restoreRaidCampaignCheckpoint(raidCampaign, raidResumeCheckpoint);
+    if (restored) {
+      Object.assign(raidState.clearedFloors, restored.clearedFloors);
+      raidState.rappelDone = restored.stage !== 'insertion';
+    }
+  }
   spawnGarrisons(sceneId);
-  if (raidState.enabled) beginRaidRappel();
+  if (raidState.enabled && (!raidResumeCheckpoint || raidResumeCheckpoint.stage === 'insertion')) beginRaidRappel();
   waves = createWaveDirector();
 
   cam.x = sceneId === 'raid' ? 4.2 : 0; cam.y = sceneId === 'raid' ? 12.1 : 3.4; cam.zoom = 1; cam.scoped = 0;
@@ -460,7 +511,8 @@ function spawnRaidReinforcements(caller) {
   if (packet.response === 'infantry' || packet.response === 'combined') {
     const count = 2 + Math.floor(Math.random() * 2);
     for (let i = 0; i < count; i++) {
-      const spawnX = clamp(packet.x + side * (12.5 + i * 1.2), 2.1, 71.9);
+      const candidateX = clamp(packet.x + side * (12.5 + i * 1.2), 2.1, 71.9);
+      const spawnX = keepRaidSpawnOutOfStairwell(candidateX, caller.x);
       const role = i === 0 ? 'rusher' : (i === count - 1 ? 'support' : 'rifleman');
       const d = new Dummy(world, { x: spawnX, y: floorY }, {
         behavior: 'patrol', min: -1.0, max: 1.0, face: -side, patrolDir: -side,
@@ -754,9 +806,7 @@ function step(dt) {
   if (raidState.enabled && input.jumpHeld && player.grounded && !player.ragdoll && !raidIntro) {
     const p = player.torso.getPosition();
     const footY = p.y - (player.crouched ? 0.48 : 0.78);
-    const onStair = LEVEL.rects.some((r) => r.type === 'stair'
-      && Math.abs(p.x - r.x) <= r.w / 2 + 0.34
-      && Math.abs(footY - (r.y + r.h / 2)) <= 0.28);
+    const onStair = isRaidStairStepAt(p.x, footY, LEVEL.rects);
     if (onStair) input.jumpPressed = true;
   }
   player.update(dt, input);
@@ -904,6 +954,7 @@ function step(dt) {
   if (raidState.enabled) {
     updateRaid(dt, { state: raidState, player, enemies, playerAlive, rects: LEVEL.rects });
     updateRaidCampaign(raidCampaign, dt, { enabled: true, rappelDone: raidState.rappelDone, clearedFloors: raidState.clearedFloors, playerAlive });
+    persistRaidCheckpoint();
   }
   waves.update(dt, enemies, player, playerAlive);
   for (const e of enemies) {
