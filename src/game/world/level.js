@@ -1,6 +1,6 @@
 // 关卡地形:静态刚体 + 视差背景绘制
 import { Box, Vec2 } from 'planck';
-import { createRaidTraversalStairs } from '../domain/raidLayout.js';
+import { createRaidTraversalStairs, RAID_STAIR_OPENING } from '../domain/raidLayout.js';
 
 export const CAT = { GROUND: 0x1, PLAYER: 0x2, LIMB: 0x4 };
 
@@ -168,28 +168,29 @@ export const LAYOUTS = {
       raidFloorId: Math.round(floorTop / 3.5), interactive: true, destructible: true, hp: 8, maxHp: 8,
     });
     const crate = (x, floorTop, type = 'crate') => ({ x, y: floorTop + 0.52, w: 1.0, h: 1.04, type, destructible: true });
+    const floorSpan = (top) => [
+      floor(RAID_STAIR_OPENING.left / 2, top, RAID_STAIR_OPENING.left),
+      floor((74 + RAID_STAIR_OPENING.right) / 2, top, 74 - RAID_STAIR_OPENING.right),
+    ];
     return [
       ground90(),
-      // 主配电柜位于地面入口侧；传感器刚体仅用于交互定位，不会挡住玩家。
+      // 入口配电柜位于地面入口侧，整栋楼清剿后也可在此发出撤离信号。
       { x: 2.5, y: 1.15, w: 0.46, h: 0.82, type: 'breaker', breakerId: 'main', raidFloorId: 0, interactive: true, destructible: false, sensor: true },
-      // 屋顶(10.5m)：在 x≈16 留垂降井；下面两层的落井口交错，防止一次直穿整栋楼。
-      floor(7, 10.25, 14), floor(46, 10.25, 56),
-      // 三层(7m)：靠左落井；右段为可清理的独立房间。
-      floor(14, 6.75, 28), floor(53, 6.75, 42),
-      // 二层(3.5m)：右侧落井到地面。
-      floor(24, 3.25, 48), floor(63, 3.25, 22),
-      // 建筑外侧可破坏墙柱，屋顶到一层有贯通的室内尺度。
+      // 四层统一保留同一条中央楼梯井。屋顶插入点在井道左侧，沿屋顶可直接抵达楼梯入口。
+      ...floorSpan(10.25),
+      ...floorSpan(6.75),
+      ...floorSpan(3.25),
+      // 建筑外侧可破坏墙柱；中央井道和回撤路线保持连续畅通。
       wall(0.25, 0, 0.5, 10.5), wall(73.75, 0, 0.5, 10.5),
-      ...partition(11, 0, 'g-01'), ...partition(29, 0, 'g-02'), ...partition(45, 0, 'g-03'), ...partition(61, 0, 'g-04'),
+      ...partition(11, 0, 'g-01'), ...partition(29, 0, 'g-02'), ...partition(42, 0, 'g-03'), ...partition(61, 0, 'g-04'),
       ...partition(17, 3.5, 'f1-01'), ...partition(37, 3.5, 'f1-02'), ...partition(58, 3.5, 'f1-03'),
       ...partition(23, 7, 'f2-01'), ...partition(43, 7, 'f2-02'), ...partition(62, 7, 'f2-03'),
-      // 可打烂的顶灯和掩体；每层至少两盏灯，破坏后该区域会更暗、守军更难看清目标。
-      ...[4, 19, 34, 50, 67].map((x, i) => lamp(x, 0, `g-lamp-${i}`)),
-      ...[6, 28, 48, 66].map((x, i) => lamp(x, 3.5, `f1-lamp-${i}`)),
-      ...[6, 31, 51, 68].map((x, i) => lamp(x, 7, `f2-lamp-${i}`)),
-      // The three offset drop shafts are also the return route: seven overlapping physical treads per flight.
+      // 照明和掩体避开楼梯井，避免灯体、箱体压住上下楼梯的落点。
+      ...[4, 19, 34, 57, 67].map((x, i) => lamp(x, 0, `g-lamp-${i}`)),
+      ...[6, 28, 64, 66].map((x, i) => lamp(x, 3.5, `f1-lamp-${i}`)),
+      ...[6, 31, 57, 68].map((x, i) => lamp(x, 7, `f2-lamp-${i}`)),
       ...createRaidTraversalStairs(),
-      ...[crate(7, 0), crate(36, 0, 'steel'), crate(54, 0), crate(9, 3.5, 'steel'), crate(28, 3.5), crate(48, 3.5), crate(9, 7), crate(34, 7, 'steel'), crate(54, 7)],
+      ...[crate(7, 0), crate(36, 0, 'steel'), crate(58, 0), crate(9, 3.5, 'steel'), crate(28, 3.5), crate(64, 3.5), crate(9, 7), crate(34, 7, 'steel'), crate(38, 7)],
     ];
   })(),
  };
@@ -739,10 +740,10 @@ export function drawRaidFloorplan(ctx, w2s, ppm, isVisible = () => false) {
   ctx.strokeStyle = '#8daebe';
   ctx.lineWidth = Math.max(1, ppm * 0.018);
   const floors = [
-    { y: 10.5, spans: [[0, 14], [18, 74]], partitions: [] },
-    { y: 7, spans: [[0, 28], [32, 74]], partitions: [23, 43, 62] },
-    { y: 3.5, spans: [[0, 48], [52, 74]], partitions: [17, 37, 58] },
-    { y: 0, spans: [[0, 74]], partitions: [11, 29, 45, 61] },
+    { y: 10.5, spans: [[0, RAID_STAIR_OPENING.left], [RAID_STAIR_OPENING.right, 74]], partitions: [] },
+    { y: 7, spans: [[0, RAID_STAIR_OPENING.left], [RAID_STAIR_OPENING.right, 74]], partitions: [23, 43, 62] },
+    { y: 3.5, spans: [[0, RAID_STAIR_OPENING.left], [RAID_STAIR_OPENING.right, 74]], partitions: [17, 37, 58] },
+    { y: 0, spans: [[0, 74]], partitions: [11, 29, 42, 61] },
   ];
   for (const floor of floors) {
     for (const [x0, x1] of floor.spans) drawSegment(x0, floor.y, x1, floor.y);
