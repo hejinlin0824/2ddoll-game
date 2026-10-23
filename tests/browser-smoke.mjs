@@ -592,7 +592,19 @@ try {
       const canvas = document.getElementById('game');
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const values = [], green = [];
+      const game = window.__game();
+      const state = window.__lighting();
+      const pos = game.player.torso.getPosition();
+      const cam = game.cam;
+      const ppm = 52 * cam.zoom;
+      // Measure a local circular ROI in front of the operator where the flashlight cone should land;
+      // a full-screen mean can hide useful local illumination in a mostly black stealth scene.
+      const targetWorldX = pos.x + Math.cos(state.flashlightAngle) * 3.2;
+      const targetWorldY = pos.y + 0.1 + Math.sin(state.flashlightAngle) * 3.2;
+      const targetPixelX = Math.round((targetWorldX - cam.x) * ppm + canvas.width / 2);
+      const targetPixelY = Math.round(canvas.height * 0.60 - (targetWorldY - cam.y) * ppm);
+      const localRadius = Math.round(1.15 * ppm);
+      const values = [], green = [], localValues = [];
       let dark = 0, bright = 0, n = 0;
       for (let y = 36; y < canvas.height - 24; y += 6) {
         for (let x = 36; x < canvas.width - 24; x += 6) {
@@ -600,6 +612,7 @@ try {
           const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
           const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
           values.push(l);
+          if (Math.hypot(x - targetPixelX, y - targetPixelY) <= localRadius) localValues.push(l);
           if (l < 42) dark++;
           if (l > 160) bright++;
           if (g > r * 1.12 && g > b * 1.12) green.push(1);
@@ -607,14 +620,22 @@ try {
         }
       }
       values.sort((a, b) => a - b);
+      localValues.sort((a, b) => a - b);
       const mean = values.reduce((sum, v) => sum + v, 0) / Math.max(1, values.length);
-      const p = (q) => values[Math.min(values.length - 1, Math.floor(values.length * q))] || 0;
-      const game = window.__game();
-      const pos = game.player.torso.getPosition();
+      const localMean = localValues.reduce((sum, v) => sum + v, 0) / Math.max(1, localValues.length);
+      const p = (sample, q) => sample[Math.min(sample.length - 1, Math.floor(sample.length * q))] || 0;
       return {
-        state: window.__lighting(),
+        state,
         player: { x: +pos.x.toFixed(3), y: +pos.y.toFixed(3), facing: game.player.facing },
-        camera: { x: +game.cam.x.toFixed(3), y: +game.cam.y.toFixed(3), zoom: game.cam.zoom },
+        camera: { x: +cam.x.toFixed(3), y: +cam.y.toFixed(3), zoom: cam.zoom },
+        flashlightROI: {
+          centerPx: { x: targetPixelX, y: targetPixelY },
+          radiusPx: localRadius,
+          samples: localValues.length,
+          meanLuma: +localMean.toFixed(2),
+          median: +p(localValues, 0.5).toFixed(2),
+          p90: +p(localValues, 0.9).toFixed(2),
+        },
         renderErrors: {
           render: window.__lastRenderError?.msg || null,
           frame: window.__lastFrameError?.msg || null,
@@ -624,7 +645,7 @@ try {
         pixels: {
           samples: n,
           meanLuma: +mean.toFixed(2),
-          p10: +p(0.1).toFixed(2), median: +p(0.5).toFixed(2), p90: +p(0.9).toFixed(2),
+          p10: +p(values, 0.1).toFixed(2), median: +p(values, 0.5).toFixed(2), p90: +p(values, 0.9).toFixed(2),
           darkRatio: +(dark / Math.max(1, n)).toFixed(4),
           brightRatio: +(bright / Math.max(1, n)).toFixed(4),
           greenDominance: +(green.length / Math.max(1, n)).toFixed(4),
