@@ -1105,6 +1105,8 @@ export class Player {
     const armorPad = (b, d, kind) => {
       if (!this.appearance || (this.appearance.pads !== 'full' && !(kind === 'knee' && this.appearance.pads === 'knees'))) return;
       const [x,y]=P(b);ctx.save();ctx.translate(x,y);ctx.rotate(R(b));
+      // Attach pads at the anatomical end of the limb, not at the limb's bounding-box center.
+      if(kind==='shoulder')ctx.translate(0,-d.h*ppm*.29);else if(kind==='knee')ctx.translate(0,d.h*ppm*.40);
       const w=d.w*ppm*(kind==='shoulder'?1.04:.76),h=d.h*ppm*(kind==='shoulder'?.42:.24),ac=this.appearance.armorColor||'#263744';
       ctx.fillStyle=shadeKit(ac,1.25);ctx.strokeStyle='#0a1118';ctx.lineWidth=1.2;
       ctx.beginPath();ctx.roundRect(-w/2,-h/2,w,h,Math.min(w,h)*.32);ctx.fill();ctx.stroke();
