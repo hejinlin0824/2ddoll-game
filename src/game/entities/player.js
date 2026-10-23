@@ -1296,13 +1296,25 @@ export class Player {
 
     // Backpack is attached behind the torso pivot, not a screen-space decoration.
     if (this.appearance && this.appearance.backpack && this.appearance.backpack !== 'none') {
-      const [bx,by]=P(this.torso), bw=(this.appearance.backpack==='radio'?.23:.29)*ppm, bh=(this.appearance.backpack==='radio'?.43:.52)*ppm;
-      ctx.save();ctx.translate(bx,by);ctx.rotate(R(this.torso));ctx.translate(-this.facing*(D.torso.w*.50*ppm),-.02*ppm);
-      ctx.fillStyle=shadeKit(this.appearance.armorColor||'#263744',.68);ctx.strokeStyle='#080e14';ctx.lineWidth=1.4;
-      ctx.beginPath();ctx.roundRect(-bw/2,-bh/2,bw,bh,bw*.16);ctx.fill();ctx.stroke();
-      ctx.fillStyle=shadeKit(this.appearance.armorColor||'#263744',1.25);ctx.beginPath();ctx.roundRect(-bw*.34,-bh*.36,bw*.68,bh*.35,bw*.08);ctx.fill();ctx.stroke();
-      ctx.strokeStyle='rgba(228,237,240,.25)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-bw*.28,-bh*.25);ctx.lineTo(-bw*.28,bh*.34);ctx.moveTo(bw*.28,-bh*.25);ctx.lineTo(bw*.28,bh*.34);ctx.stroke();
-      if(this.appearance.backpack==='radio'){ctx.fillStyle='#4d5e67';ctx.fillRect(-bw*.13,-bh*.62,bw*.26,bh*.38);ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.beginPath();ctx.moveTo(0,-bh*.58);ctx.lineTo(bw*.25,-bh*.88);ctx.stroke();}
+      // In the side-view game the pack must read as a narrow rear-mounted object,
+      // not a second torso. A small overlap at the rear edge keeps it attached while
+      // leaving the front armor plate and belt unobscured.
+      const [bx,by]=P(this.torso);
+      const bw=(this.appearance.backpack==='radio'?.12:.16)*ppm;
+      const bh=(this.appearance.backpack==='radio'?.34:.40)*ppm;
+      ctx.save();ctx.translate(bx,by);ctx.rotate(R(this.torso));
+      ctx.translate(-this.facing*(D.torso.w*.50*ppm+bw*.24),-.03*ppm);
+      const pack= this.appearance.armorColor||'#263744';
+      ctx.fillStyle=shadeKit(pack,.58);ctx.strokeStyle='#080e14';ctx.lineWidth=Math.max(.8,Math.min(1.3,ppm*.022));
+      ctx.beginPath();ctx.roundRect(-bw/2,-bh/2,bw,bh,bw*.14);ctx.fill();ctx.stroke();
+      ctx.fillStyle=shadeKit(pack,1.18);ctx.beginPath();ctx.roundRect(-bw*.32,-bh*.34,bw*.64,bh*.27,bw*.08);ctx.fill();ctx.stroke();
+      ctx.strokeStyle='rgba(228,237,240,.22)';ctx.lineWidth=Math.max(.5,Math.min(.9,ppm*.013));
+      ctx.beginPath();ctx.moveTo(-bw*.25,-bh*.22);ctx.lineTo(-bw*.25,bh*.30);ctx.moveTo(bw*.25,-bh*.22);ctx.lineTo(bw*.25,bh*.30);ctx.stroke();
+      if(this.appearance.backpack==='radio'){
+        ctx.fillStyle='#4d5e67';ctx.fillRect(-bw*.10,-bh*.62,bw*.20,bh*.38);
+        ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.lineWidth=Math.max(.6,ppm*.012);
+        ctx.beginPath();ctx.moveTo(0,-bh*.58);ctx.lineTo(bw*.25,-bh*.88);ctx.stroke();
+      }
       ctx.restore();
     }
     // 躯干基底与模块化载具：始终锚定 torso 刚体局部空间
