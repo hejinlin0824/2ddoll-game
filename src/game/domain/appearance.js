@@ -9,7 +9,12 @@ const DEFAULTS = Object.freeze({
 });
 const HAIR = new Set(['short', 'buzz', 'ponytail', 'bun', 'long', 'spiky', 'undercut']);
 const FACE = new Set(['round', 'oval', 'angular']);
-const HEADWEAR = new Set(['none', 'bandana', 'headset']);\nconst KIT = new Set(['plate', 'chest', 'slick']);\nconst HELMET = new Set(['highcut', 'full', 'cap', 'none']);\nconst EYEWEAR = new Set(['goggles', 'clear', 'none']);\nconst PADS = new Set(['full', 'knees', 'none']);\nconst PACK = new Set(['assault', 'radio', 'none']);
+const HEADWEAR = new Set(['none', 'bandana', 'headset']);
+const KIT = new Set(['plate', 'chest', 'slick']);
+const HELMET = new Set(['highcut', 'full', 'cap', 'none']);
+const EYEWEAR = new Set(['goggles', 'clear', 'none']);
+const PADS = new Set(['full', 'knees', 'none']);
+const PACK = new Set(['assault', 'radio', 'none']);
 const HEX = /^#[0-9a-f]{6}$/i;
 let rawCache = undefined;
 let valueCache = { ...DEFAULTS };
@@ -33,6 +38,12 @@ export function loadAppearance() {
     bootColor: safeHex(input.bootColor, DEFAULTS.bootColor),
     bandanaColor: safeHex(input.bandanaColor, DEFAULTS.bandanaColor),
     headwear: HEADWEAR.has(input.headwear) ? input.headwear : DEFAULTS.headwear,
+    kitStyle: KIT.has(input.kitStyle) ? input.kitStyle : DEFAULTS.kitStyle,
+    helmetStyle: HELMET.has(input.helmetStyle) ? input.helmetStyle : DEFAULTS.helmetStyle,
+    eyewear: EYEWEAR.has(input.eyewear) ? input.eyewear : DEFAULTS.eyewear,
+    pads: PADS.has(input.pads) ? input.pads : DEFAULTS.pads,
+    backpack: PACK.has(input.backpack) ? input.backpack : DEFAULTS.backpack,
+    armorColor: safeHex(input.armorColor, DEFAULTS.armorColor),
     accentColor: safeHex(input.accentColor, DEFAULTS.accentColor),
   };
   return valueCache;
@@ -69,7 +80,8 @@ export function appearancePalette(a = loadAppearance()) {
     pants: a.pantsColor, pantsDark: shade(a.pantsColor, 0.72),
     boot: a.bootColor, bootDark: shade(a.bootColor, 0.70),
     bandana: a.bandanaColor, bandanaDark: shade(a.bandanaColor, 0.72),
-    wood: a.accentColor,\n    armor: a.armorColor || '#263744', armorDark: shade(a.armorColor || '#263744', 0.62), armorHi: shade(a.armorColor || '#263744', 1.38),
+    wood: a.accentColor,
+    armor: a.armorColor || '#263744', armorDark: shade(a.armorColor || '#263744', 0.62), armorHi: shade(a.armorColor || '#263744', 1.38),
   };
 }
 export { DEFAULTS as DEFAULT_APPEARANCE, KEY as APPEARANCE_STORAGE_KEY };
