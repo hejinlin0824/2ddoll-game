@@ -9,7 +9,7 @@ import { CAT, groundYAt } from '../world/level.js';
 import { particles, addDecal, bloodJet } from '../systems/fx.js';
 import { loadSavedGun, loadEquip, loadAssets, loadGunBuild, GUN_PRESETS, PISTOL_STATS, DEFAULT_STATS } from '../domain/gunPresets.js';
 import { computeGunMods, rollAffixes, loadGunAffixes, saveGunAffixes } from '../domain/affixes.js';
-import { skinImg, skinXf, skinFitScale, SKIN_END_ANCHORED, SKIN_BOX } from '../domain/skin.js';
+import { skinImg, skinXf, skinPartLayout } from '../domain/skin.js';
 import { loadAppearance, appearancePalette, appearanceRevision } from '../domain/appearance.js';
 import { equipmentPartCenter } from '../domain/equipmentGeometry.js';
 import { RIG_DIMS as D, RIG_ANCHORS as A, DEFAULT_RIG_POSE } from '../domain/rigGeometry.js';
@@ -1119,19 +1119,15 @@ export class Player {
       if (!this.useSkin) return false;
       const im = skinImg(part);
       if (!im) return false;
-      const box = SKIN_BOX[part];
       const xf = skinXf(part);
+      const layout = skinPartLayout(part, im.naturalWidth, im.naturalHeight, ppm, xf);
+      if (!layout) return false;
       const [x, y] = P(b);
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(R(b));
-      const f = skinFitScale(part, im.naturalWidth, im.naturalHeight);
-      const us = (xf.scale || 1);
-      const dw = im.naturalWidth * f.sx * ppm * us, dh = im.naturalHeight * f.sy * ppm * us; // f 是米/像素,必须乘 ppm
-      // 端点锚定(foreArm/calf):图底对齐身体末端 —— 小臂底=手=枪握点,小腿底=脚底=落地;其余居中
-      const dy = SKIN_END_ANCHORED[part] ? (box.h / 2 - (box.tip || 0)) * ppm - dh : -dh / 2;
       if (dark) ctx.filter = 'brightness(0.72) saturate(0.85)';
-      ctx.drawImage(im, -dw / 2 + (xf.ox || 0) * ppm, dy + (xf.oy || 0) * ppm, dw, dh);
+      ctx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
       ctx.filter = 'none';
       ctx.restore();
       return true;
@@ -1142,13 +1138,11 @@ export class Player {
     const skinEquip = (part) => {
       const im = this.useSkin ? skinImg(part) : null;
       if (!im) return false;
-      const xf = skinXf(part);
+      const layout = skinPartLayout(part, im.naturalWidth, im.naturalHeight, ppm, skinXf(part));
+      if (!layout) return false;
       ctx.save();
       if (this.facing === -1) ctx.scale(-1, 1);
-      const f = skinFitScale(part, im.naturalWidth, im.naturalHeight);
-      const s = f.sx * ppm * (xf.scale || 1); // 头盔/背心是长度定标,sx==sy
-      ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
-        -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
+      ctx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
       ctx.restore();
       return true;
     };
@@ -1301,11 +1295,8 @@ export class Player {
         if (im) {
           ctx.save();
           if (this.facing === -1) ctx.scale(-1, 1);
-          const xf = skinXf('torso');
-          const f = skinFitScale('torso', im.naturalWidth, im.naturalHeight);
-          const s = f.sx * ppm * (xf.scale || 1); // 躯干是长度定标,sx==sy
-          ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
-            -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
+          const layout = skinPartLayout('torso', im.naturalWidth, im.naturalHeight, ppm, skinXf('torso'));
+          if (layout) ctx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
           ctx.restore();
         } else {
           const w = D.torso.w * ppm, h = D.torso.h * ppm;
@@ -1375,13 +1366,10 @@ export class Player {
       ctx.translate(x, y); ctx.rotate(R(this.head));
       if (hasSkin('head')) {
         const im = skinImg('head');
-        const xf = skinXf('head');
-        const f = skinFitScale('head', im.naturalWidth, im.naturalHeight);
-        const s = f.sx * ppm * (xf.scale || 1); // 头是长度定标,sx==sy
+        const layout = skinPartLayout('head', im.naturalWidth, im.naturalHeight, ppm, skinXf('head'));
         ctx.save();
         if (this.facing === -1) ctx.scale(-1, 1);
-        ctx.drawImage(im, -im.naturalWidth * s / 2 + (xf.ox || 0) * ppm,
-          -im.naturalHeight * s / 2 + (xf.oy || 0) * ppm, im.naturalWidth * s, im.naturalHeight * s);
+        if (layout) ctx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
         ctx.restore();
       } else {
         const r = D.headR * ppm;
