@@ -453,8 +453,8 @@ function updateHint() {
     helmet: '盔形对称可跳过;歪了就点 盔顶 → 再点 盔沿', vest: '领口对称可跳过;歪了就点 领口 → 再点 下摆',
   }[ed.part];
   $('mHint').textContent = ed.mode === 'mark'
-    ? `标记模式:${markHelp}(两次点击,素材自动转正)`
-    : '拖动模式:按住图片拖动微调位置;滚轮/滑条缩放 —— 虚线框是部件标准框,和游戏里一模一样';
+    ? `标记模式:${markHelp}(两次点击,图片转正并记录真实骨骼挂点)`
+    : '拖动模式:微调偏移;滚轮/滑条缩放。青色十字是当前骨骼挂点,缩放/拖动不会改动该解剖点';
 }
 function renderEditor() {
   const W = mCv.width, H = mCv.height;
@@ -522,6 +522,18 @@ function renderEditor() {
     mCtx.font = 'bold 10px "Noto Sans SC"';
     mCtx.fillText(label, p[0] + 8, p[1] - 6);
   };
+  // Cyan crosshair is the exact target pivot used by Player.draw and the assembled preview.
+  const pivotTargetX = cx + (ed.xf.ox || 0) * mEPPM;
+  const pivotTargetY = (SKIN_END_ANCHORED[ed.part] ? tipY : cy) + (ed.xf.oy || 0) * mEPPM;
+  mCtx.save();
+  mCtx.strokeStyle = '#5edcff';
+  mCtx.lineWidth = 1.5;
+  mCtx.beginPath();
+  mCtx.moveTo(pivotTargetX - 9, pivotTargetY); mCtx.lineTo(pivotTargetX + 9, pivotTargetY);
+  mCtx.moveTo(pivotTargetX, pivotTargetY - 9); mCtx.lineTo(pivotTargetX, pivotTargetY + 9);
+  mCtx.arc(pivotTargetX, pivotTargetY, 3, 0, Math.PI * 2);
+  mCtx.stroke();
+  mCtx.restore();
   drawPt(ed.markA, '#57d05f', '上');
   drawPt(ed.markB, '#e0523c', '下');
 }
