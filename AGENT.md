@@ -25,7 +25,7 @@
 ## 页面与目录
 
 - game.html(游戏)/ weapon-editor.html(枪械设计器)/ level-editor.html(关卡设计器)/
-  skin-studio.html(皮肤工坊)/ asset-studio.html(装备工坊,暂缓)/ fonts.html(字体审批)
+  skin-studio.html(干员装备工坊)/ asset-studio.html(装备工坊,暂缓)/ fonts.html(字体审批)
 - src/game/
   - game.js          装配根:world/player/waves 组装、依赖包 C、step/frame 编排、调试句柄、渲染
   - core/config.js   分辨率与物理常量
@@ -140,7 +140,7 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
 | `contra-skill` | 熟练度 |
 | `contra-shield` / `contra-shield-hp` | 盾牌是否装备 / 耐久 |
 | `contra-inv` | 背包(金币+装备实例,inventory.js) |
-| `contra-skin` | **自绘皮肤六件套**(皮肤工坊产物,skin.js;头/躯干/大臂/小臂/大腿/小腿) |
+| `contra-skin` | **旧版位图皮肤存档(已停用)**；仅历史兼容/几何测试使用，不再由游戏或干员装备工坊绘制 |
 | `contra-scene` | 选中的场景('wild'/'custom';level.js 的自定义关卡守卫拿它当事实来源) |
 
 - 主武器:双手 IK 持枪,8.5 发/秒,弹 6→34 m/s,镜头微震;副武器手枪:单手 0.22m、4 发/秒。
@@ -636,3 +636,12 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
 - **回楼梯辅助**:建筑关卡的 `input.jumpHeld` 只在 `raidState.enabled`、玩家落地且脚底贴近 `type:'stair'` 踏步时转成重复跳跃；普通地面跳仍为单次按键触发。不要把自动跳跃扩散到所有平台，否则会影响潜行和常规平台跳手感。Ctrl+左键钩锁不改变普通开火状态。
 - **导航标识**:各楼层的楼梯口有纯 Canvas 方向标牌，标注 `UP / LEVEL 02`、`DOWN / GROUND` 等目的层；这类静态标识必须在战争迷雾未探索区域被遮住，只能在当前可视区域正常显示，已探索区域由低亮度 floorplan 轮廓引导，不能把整层内容永久暴露。
 - **雾效性能**:世界空间探索遮罩用低分辨率纹理平滑放大，射线遮挡仍在世界坐标计算；可视区射线/画布读回应限流到 20Hz（`fogOfWar.js` 的 accumulator），不要把每帧 `getImageData` 恢复成全窗口分辨率。FOW 当前遮罩只驱动动态实体绘制/显隐与布局记忆，敌人 AI 的感知逻辑仍由 `raid.js` 单独判断。
+
+
+## 干员装备工坊重做（2026-10-23）
+
+- 当前入口仍是 `skin-studio.html`，但页面与 `src/designer/skinStudio.js` 已完全改为**干员装备工坊**：Canvas2D 程序化绘制插板背心/胸挂/轻型载具、头盔轮廓、护目镜、肩甲、护膝、背包、腰带、弹匣袋、识别贴与配色；无外部图片素材依赖。
+- 当前正式存档键仍为 `contra-appearance-v1`，以兼容原角色配色/发型；新增 `kitStyle`、`helmetStyle`、`eyewear`、`pads`、`backpack`、`armorColor` 字段。A/B/C 槽保留在 `contra-appearance-profiles-v1`，草稿键仍为 `contra-appearance-draft-v2`。
+- 游戏端 `player.js` 使用同一份外观字段，在躯干/头部局部坐标中 Canvas2D 绘制模块化载具和头盔；骨骼、关节、碰撞体、命中与真实护甲数值不变。真实 `contra-equip-head` / `contra-equip-torso` 装备仍单独绘制并保留数值。
+- 旧版 `contra-skin` 位图拼件渲染已经停用；其源代码与重做前工作树完整保存在分支 `archive/skin-system-before-redesign-2026-10-23`，不要直接删除历史模块/旧测试，以便追溯和回滚。此分支是备份，不是发布分支。
+- 回归：`tests/browser-smoke.mjs` 现在验证新工坊 Canvas 重绘、模块字段保存、游戏页读取和控制台错误；`skin-studio-rig.png` / `skin-game-rig.png` 是新系统截图。运行 `node --test tests/*.test.mjs`、`npm run build`，并查看 GitHub Actions；不要再运行旧版 `__skinTest` / 透明图 pivot 的 UI 测试流程。
