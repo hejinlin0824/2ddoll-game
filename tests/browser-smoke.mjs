@@ -127,6 +127,7 @@ try {
     campaign: window.__raid().campaign,
     dialogueElements: !!(document.getElementById('raidDialogue') && document.getElementById('raidMissionStatus')),
     intelTerminals: window.__level().filter((r) => r.type === 'intel').map((r) => ({ x: r.x, y: r.y, id: r.intelId, sensor: r.sensor })),
+    intelObjective: /COMMS/.test(document.getElementById('raidMissionStatus')?.textContent || ''),
     stairLandings: [10.25, 6.75, 3.25].map((y) => window.__level()
       .filter((r) => r.type === 'concrete' && Math.abs(r.y - y) < 0.01)
       .map((r) => ({ left: +(r.x - r.w / 2).toFixed(3), right: +(r.x + r.w / 2).toFixed(3) }))),
@@ -143,6 +144,7 @@ try {
   assert(boot.intelTerminals.length === 1 && boot.intelTerminals[0].id === 'missing-list'
     && boot.intelTerminals[0].sensor && boot.intelTerminals[0].x > 30 && boot.intelTerminals[0].x < 37,
     `missing-persons intel terminal should be discoverable without blocking movement: ${JSON.stringify(boot.intelTerminals)}`);
+  assert(boot.intelObjective || !boot.campaign?.intelSecured, 'campaign HUD should indicate COMMS evidence before it is collected');
   assert(boot.dialogueElements, 'raid campaign HUD/dialogue elements are missing');
   assert(boot.scene === 'raid', `raid scene did not initialize: ${boot.scene}`);
   for (const key of ['renderError', 'renderLayerErrors', 'raidVisionError', 'frameError']) {
