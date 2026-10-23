@@ -254,6 +254,7 @@ function renderEquip(inv) {
     for (const it of categoryItems) {
       const card = document.createElement('div');
       card.className = 'ic-card';
+      card.dataset.itemId = it.id; // Stable item identity for UI automation and assistive tooling.
       card.style.setProperty('--qc', q(it).color);
       card.style.borderColor = q(it).color + '77';
       // 快捷操作：穿戴/吸取/分解；拖拽作为另一条操作路径保留。
