@@ -279,35 +279,47 @@ try {
   assert(grappleCheck.active, `Ctrl-click did not latch the grappling hook: ${JSON.stringify(grappleCheck)}`);
   assert(!grappleCheck.fireHeld, 'Ctrl-click accidentally fired the weapon');
 
-  // Verify the return route is actually climbable, not merely present in the level data.
-  await page.evaluate(() => {
-    const { player, input } = window.__game();
-    const p = player.torso.getPosition();
-    // Start on the first tread of the shared 47–53 shaft (12 treads per floor, 3.5m rise).
-    const dx = 52.75 - p.x, dy = 1.0716666667 - p.y;
-    for (const body of player.allBodies) {
-      const q = body.getPosition();
-      body.setTransform({ x: q.x + dx, y: q.y + dy }, body.getAngle());
-      body.setLinearVelocity({ x: 0, y: 0 });
-      body.setAngularVelocity(0);
-    }
-    player.grounded = true;
-    input.fire = false;
-    input.left = true;
-    input.right = false;
-    input.jumpHeld = true;
-    input.jumpPressed = true;
-  });
-  await page.waitForFunction(() => window.__game().player.torso.getPosition().y > 3.0, undefined, { timeout: 3200 });
-  const stairClimb = await page.evaluate(() => {
-    const { player, input } = window.__game();
-    const p = player.torso.getPosition();
-    input.left = false;
-    input.jumpHeld = false;
-    input.jumpPressed = false;
-    return { x: p.x, y: p.y, grounded: player.grounded };
-  });
-  assert(stairClimb.y > 3.0, `held jump did not climb the ground-to-second-floor stair flight: ${JSON.stringify(stairClimb)}`);
+  // Exercise actual traversal in both directions through all three alternating flights.
+  // Each spawn is the first tread at the correct side of its landing; this catches a visually
+  // connected but physically impossible stairwell.
+  const stairFlights = [
+    { floor: 'ground-to-level-2', x: 52.75, y: 1.0716666667, direction: 'left', targetY: 4.0 },
+    { floor: 'level-2-to-level-3', x: 47.25, y: 4.5716666667, direction: 'right', targetY: 7.5 },
+    { floor: 'level-3-to-roof', x: 52.75, y: 8.0716666667, direction: 'left', targetY: 11.0 },
+  ];
+  for (const flight of stairFlights) {
+    await page.evaluate((route) => {
+      const { player, input } = window.__game();
+      const p = player.torso.getPosition();
+      const dx = route.x - p.x, dy = route.y - p.y;
+      for (const body of player.allBodies) {
+        const q = body.getPosition();
+        body.setTransform({ x: q.x + dx, y: q.y + dy }, body.getAngle());
+        body.setLinearVelocity({ x: 0, y: 0 });
+        body.setAngularVelocity(0);
+      }
+      player.grounded = true;
+      input.fire = false;
+      input.left = route.direction === 'left';
+      input.right = route.direction === 'right';
+      input.jumpHeld = true;
+      input.jumpPressed = true;
+    }, flight);
+    await page.waitForFunction((targetY) => window.__game().player.torso.getPosition().y > targetY,
+      flight.targetY, { timeout: 3200 });
+    const climb = await page.evaluate(() => {
+      const { player, input } = window.__game();
+      const p = player.torso.getPosition();
+      input.left = false;
+      input.right = false;
+      input.jumpHeld = false;
+      input.jumpPressed = false;
+      return { x: p.x, y: p.y, grounded: player.grounded };
+    });
+    assert(climb.y > flight.targetY, `${flight.floor} stair flight failed: ${JSON.stringify(climb)}`);
+    assert(flight.direction === 'left' ? climb.x < flight.x : climb.x > flight.x,
+      `${flight.floor} did not move in the direction of its switchback: ${JSON.stringify(climb)}`);
+  }
 
   // Move beside the main breaker and verify E toggles the same power state the renderer uses.
   await page.evaluate(() => {
