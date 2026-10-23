@@ -452,15 +452,12 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
   本体 —— 近侧小腿整条不画,用户看到"只有一条小腿"(v1 就埋的漏网,排查靠像素行宽扫描)。
   ⚠️ skinFitScale 返回的是**米/像素**,调用处必须再乘 ppm(player.js)/mEPPM(编辑器)/PPM2(预览)——
   曾漏乘把皮肤画成 0.3px 高的隐形人(渲染无报错,只有 drawImage 打点统计才抓得到)。
-- **渲染约定**(player.js `skinCap`/`skinEquip`):贴图 contain(等比,绝不拉伸)进标准框 × 用户 scale,
-  再加用户 ox/oy 偏移(工坊里拖出来的三个数,part 局部空间);竖直方向、上端=根(头顶/肩/髋)、
-  下端=端(下巴/手/脚);头/躯干/头盔/防弹衣随 facing 镜像(只翻皮肤层,装备层 drawEquip 自带);
-  远侧肢 `ctx.filter='brightness(0.72)'` 压暗。
+- **渲染约定**(player.js `skinCap`/`skinEquip`):先按 `skinFitScale` 将 PNG 填充到唯一视觉框,再由 `skinPartLayout` 根据 pivot / scale / ox / oy 计算矩形;不要在游戏或编辑器另写第二套居中/末端公式。Canvas 变换顺序固定:translate 到真实刚体/挂点 → rotate(-physicsAngle) → 按朝向镜像(头/躯干/头盔/背心) → drawImage(layout.x,layout.y,layout.w,layout.h)。远侧肢 `ctx.filter='brightness(0.72)'` 压暗。
 - **头盔/防弹衣 = 装备外观层**:仅在该部位真的穿着护甲时显示,替代视觉预设(数值/耐久仍走背包装备);
   头盔锚在头部局部空间(框中心=头圆心)、防弹衣锚在躯干局部空间。
 - **分层**:皮肤=底层,头盔/防弹衣=外层;某件没画就回退该件的程序绘制/预设。有小臂图隐藏程序小手、
   有小腿图隐藏程序靴。**只给主角**:`useSkin = !opts.palette`,敌人不吃皮肤。
-- 存档 v2:`parts[p] = { src, ox, oy, scale }`;v1 旧档缺字段默认 0/0/1(自动兼容)。
+- **存档 v3**:`parts[p] = { src, ox, oy, scale, pivot:{x,y} }`;pivot 是归一化到裁后 PNG 的解剖挂点,`skinPartLayout(part,iw,ih,ppm,xf)` 是游戏 / 编辑器 / 组装预览共用的唯一 Canvas2D 放置变换。标记根→末端后,头/躯干/大臂/大腿/头盔/背心使用两点中点作为骨骼枢轴;小臂/小腿使用末端点,使手/脚始终落在握点/落地点。拖动/缩放只改变骨骼局部空间的 ox/oy/scale,不改解剖 pivot。v1/v2 无 pivot 时兼容旧的中心/底边锚点,打开再保存后可渐进迁移。
 - ⚠️ 上屏很小(全身 ~81px):提醒用户笔画粗、颜色亮;素材比标准框细长时 contain 会缩得更小,属正常。
 - ⚠️ 工坊页模块级调用顺序:`SKIN_PARTS.forEach(redrawSlot)` 必须在 `drawAssembled` 定义之后(TDZ)。
 - 调试:`window.__skinTest(part, drawFn)` 注入合成白底图;`__skinMark(part, ax,ay, bx,by)` 直调端点
