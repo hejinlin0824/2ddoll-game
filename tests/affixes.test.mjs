@@ -28,7 +28,7 @@ test('rolled affixes are applicable, implemented, in-tier, and never duplicate a
       }
     }
   }
-  assert.equal(AFFIXES.filter((a) => !a.future).length, 35);
+  assert.equal(AFFIXES.filter((a) => !a.future).length, 34);
 });
 
 test('gun reduction affixes reduce spread, reload time, and heat with a safe lower bound', () => {
