@@ -2,14 +2,14 @@
 // 存档与自绘部件皮肤(contra-skin)分离，清除 DIY 不会删除玩家上传的皮肤图。
 const KEY = 'contra-appearance-v1';
 const DEFAULTS = Object.freeze({
-  hairStyle: 'short', hairColor: '#202733', faceShape: 'oval',
+  hairStyle: 'short', hairColor: '#202733', faceShape: 'oval', kitStyle: 'plate', helmetStyle: 'highcut', eyewear: 'goggles', pads: 'full', backpack: 'assault', armorColor: '#263744',
   skinTone: '#c89572', eyeColor: '#67c9ff',
   shirtColor: '#35495b', pantsColor: '#34465a', bootColor: '#1b222b',
   bandanaColor: '#d96b3b', headwear: 'bandana', accentColor: '#d99447',
 });
 const HAIR = new Set(['short', 'buzz', 'ponytail', 'bun', 'long', 'spiky', 'undercut']);
 const FACE = new Set(['round', 'oval', 'angular']);
-const HEADWEAR = new Set(['none', 'bandana', 'headset']);
+const HEADWEAR = new Set(['none', 'bandana', 'headset']);\nconst KIT = new Set(['plate', 'chest', 'slick']);\nconst HELMET = new Set(['highcut', 'full', 'cap', 'none']);\nconst EYEWEAR = new Set(['goggles', 'clear', 'none']);\nconst PADS = new Set(['full', 'knees', 'none']);\nconst PACK = new Set(['assault', 'radio', 'none']);
 const HEX = /^#[0-9a-f]{6}$/i;
 let rawCache = undefined;
 let valueCache = { ...DEFAULTS };
@@ -69,7 +69,7 @@ export function appearancePalette(a = loadAppearance()) {
     pants: a.pantsColor, pantsDark: shade(a.pantsColor, 0.72),
     boot: a.bootColor, bootDark: shade(a.bootColor, 0.70),
     bandana: a.bandanaColor, bandanaDark: shade(a.bandanaColor, 0.72),
-    wood: a.accentColor,
+    wood: a.accentColor,\n    armor: a.armorColor || '#263744', armorDark: shade(a.armorColor || '#263744', 0.62), armorHi: shade(a.armorColor || '#263744', 1.38),
   };
 }
 export { DEFAULTS as DEFAULT_APPEARANCE, KEY as APPEARANCE_STORAGE_KEY };
