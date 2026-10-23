@@ -20,7 +20,7 @@
 - `npm install` → `npm run dev` → http://127.0.0.1:5199/game.html(port 5199,strictPort)。
 - `npm run build` 需要 vite.config 里 `build.target: 'es2022'`。
 - ⚠️ 本机器全局 npm/git 代理指向 127.0.0.1:7890(Clash),**push/拉取 GitHub 前先开代理**;
-  项目 `.npmrc` 已置空 npm 代理并指向 npmmirror,别删。
+  .npmrc 需要保留：用 `proxy=false` / `https-proxy=null` 覆盖全局代理，并指向 npmmirror；不要改回空字符串或删除代理覆盖项，以免本机全局代理污染依赖安装。
 
 ## 页面与目录
 
