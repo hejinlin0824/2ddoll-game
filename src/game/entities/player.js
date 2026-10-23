@@ -28,6 +28,7 @@ const COLOR = {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const wrapPi = (x) => ((x + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+const shadeKit = (hex, amount) => { const n=parseInt(hex.slice(1),16); return '#'+[n>>16,(n>>8)&255,n&255].map(v=>Math.max(0,Math.min(255,Math.round(v*amount))).toString(16).padStart(2,'0')).join(''); };
 
 export class Player {
   // opts.palette: 覆盖配色(敌兵换绿头巾/深色裤,和主角区分)
@@ -1115,37 +1116,10 @@ export class Player {
     // 贴图 contain(等比)进部件标准框(SKIN_BOX,与工坊编辑器同一份数据 → 所见即所得,不错位),
     // 再应用用户微调(ox/oy 偏移 + scale 缩放,皮肤工坊里拖出来的就是这三个数)。
     // 方向约定:竖直、上端=根(肩/髋/头顶)、下端=端(手/脚);远侧肢加滤镜压暗保持纵深
-    const skinCap = (b, part, dark = false) => {
-      if (!this.useSkin) return false;
-      const im = skinImg(part);
-      if (!im) return false;
-      const xf = skinXf(part);
-      const layout = skinPartLayout(part, im.naturalWidth, im.naturalHeight, ppm, xf);
-      if (!layout) return false;
-      const [x, y] = P(b);
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(R(b));
-      if (dark) ctx.filter = 'brightness(0.72) saturate(0.85)';
-      ctx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
-      ctx.filter = 'none';
-      ctx.restore();
-      return true;
-    };
-    const hasSkin = (part) => this.useSkin && !!skinImg(part);
-    // 装备外观层(头盔/防弹衣):自绘图仅在该部位真的穿着护甲时显示,替代视觉预设;
-    // 画在对应身体的局部空间(头盔=头部、防弹衣=躯干),随朝向镜像 —— 与皮肤层同款变换数学
-    const skinEquip = (part) => {
-      const im = this.useSkin ? skinImg(part) : null;
-      if (!im) return false;
-      const layout = skinPartLayout(part, im.naturalWidth, im.naturalHeight, ppm, skinXf(part));
-      if (!layout) return false;
-      ctx.save();
-      if (this.facing === -1) ctx.scale(-1, 1);
-      ctx.drawImage(im, layout.x, layout.y, layout.w, layout.h);
-      ctx.restore();
-      return true;
-    };
+    // Legacy bitmap skin renderer retired; the historical implementation is preserved on the archive branch.
+    const skinCap = () => false;
+    const hasSkin = () => false;
+    const skinEquip = () => false;
 
     // 装备:在对应身体部件的局部空间里绘制(纸娃娃挂点式)
     // parts 支持两种零件:矩形 {x,y,w,h,color,r} / 图片 {img:素材id,x,y,w,h,rot}
@@ -1312,8 +1286,29 @@ export class Player {
           ctx.fillRect(-w / 2, h * 0.32, w, h * 0.12);
         }
       }
-      // 防弹衣外观层:自绘图(仅穿着护甲时)优先,否则视觉预设
-      if (!(this.loadout.torso && skinEquip('vest'))) drawEquip(this.loadout.torso);
+      // Anatomy-locked modular carrier: procedural plates, webbing and pouches follow the torso joint.
+      if (this.appearance) {
+        const a=this.appearance,w=D.torso.w*ppm,h=D.torso.h*ppm,armor=a.armorColor||'#263744',accent=a.accentColor||'#ffb34d';
+        const hi=shadeKit(armor,1.35),lo=shadeKit(armor,.58);
+        if(a.kitStyle!=='slick'){
+          ctx.fillStyle=lo;ctx.strokeStyle='#0a1118';ctx.lineWidth=1.5;ctx.beginPath();
+          if(a.kitStyle==='chest'){ctx.moveTo(-w*.43,-h*.22);ctx.lineTo(-w*.34,h*.36);ctx.lineTo(w*.32,h*.36);ctx.lineTo(w*.43,-h*.22);ctx.lineTo(w*.28,-h*.38);ctx.lineTo(-w*.28,-h*.38);}
+          else{ctx.moveTo(-w*.40,-h*.27);ctx.lineTo(-w*.34,h*.34);ctx.lineTo(-w*.23,h*.43);ctx.lineTo(w*.23,h*.43);ctx.lineTo(w*.34,h*.34);ctx.lineTo(w*.40,-h*.27);ctx.lineTo(w*.23,-h*.40);ctx.lineTo(-w*.23,-h*.40);}
+          ctx.closePath();ctx.fill();ctx.stroke();
+          ctx.fillStyle=armor;ctx.beginPath();ctx.roundRect(-w*.28,-h*.35,w*.56,h*.66,w*.08);ctx.fill();
+          ctx.strokeStyle='rgba(235,243,246,.18)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-w*.27,-h*.31);ctx.lineTo(-w*.27,h*.27);ctx.moveTo(w*.27,-h*.31);ctx.lineTo(w*.27,h*.27);ctx.stroke();
+          ctx.fillStyle=hi;ctx.beginPath();ctx.roundRect(-w*.17,-h*.25,w*.34,h*.12,w*.025);ctx.fill();ctx.strokeStyle='#101923';ctx.stroke();
+          ctx.fillStyle=accent;ctx.fillRect(-w*.11,-h*.21,w*.10,Math.max(1.5,ppm*.012));
+          ctx.fillStyle='#dbe4e7';ctx.font='bold '+Math.max(5,ppm*.075)+'px sans-serif';ctx.fillText('H-01',-w*.01,-h*.16);
+          const n=a.kitStyle==='plate'?3:4;
+          for(let i=0;i<n;i++){const px=-w*.31+i*w*(a.kitStyle==='plate'?.21:.22);ctx.fillStyle=lo;ctx.beginPath();ctx.roundRect(px,-h*.06,w*.19,h*.22,w*.025);ctx.fill();ctx.strokeStyle='#0a1118';ctx.stroke();ctx.fillStyle=hi;ctx.fillRect(px+w*.04,-h*.015,w*.11,Math.max(1,ppm*.012));if(a.kitStyle==='plate'){ctx.fillStyle=accent;ctx.fillRect(px+w*.03,h*.13,w*.13,Math.max(1,ppm*.018));}}
+          ctx.strokeStyle=hi;ctx.lineWidth=Math.max(1.2,ppm*.025);ctx.beginPath();ctx.moveTo(-w*.37,h*.26);ctx.lineTo(-w*.27,h*.31);ctx.moveTo(w*.37,h*.26);ctx.lineTo(w*.27,h*.31);ctx.stroke();
+        }
+        ctx.fillStyle=lo;ctx.fillRect(-w*.48,h*.31,w*.96,h*.12);ctx.strokeStyle='#080e14';ctx.lineWidth=1;ctx.strokeRect(-w*.48,h*.31,w*.96,h*.12);
+        ctx.fillStyle=hi;ctx.beginPath();ctx.roundRect(-w*.09,h*.315,w*.18,h*.10,2);ctx.fill();ctx.strokeStyle='#0a1118';ctx.stroke();ctx.fillStyle=accent;ctx.fillRect(-w*.025,h*.34,w*.05,Math.max(1,ppm*.012));
+      }
+      // Real equipment retains its own visual and defensive stats.
+      if (this.loadout.torso) drawEquip(this.loadout.torso);
       ctx.restore();
     }
 
@@ -1422,6 +1417,16 @@ export class Player {
         } else if (look.headwear === 'headset') {
           ctx.fillStyle = '#252e39'; ctx.beginPath(); ctx.arc(-this.facing * r * 0.78, 0, r * 0.28, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = this.C.accent || '#d99447'; ctx.fillRect(-this.facing * r * 0.92 - 1, -1, 4, 3);
+        }
+        // Modular helmet and eyewear are procedural parts attached to the live head transform.
+        if(this.appearance&&this.appearance.helmetStyle&&this.appearance.helmetStyle!=='none'){
+          const hs=this.appearance.helmetStyle,ac=this.appearance.armorColor||'#263744',hi=shadeKit(ac,1.35);
+          ctx.fillStyle=ac;ctx.strokeStyle='#0a1118';ctx.lineWidth=Math.max(1.1,r*.12);ctx.beginPath();
+          if(hs==='cap'){ctx.moveTo(-r*.92,-r*.2);ctx.quadraticCurveTo(-r*.72,-r*1.12,r*.1,-r*1.05);ctx.quadraticCurveTo(r*.83,-r*.96,r*.95,-r*.18);ctx.lineTo(r*.55,-r*.12);ctx.lineTo(-r*.65,-r*.1);}
+          else{ctx.moveTo(-r*.98,-r*.08);ctx.lineTo(-r*.85,-r*.66);ctx.quadraticCurveTo(-r*.35,-r*1.18,r*.35,-r*.98);ctx.quadraticCurveTo(r*.91,-r*.75,r*.92,-r*.1);ctx.lineTo(r*.58,-r*.02);ctx.lineTo(-r*.72,-r*.02);}
+          ctx.closePath();ctx.fill();ctx.stroke();ctx.strokeStyle='rgba(240,246,248,.24)';ctx.lineWidth=Math.max(.8,r*.06);ctx.beginPath();ctx.moveTo(-r*.62,-r*.68);ctx.quadraticCurveTo(0,-r*.96,r*.56,-r*.63);ctx.stroke();
+          if(hs!=='cap'){ctx.fillStyle=hi;ctx.beginPath();ctx.roundRect(-r*.98,-r*.18,r*.35,r*.55,r*.12);ctx.fill();ctx.stroke();ctx.beginPath();ctx.roundRect(r*.60,-r*.18,r*.35,r*.55,r*.12);ctx.fill();ctx.stroke();}
+          if(this.appearance.eyewear&&this.appearance.eyewear!=='none'){ctx.fillStyle=this.appearance.eyewear==='clear'?'rgba(171,215,224,.62)':'#243b48';ctx.strokeStyle='#0a1118';ctx.lineWidth=Math.max(.8,r*.06);ctx.beginPath();ctx.roundRect(r*.25,-r*.08,r*.65,r*.28,r*.08);ctx.fill();ctx.stroke();ctx.strokeStyle=this.appearance.accentColor||'#ffb34d';ctx.beginPath();ctx.moveTo(r*.31,r*.02);ctx.lineTo(r*.78,r*.02);ctx.stroke();}
         }
         // 侧视只显一只眼：白色眼白 + 可配置虹膜 + 瞳孔，尺寸随屏幕缩放而收敛。
         const ex = this.facing * r * 0.43, ey = r * 0.08;
