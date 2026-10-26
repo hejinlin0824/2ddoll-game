@@ -1,6 +1,6 @@
 // 关卡地形:静态刚体 + 视差背景绘制
 import { Box, Vec2 } from 'planck';
-import { createRaidTraversalStairs, RAID_STAIR_OPENING } from '../domain/raidLayout.js';
+import { createRaidTraversalStairs, RAID_STAIR_OPENING, RAID_ROOF_TACTICAL_COVER } from '../domain/raidLayout.js';
 
 export const CAT = { GROUND: 0x1, PLAYER: 0x2, LIMB: 0x4 };
 
@@ -184,15 +184,17 @@ export const LAYOUTS = {
       ...floorSpan(3.25),
       // 建筑外侧可破坏墙柱；中央井道和回撤路线保持连续畅通。
       wall(0.25, 0, 0.5, 10.5), wall(73.75, 0, 0.5, 10.5),
-      ...partition(11, 0, 'g-01'), ...partition(29, 0, 'g-02'), ...partition(42, 0, 'g-03'), ...partition(61, 0, 'g-04'),
+      ...partition(11, 0, 'g-01'), ...partition(29, 0, 'g-02'), ...partition(39, 0, 'g-03'), ...partition(61, 0, 'g-04'),
       ...partition(17, 3.5, 'f1-01'), ...partition(37, 3.5, 'f1-02'), ...partition(58, 3.5, 'f1-03'),
-      ...partition(23, 7, 'f2-01'), ...partition(43, 7, 'f2-02'), ...partition(62, 7, 'f2-03'),
+      ...partition(23, 7, 'f2-01'), ...partition(40.5, 7, 'f2-02'), ...partition(62, 7, 'f2-03'),
       // 照明和掩体避开楼梯井，避免灯体、箱体压住上下楼梯的落点。
       ...[4, 19, 34, 57, 67].map((x, i) => lamp(x, 0, `g-lamp-${i}`)),
       ...[6, 28, 64, 66].map((x, i) => lamp(x, 3.5, `f1-lamp-${i}`)),
       ...[6, 31, 57, 68].map((x, i) => lamp(x, 7, `f2-lamp-${i}`)),
+      ...[14, 35, 66].map((x, i) => lamp(x, 10.5, `roof-lamp-${i}`)),
       ...createRaidTraversalStairs(),
-      ...[crate(7, 0), crate(36, 0, 'steel'), crate(58, 0), crate(9, 3.5, 'steel'), crate(28, 3.5), crate(64, 3.5), crate(9, 7), crate(34, 7, 'steel'), crate(38, 7)],
+      ...RAID_ROOF_TACTICAL_COVER.map((r) => ({ ...r })),
+      ...[crate(7, 0), crate(36, 0, 'steel'), crate(58, 0), crate(9, 3.5, 'steel'), crate(28, 3.5), crate(64, 3.5), crate(9, 7), crate(34, 7, 'steel'), crate(35.5, 7)],
     ];
   })(),
  };
