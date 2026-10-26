@@ -124,6 +124,9 @@ try {
     frameError: window.__lastFrameError?.msg || null,
     fog: window.__fog.state(),
     stairCount: window.__level().filter((r) => r.type === 'stair').length,
+    stairBridgeCount: window.__level().filter((r) => r.type === 'stairBridge').length,
+    stairBridges: window.__level().filter((r) => r.type === 'stairBridge')
+      .map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })),
     roofCoverCount: window.__level().filter((r) => ['steel', 'crate', 'concrete'].includes(r.type)
       && r.y > 10.5 && (r.x < 45 || r.x > 55)).length,
     roofGuardCount: window.__game().enemies.filter((e) => e.raidMode && e.raidFloorId === 3 && !e.isReinforcement && e.alive).length,
@@ -140,6 +143,9 @@ try {
   assert(boot.canvases >= 1, 'game canvas was not created');
   assert(boot.fog?.scene === 'raid' && boot.fog.visiblePixelCount > 100, 'raid fog of war did not reveal a local visibility region');
   assert(boot.stairCount === 60, `raid traversal stairs missing: ${boot.stairCount}`);
+  assert(boot.stairBridgeCount === 3, `walkable stairwell crossings missing: ${JSON.stringify(boot.stairBridges)}`);
+  assert(boot.stairBridges.every((b) => b.x === 50 && b.w === 6 && b.h === 0.5),
+    `stairwell crossings are misaligned with the shaft: ${JSON.stringify(boot.stairBridges)}`);
   assert(boot.roofCoverCount >= 5, `roof combat space is still empty: ${boot.roofCoverCount} cover pieces`);
   assert(boot.roofGuardCount >= 3, `roof insertion lacks a readable first engagement: ${boot.roofGuardCount} guards`);
   assert(boot.stairwellEnemies.length === 0, `raiders spawned into the reserved stair route: ${JSON.stringify(boot.stairwellEnemies)}`);
@@ -209,6 +215,7 @@ try {
     }
   });
   const moveDownFlight = async (key, description, predicate) => {
+    await stairTraversalPage.keyboard.down('s');
     await stairTraversalPage.keyboard.down(key);
     try {
       await stairTraversalPage.waitForFunction(predicate, undefined, { timeout: 6500 });
@@ -221,13 +228,14 @@ try {
           vx: +g.player.torso.getLinearVelocity().x.toFixed(2),
           vy: +g.player.torso.getLinearVelocity().y.toFixed(2),
           grounded: g.player.grounded,
-          rampAngle: g.player.getStandingStairRampAngle(),
+          rampAngle: g.player.getStandingStairRamp()?.angle ?? null,
           contacts: g.world?.__raidStairRampContactStats || null,
         };
       });
       throw new Error(`could not traverse ${description}: ${JSON.stringify(position)}; ${error.message}`);
     } finally {
       await stairTraversalPage.keyboard.up(key);
+      await stairTraversalPage.keyboard.up('s');
     }
     await stopRig();
   };
@@ -251,7 +259,28 @@ try {
     return { x: +p.x.toFixed(2), y: +p.y.toFixed(2) };
   });
   assert(stairTraversalResult.y < 1.9, `stair traversal did not reach ground level: ${JSON.stringify(stairTraversalResult)}`);
-  await stairTraversalPage.locator('#game').screenshot({ path: 'artifacts/raid-stair-descent.png' });
+
+  // On level 02, move across the shaft with A alone. The bridge must carry the player at the
+  // same height; only S+A or W+A/D should yield the floor to a stair ramp.
+  await placeRig(56, 4.4);
+  await stairTraversalPage.waitForTimeout(160);
+  await stairTraversalPage.keyboard.down('a');
+  try {
+    await stairTraversalPage.waitForFunction(() => {
+      const p = window.__game().player.torso.getPosition();
+      return p.x < 46.5 && p.y > 3.9 && p.y < 5.0 && window.__game().player.grounded;
+    }, undefined, { timeout: 6500 });
+  } catch (error) {
+    const crossing = await stairTraversalPage.evaluate(() => {
+      const p = window.__game().player.torso.getPosition();
+      return { x: +p.x.toFixed(2), y: +p.y.toFixed(2), grounded: window.__game().player.grounded };
+    });
+    throw new Error(`same-floor stair crossing blocked the left wing: ${JSON.stringify(crossing)}; ${error.message}`);
+  } finally {
+    await stairTraversalPage.keyboard.up('a');
+  }
+  await stairTraversalPage.locator('#game').screenshot({ path: 'artifacts/raid-stair-crossing.png' });
+  await stairTraversalPage.close();
   await stairTraversalPage.close();
 
   // The operation table must surface a saved campaign when the page is reopened, not silently
@@ -514,9 +543,10 @@ try {
       input.fire = false;
       input.left = route.direction === 'left';
       input.right = route.direction === 'right';
-      // Verify the continuous collision ramp works with normal movement alone; no repeated jumps.
-      input.jumpHeld = false;
+      // W+A/D deliberately selects the upward stair route; plain A/D crosses the bridge.
+      input.jumpHeld = true;
       input.jumpPressed = false;
+      input.down = false;
     }, flight);
     try {
       await page.waitForFunction((targetY) => {
@@ -621,6 +651,7 @@ try {
       input.right = false;
       input.jumpHeld = false;
       input.jumpPressed = false;
+      input.down = false;
       return { x: p.x, y: p.y, grounded: player.grounded };
     });
     assert(climb.y > flight.targetY, `${flight.floor} stair flight failed: ${JSON.stringify(climb)}`);
