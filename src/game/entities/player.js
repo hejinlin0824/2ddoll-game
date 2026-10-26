@@ -691,7 +691,7 @@ export class Player {
   // fixture Planck happens to report first. At a switchback landing, two ramps meet at the
   // same point; retain the prior vertical travel intent so reversing horizontal direction
   // selects the *next* flight instead of climbing back up the ramp we just descended.
-  getStandingStairRampAngle(direction = 0, preferredVerticalSign = 0) {
+  getStandingStairRamp(direction = 0, preferredVerticalSign = 0) {
     const p = this.torso.getPosition();
     let best = null;
     for (let body = this.world.getBodyList(); body; body = body.getNext()) {
@@ -711,10 +711,12 @@ export class Player {
       const gapError = Math.abs(verticalGap - 0.78);
       const verticalIntent = direction === 0 ? 0 : Math.sign(direction * Math.tan(angle));
       const intentMatch = preferredVerticalSign !== 0 && verticalIntent === preferredVerticalSign;
-      const score = gapError - (intentMatch ? 0.24 : 0);
-      if (!best || score < best.score) best = { angle, score };
+      // At the shared endpoint the next flight may sit slightly farther below the torso
+      // than the current flight. Travel continuity must beat this small gap difference.
+      const score = gapError - (intentMatch ? 0.60 : 0);
+      if (!best || score < best.score) best = { angle, id: data.stairRampId, score };
     }
-    return best?.angle ?? null;
+    return best;
   }
 
   // 姿态目标:全部按"朝右"局部空间给出,施加时乘 facing
@@ -822,8 +824,9 @@ export class Player {
     // Stabilize only while supported by the raid's inclined ramp. On flat ground and in free
     // ragdoll motion, keep the original physics feel; this prevents the torso capsule rolling
     // sideways and becoming wedged on the uphill collision surface.
-    const supportRampAngle = this.grounded ? this.getStandingStairRampAngle() : null;
-    if (supportRampAngle !== null) {
+    const supportRamp = this.grounded ? this.getStandingStairRamp() : null;
+    this.world.__raidActiveStairRampId = supportRamp?.id ?? null;
+    if (supportRamp !== null) {
       const angleError = wrapPi(torso.getAngle());
       const angularVelocity = torso.getAngularVelocity();
       torso.setAngularVelocity(clamp(-angleError * 7 - angularVelocity * 0.65, -5.5, 5.5));
@@ -871,9 +874,11 @@ export class Player {
       this.gunAnchor = { x: hand.x, y: hand.y };
     }
 
-    const stairRampAngle = this.grounded
-      ? this.getStandingStairRampAngle(dir, this.lastStairVerticalSign)
+    const stairRampSupport = this.grounded
+      ? this.getStandingStairRamp(dir, this.lastStairVerticalSign)
       : null;
+    const stairRampAngle = stairRampSupport?.angle ?? null;
+    this.world.__raidActiveStairRampId = stairRampSupport?.id ?? null;
     const speed = (this.crouch ? 1.6 : 4.6) * (1 + (this.moveSpeedPct || 0) / 100);
     let targetVx = dir * speed;
     // 移动方向上有墙就不再硬塞速度,否则会和碰撞求解器打架,把角色弹飞
