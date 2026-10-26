@@ -207,12 +207,28 @@ try {
   });
   assert(expectedGarrisonCount > 0, 'completed raid fixture has no initial garrison sentinel');
   await progressPage.locator('#menuStart').click();
-  await progressPage.waitForFunction((expected) => {
-    const g = window.__game();
-    const raid = window.__raid();
-    const garrisons = g.enemies.filter((e) => e.raidMode && !e.isReinforcement);
-    return !window.__feel().menu && raid.campaign.stage === 'insertion' && garrisons.length >= expected;
-  }, expectedGarrisonCount, { timeout: 10000 });
+  try {
+    await progressPage.waitForFunction((expected) => {
+      const g = window.__game();
+      const raid = window.__raid();
+      const garrisons = g.enemies.filter((e) => e.raidMode && !e.isReinforcement);
+      // Rappel can finish between browser polling frames; the durable assertions are that the
+      // menu closed, the chapter is active (not completed), and the original garrison was rebuilt.
+      return !window.__feel().menu && raid.campaign.enabled && raid.campaign.stage !== 'complete'
+        && garrisons.length >= expected;
+    }, expectedGarrisonCount, { timeout: 10000 });
+  } catch (error) {
+    const redeployDiagnostic = await progressPage.evaluate(() => ({
+      menuOpen: !!window.__feel().menu,
+      campaignStage: window.__raid().campaign.stage,
+      campaignEnabled: window.__raid().campaign.enabled,
+      totalEnemies: window.__game().enemies.length,
+      garrisonCount: window.__game().enemies.filter((e) => e.raidMode && !e.isReinforcement).length,
+      checkpoint: localStorage.getItem('contra-raid-checkpoint-v1'),
+      completedRecord: localStorage.getItem('contra-raid-campaign-v1'),
+    }));
+    throw new Error(`raid redeploy did not rebuild a playable mission: ${JSON.stringify(redeployDiagnostic)}; ${error.message}`);
+  }
   await progressPage.close();
 
   for (const key of ['renderError', 'renderLayerErrors', 'raidVisionError', 'frameError']) {
