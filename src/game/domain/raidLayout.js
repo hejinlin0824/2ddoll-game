@@ -8,8 +8,38 @@ export const RAID_STAIR_NO_SPAWN_ZONE = Object.freeze({
   left: RAID_STAIR_OPENING.left - 2,
   right: RAID_STAIR_OPENING.right + 2,
 });
+// AI may defend the landing from its edges, but must not camp inside the only vertical route.
+export const RAID_STAIR_ACTOR_CLEARANCE = Object.freeze({
+  left: RAID_STAIR_OPENING.left - 0.85,
+  right: RAID_STAIR_OPENING.right + 0.85,
+});
+
+// A few roof set-pieces give the insertion zone cover, a recognizable skyline and short combat beats.
+// All pieces sit on the roof surface and deliberately leave the central stair approach x=45..55 open.
+export const RAID_ROOF_TACTICAL_COVER = Object.freeze([
+  Object.freeze({ x: 12.5, y: 11.08, w: 2.8, h: 1.16, type: 'steel', destructible: false, coverId: 'roof-west-hvac' }),
+  Object.freeze({ x: 22.5, y: 11.0, w: 2.0, h: 1.0, type: 'crate', destructible: true, coverId: 'roof-supply-crate' }),
+  Object.freeze({ x: 35.5, y: 11.1, w: 2.4, h: 1.2, type: 'concrete', destructible: false, coverId: 'roof-generator' }),
+  Object.freeze({ x: 60.0, y: 11.05, w: 2.4, h: 1.1, type: 'crate', destructible: true, coverId: 'roof-ammo-crate' }),
+  Object.freeze({ x: 68.0, y: 11.1, w: 2.8, h: 1.2, type: 'steel', destructible: false, coverId: 'roof-east-vent' }),
+]);
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+// Keep living raiders on their own side of the stairwell. If knockback or a bad target puts
+// one inside the route, gently drive it toward the nearer landing edge instead of letting it camp.
+export function constrainRaidActorVelocity(x, velocityX) {
+  if (!Number.isFinite(x) || !Number.isFinite(velocityX)) return 0;
+  const { left, right } = RAID_STAIR_ACTOR_CLEARANCE;
+  if (x < left && velocityX > 0) return 0;
+  if (x > right && velocityX < 0) return 0;
+  if (x >= left && x <= right) {
+    const midpoint = (left + right) / 2;
+    const escapeDirection = x < midpoint ? -1 : 1;
+    return escapeDirection * Math.max(Math.abs(velocityX), 1.15);
+  }
+  return velocityX;
+}
 
 export function keepRaidSpawnOutOfStairwell(candidateX, callerX, bounds = {}) {
   const low = Number.isFinite(bounds.left) ? bounds.left : 2.1;
