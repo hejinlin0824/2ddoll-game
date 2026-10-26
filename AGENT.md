@@ -621,10 +621,10 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
 
 ## 屋顶剿匪第一章与中央楼梯（2026-10-23）
 
-- 当前可玩章节标题：`夜幕行动：失联名单`。任务链为屋顶绳降 → 屋顶/三层/二层逐层清剿 → 按 E 回收二层 COMMS 终端中的失联名单 → 清理地面 → 回到地面入口配电柜旁按 E 发出撤离信号 → 播放结局无线电并写入 `contra-raid-campaign-v1` 完成记录。任务内目标写在 `#raidMissionStatus`，无线电字幕由 `#raidDialogue` 显示；玩家可点击字幕推进，对话也会自动推进。
+- 当前可玩章节标题：`夜幕行动：失联名单`。任务链为屋顶绳降 → 屋顶/三层/二层逐层清剿 → 按 E 回收二层 COMMS 终端中的失联名单 → 清理地面并发现门禁记录异常 → 回到地面入口配电柜旁按 E 发出撤离信号 → 播放结局无线电并写入 `contra-raid-campaign-v1` 完成记录。任务内目标写在 `#raidMissionStatus`，无线电字幕由 `#raidDialogue` 显示；重要对话必须等玩家点击或按 Enter 确认后推进，不能用短定时器自动消失。
 - 纯逻辑状态机在 `src/game/domain/raidCampaign.js`；标题、目标、无线电对白、楼层触发顺序和完成存档都集中在这里。状态由 `src/game/game.js` 每个游戏步更新，不要另外写一套 DOM 定时器或独立任务进度。
-- **中央楼梯井是共享几何契约**：`src/game/domain/raidLayout.js` 的 `RAID_STAIR_OPENING` 定义 `x=47..53`；屋顶、三层、二层三片实体楼板在 `src/game/world/level.js` 都必须精确留出同一开口。每段 20 级视觉踏步（共 60 级），可视踏步设 `collision:false`，并配有 `type:'stairRamp'` 的隐藏旋转实体坡道；坡道顶边必须与两侧楼板端点共线，玩家和敌人能仅靠 A/D 连续行走，不依赖重复跳跃。方向按左/右/左交替，落点与下一段起步侧相接。增援出生点必须避开 x=45..55 的楼梯井与平台接近区，并通过 raidLayout.js 的 keepRaidSpawnOutOfStairwell 统一处理。改井道位置时，统一改该常量/布局生成方式，不要分别改每层楼板。
-- 楼梯井净空范围禁止放固定箱体、灯体或初始驻军；目前相关守军/掩体在 `game.js` 与 `level.js` 刻意偏离中央井道。敌人在战斗中仍可能追到楼梯附近，但不能把静态物件放在必经落点上。
+- **中央楼梯井是共享几何契约**：`src/game/domain/raidLayout.js` 的 `RAID_STAIR_OPENING` 定义 `x=47..53`；楼板必须精确留出同一开口。每段 20 级视觉踏步（共 60 级），可视踏步设 `collision:false`，并配有 `type:'stairRamp'` 的隐藏旋转坡道；坡道顶边必须与两侧楼板端点共线，玩家仅靠 A/D 即可连续通行，不依赖重复跳跃。方向按左/右/左交替，落点与下一段起步侧相接。增援出生点避开 x=45..55；AI 守军还必须服从 `RAID_STAIR_ACTOR_CLEARANCE`（x=46.15..53.85），只在楼梯口两侧交战，不能驻留/追入唯一通行井道；`constrainRaidActorVelocity` 是其统一约束。屋顶掩体来自 `RAID_ROOF_TACTICAL_COVER`，不得占用楼梯接近区。
+- 楼梯落脚平台必须保留宽阔转向空间；靠近楼梯的隔墙应与落点留出足够横向净空。关卡布防可在平台两侧设置交叉火力，但 NPC 不能占住唯一竖向路线。每次改动几何/布防后，`tests/raid-layout.test.mjs` 必须验证净空与屋顶掩体；`tests/browser-smoke.mjs` 必须从真实楼层落点逐段走完楼梯，并确认 AI 没有进入预留通道。
 - 回归测试：`tests/raid-layout.test.mjs` 校验共享楼梯几何；`tests/raid-campaign.test.mjs` 校验任务阶段、楼层台词、撤离门槛和结局；`tests/browser-smoke.mjs` 校验 60 级踏步、三层楼板开口、从楼层落点实际入梯攀爬、开场无线电 UI 与非阻挡式失联名单终端；checkpoint 恢复要保留楼层/证据/耗时，已清楼层不可重新刷守军。改动这套布局时三组测试都要运行。
 - **任务进度存档**：`contra-raid-checkpoint-v1` 保存当前阶段、已清楼层、证据状态与耗时；读取时必须校验版本/章节，并按下一项目标选择安全落点。更新任务状态机后同步维护 `tests/raid-campaign.test.mjs`，浏览器启动/切关恢复也要用 Chromium 验证。成功撤离的结局记录仍独立保存在 `contra-raid-campaign-v1`。
 
