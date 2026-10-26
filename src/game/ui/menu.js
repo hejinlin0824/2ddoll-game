@@ -76,30 +76,32 @@ function readRaidProgress() {
   let checkpoint = null, result = null;
   try { checkpoint = JSON.parse(localStorage.getItem(RAID_CHECKPOINT_KEY) || 'null'); } catch { /* corrupted save */ }
   try { result = JSON.parse(localStorage.getItem(RAID_RESULT_KEY) || 'null'); } catch { /* corrupted result */ }
+
+  // An active checkpoint wins over an older chapter-complete record when the player redeploys.
+  if (checkpoint?.version === 1 && checkpoint?.campaign === RAID_CAMPAIGN_TITLE
+      && ['insertion', 'assault', 'extract'].includes(checkpoint.stage)) {
+    const cleared = checkpoint.clearedFloors || {};
+    const clearCount = [3, 2, 1, 0].filter((id) => cleared[id] === true).length;
+    let next = '目标：屋顶插入与清剿';
+    if (checkpoint.stage === 'extract') next = '下一步：地面入口配电柜撤离';
+    else if (!cleared[3]) next = '下一步：肃清屋顶守军';
+    else if (!cleared[2]) next = '下一步：清理三层';
+    else if (!cleared[1]) next = '下一步：清理二层 COMMS 区';
+    else if (!checkpoint.intelSecured) next = '下一步：回收 COMMS 终端名单';
+    else if (!cleared[0]) next = '下一步：清理地面入口';
+    else next = '下一步：返回配电柜呼叫撤离';
+    return {
+      completed: false,
+      hasCheckpoint: true,
+      status: `进度已保存 · 已清理 ${clearCount}/4 层 · ${next}`,
+      startLabel: '继续剿匪',
+    };
+  }
+
   if (result?.version === 1 && result?.campaign === RAID_CAMPAIGN_TITLE && result.completed === true) {
     return { completed: true, hasCheckpoint: false, status: '第一章已完成 · 失联名单已封存', startLabel: '再次部署' };
   }
-  if (checkpoint?.version !== 1 || checkpoint?.campaign !== RAID_CAMPAIGN_TITLE
-      || !['insertion', 'assault', 'extract'].includes(checkpoint.stage)) {
-    return { completed: false, hasCheckpoint: false, status: '行动记录待建立 · 从屋顶绳降开始', startLabel: '开始剿匪' };
-  }
-
-  const cleared = checkpoint.clearedFloors || {};
-  const clearCount = [3, 2, 1, 0].filter((id) => cleared[id] === true).length;
-  let next = '目标：屋顶插入与清剿';
-  if (checkpoint.stage === 'extract') next = '下一步：地面入口配电柜撤离';
-  else if (!cleared[3]) next = '下一步：肃清屋顶守军';
-  else if (!cleared[2]) next = '下一步：清理三层';
-  else if (!cleared[1]) next = '下一步：清理二层 COMMS 区';
-  else if (!checkpoint.intelSecured) next = '下一步：回收 COMMS 终端名单';
-  else if (!cleared[0]) next = '下一步：清理地面入口';
-  else next = '下一步：返回配电柜呼叫撤离';
-  return {
-    completed: false,
-    hasCheckpoint: true,
-    status: `进度已保存 · 已清理 ${clearCount}/4 层 · ${next}`,
-    startLabel: '继续剿匪',
-  };
+  return { completed: false, hasCheckpoint: false, status: '行动记录待建立 · 从屋顶绳降开始', startLabel: '开始剿匪' };
 }
 
 export function menuIsOpen() { return open; }
@@ -317,7 +319,20 @@ function build() {
     wrap.appendChild(el);
   });
   updateSceneBriefing(scene);
-  document.getElementById('menuStart').onclick = () => { uiSfx('click-b', 0.4); start(false); };
+  document.getElementById('menuStart').onclick = () => {
+    uiSfx('click-b', 0.4);
+    const progress = scene.id === 'raid' ? readRaidProgress() : null;
+    if (progress?.completed && onSceneChange) {
+      // Re-entering after a completed chapter must rebuild the active world, not merely hide the menu.
+      try {
+        if (onSceneChange('raid') === false) return;
+      } catch (error) {
+        window.__lastRaidReplayError = String(error && error.stack || error);
+        return;
+      }
+    }
+    start(false);
+  };
   document.getElementById('menuHelp').onclick = () => {
     bootAudio();
     uiSfx('tap-a');
