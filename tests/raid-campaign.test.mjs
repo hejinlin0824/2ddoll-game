@@ -60,9 +60,11 @@ test('dialogue can be dismissed and extraction cannot be completed early', () =>
   assert.equal(completeRaidCampaign(state), false);
   updateRaidCampaign(state, 0.1, { enabled: true, rappelDone: true, playerAlive: true });
   const first = state.activeDialogue.text;
+  updateRaidCampaign(state, 20, { enabled: true, rappelDone: true, playerAlive: true });
+  assert.equal(state.activeDialogue.text, first, 'radio dialogue must not disappear while the player is fighting');
   advanceRaidDialogue(state);
   updateRaidCampaign(state, 0.1, { enabled: true, rappelDone: true, playerAlive: true });
-  assert.notEqual(state.activeDialogue.text, first);
+  assert.notEqual(state.activeDialogue.text, first, 'the next queued line should appear after acknowledgement');
 });
 
 test('campaign identifies its persistent record key and chapter title', () => {
