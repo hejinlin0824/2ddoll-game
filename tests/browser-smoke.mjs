@@ -322,8 +322,39 @@ try {
         const { player, input } = g;
         const p = player.torso.getPosition();
         const v = player.torso.getLinearVelocity();
+        const rampAngle = player.getStandingStairRampAngle?.() ?? null;
+        const walkingSpeed = (player.crouch ? 1.6 : 4.6) * (1 + (player.moveSpeedPct || 0) / 100);
+        const intendedVx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
         const rayHits = [];
+        const downHits = [];
         const dir = route.direction === 'left' ? -1 : 1;
+        const describeBody = (body) => {
+          const bp = body.getPosition();
+          const data = body.getUserData?.();
+          return {
+            type: body.getType?.(),
+            position: { x: bp.x, y: bp.y },
+            angle: body.getAngle?.(),
+            userData: data && typeof data === 'object'
+              ? { type: data.type, stairRampId: data.stairRampId }
+              : data ?? null,
+          };
+        };
+        g.world.rayCast({ x: p.x, y: p.y }, { x: p.x, y: p.y - 0.92 }, (fixture) => {
+          downHits.push(describeBody(fixture.getBody()));
+          return -1;
+        });
+        const playerBodies = new Set(player.allBodies);
+        const touchingContacts = [];
+        let contact = g.world.getContactList?.();
+        while (contact) {
+          const a = contact.getFixtureA?.().getBody?.();
+          const b = contact.getFixtureB?.().getBody?.();
+          if (contact.isTouching?.() && (playerBodies.has(a) || playerBodies.has(b))) {
+            touchingContacts.push({ a: describeBody(a), b: describeBody(b) });
+          }
+          contact = contact.getNext?.();
+        }
         g.world.rayCast({ x: p.x, y: p.y }, { x: p.x + dir * 0.34, y: p.y }, (fixture) => {
           const body = fixture.getBody();
           const bp = body.getPosition();
@@ -357,11 +388,14 @@ try {
         }
         return {
           route,
-          position: { x: p.x, y: p.y, torsoAngle: player.torso.getAngle() },
+          position: { x: p.x, y: p.y, torsoAngle: player.torso.getAngle(), angularVelocity: player.torso.getAngularVelocity() },
           velocity: { x: v.x, y: v.y },
+          rampControl: { rampAngle, intendedVx: intendedVx * walkingSpeed, expectedTangentVy: rampAngle === null ? null : intendedVx * walkingSpeed * Math.tan(rampAngle) },
           grounded: player.grounded,
           rayGrounded: player.checkGrounded(),
           input: { left: input.left, right: input.right, jumpHeld: input.jumpHeld, jumpPressed: input.jumpPressed },
+          downHits,
+          touchingContacts,
           rayHits,
           nearStaticBodies,
           ramps: window.__level().filter((r) => r.type === 'stairRamp')
