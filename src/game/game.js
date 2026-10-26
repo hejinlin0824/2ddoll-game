@@ -737,6 +737,11 @@ function updateRaidHUD(now) {
 }
 
 document.getElementById('raidDialogue')?.addEventListener('click', () => advanceRaidDialogue(raidCampaign));
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' || !raidState.enabled || !raidCampaign.activeDialogue || menuIsOpen()) return;
+  event.preventDefault();
+  advanceRaidDialogue(raidCampaign);
+});
 
 // ---- 世界坐标(狙击开镜时整体按 cam.zoom 放大)----
 // 震动不再随机抖:trauma² × 平滑噪声,每帧算好 cam.oX/oY/oR,全画面共用(带轻微旋转让打击更"沉")
