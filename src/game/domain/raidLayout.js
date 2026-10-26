@@ -2,6 +2,20 @@
 export const RAID_FLOOR_Y = Object.freeze([0, 3.5, 7, 10.5]);
 // Every storey shares the same open shaft. Keep slab gaps and physical stair flights aligned.
 export const RAID_STAIR_OPENING = Object.freeze({ left: 47, right: 53 });
+// The shaft gets a walkable crossing at each storey. Players intentionally enter a flight with
+// W+A/D (up) or S+A/D (down); ordinary A/D movement keeps both sides of the floor connected.
+export function createRaidStairBridge(centerY) {
+  if (!Number.isFinite(centerY)) return null;
+  return {
+    x: (RAID_STAIR_OPENING.left + RAID_STAIR_OPENING.right) / 2,
+    y: centerY,
+    w: RAID_STAIR_OPENING.right - RAID_STAIR_OPENING.left,
+    h: 0.5,
+    type: 'stairBridge',
+    stairBridgeId: `stair-crossing-${centerY}`,
+    destructible: false,
+  };
+}
 export const RAID_STAIR_STEPS_PER_FLIGHT = 20;
 // Keep reinforcements away from the stair shaft and its two landing approaches.
 export const RAID_STAIR_NO_SPAWN_ZONE = Object.freeze({
