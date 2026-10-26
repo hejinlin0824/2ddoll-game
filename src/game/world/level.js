@@ -1,6 +1,6 @@
 // 关卡地形:静态刚体 + 视差背景绘制
 import { Box, Vec2 } from 'planck';
-import { createRaidTraversalStairs, RAID_STAIR_OPENING, RAID_ROOF_TACTICAL_COVER } from '../domain/raidLayout.js';
+import { createRaidTraversalStairs, createRaidStairBridge, RAID_STAIR_OPENING, RAID_ROOF_TACTICAL_COVER } from '../domain/raidLayout.js';
 
 export const CAT = { GROUND: 0x1, PLAYER: 0x2, LIMB: 0x4 };
 
@@ -170,6 +170,7 @@ export const LAYOUTS = {
     const crate = (x, floorTop, type = 'crate') => ({ x, y: floorTop + 0.52, w: 1.0, h: 1.04, type, destructible: true });
     const floorSpan = (top) => [
       floor(RAID_STAIR_OPENING.left / 2, top, RAID_STAIR_OPENING.left),
+      createRaidStairBridge(top),
       floor((74 + RAID_STAIR_OPENING.right) / 2, top, 74 - RAID_STAIR_OPENING.right),
     ];
     return [
@@ -232,22 +233,39 @@ function installStairRampOneWayContacts(world) {
     const dataA = bodyA.getUserData?.();
     const dataB = bodyB.getUserData?.();
     const rampBody = dataA?.type === 'stairRamp' ? bodyA : dataB?.type === 'stairRamp' ? bodyB : null;
-    if (!rampBody) return;
-    stats.rampContacts++;
+    const bridgeBody = dataA?.type === 'stairBridge' ? bodyA : dataB?.type === 'stairBridge' ? bodyB : null;
+    if (!rampBody && !bridgeBody) return;
 
-    const actorFixture = rampBody === bodyA ? fixtureB : fixtureA;
+    const contactedStaticBody = rampBody || bridgeBody;
+    const actorFixture = contactedStaticBody === bodyA ? fixtureB : fixtureA;
     const actorBody = actorFixture.getBody();
     const categoryBits = typeof actorFixture.getFilterCategoryBits === 'function'
       ? actorFixture.getFilterCategoryBits()
       : (actorFixture.getFilterData?.()?.categoryBits || 0);
     if (actorBody.getType() !== 'dynamic') return;
     if (!(categoryBits & CAT.PLAYER)) { stats.rejectedCategories++; return; }
+    const actorData = actorBody.getUserData?.();
+
+    // The bridge is a normal floor while walking across the building. It yields only when the
+    // main operator is deliberately entering a selected stair flight.
+    if (bridgeBody) {
+      if (actorData?.isMainPlayer && actorData.stairTraversalIntent) contact.setEnabled(false);
+      return;
+    }
+    stats.rampContacts++;
     stats.actorContacts++;
+
+    // When no stair traversal is requested, the sloped art is pass-through geometry for the
+    // operator; otherwise it behaves as the selected walkable stair surface. This lets players
+    // cross at the same floor without being swept up/down by the ramp.
+    if (actorData?.isMainPlayer && !actorData.stairTraversalIntent) {
+      contact.setEnabled(false);
+      return;
+    }
 
     // At a switchback, the rig can touch both the old flight and the next flight at once.
     // The movement controller names the intended support before the physics step; suppress
     // adjacent-ramp contacts so the old stair cannot carry the torso back uphill.
-    const actorData = actorBody.getUserData?.();
     const activeStairRampId = actorData?.isMainPlayer ? actorData.activeStairRampId : null;
     if (activeStairRampId && rampBody.getUserData()?.stairRampId !== activeStairRampId) {
       stats.disabledFromBelow++;
@@ -327,6 +345,8 @@ export function buildLevel(world) {
         xEnd: r.xEnd,
         lowerTop: r.lowerTop,
       });
+    } else if (r.type === 'stairBridge') {
+      b.setUserData({ type: 'stairBridge', stairBridgeId: r.stairBridgeId });
     }
     r.body = b; // 破坏时 destroyBody 用(rect 与 body 同生命周期)
     bodies.push(b);
@@ -823,9 +843,9 @@ export function drawRaidFloorplan(ctx, w2s, ppm, isVisible = () => false) {
   ctx.strokeStyle = '#8daebe';
   ctx.lineWidth = Math.max(1, ppm * 0.018);
   const floors = [
-    { y: 10.5, spans: [[0, RAID_STAIR_OPENING.left], [RAID_STAIR_OPENING.right, 74]], partitions: [] },
-    { y: 7, spans: [[0, RAID_STAIR_OPENING.left], [RAID_STAIR_OPENING.right, 74]], partitions: [23, 43, 62] },
-    { y: 3.5, spans: [[0, RAID_STAIR_OPENING.left], [RAID_STAIR_OPENING.right, 74]], partitions: [17, 37, 58] },
+    { y: 10.5, spans: [[0, 74]], partitions: [] },
+    { y: 7, spans: [[0, 74]], partitions: [23, 43, 62] },
+    { y: 3.5, spans: [[0, 74]], partitions: [17, 37, 58] },
     { y: 0, spans: [[0, 74]], partitions: [11, 29, 42, 61] },
   ];
   for (const floor of floors) {
@@ -992,13 +1012,26 @@ export function drawTerrain(ctx, rects, w2s, ppm, time = 0, lighting = null) {
       ctx.fillStyle = '#8797a3'; ctx.fillRect(sx, sy, w, Math.max(1.5, Math.min(3, h * 0.22)));
       ctx.fillStyle = 'rgba(255,177,74,0.78)'; ctx.fillRect(sx + w * 0.08, sy + Math.max(1, h * 0.22), w * 0.84, Math.max(1, h * 0.11));
       ctx.strokeStyle = 'rgba(6,13,21,0.70)'; ctx.lineWidth = 1; ctx.strokeRect(sx + 0.5, sy + 0.5, Math.max(0, w - 1), Math.max(0, h - 1));
-    } else if (r.type === 'concrete') {
-      ctx.fillStyle = '#535b63';
+    } else if (r.type === 'concrete' || r.type === 'stairBridge') {
+      ctx.fillStyle = r.type === 'stairBridge' ? '#485662' : '#535b63';
       ctx.fillRect(sx, sy, w, h);
-      ctx.fillStyle = '#7b858c';
+      ctx.fillStyle = r.type === 'stairBridge' ? '#81919a' : '#7b858c';
       ctx.fillRect(sx, sy, w, Math.max(2, Math.min(3, h * 0.13)));
       ctx.fillStyle = 'rgba(18,23,28,0.22)';
       ctx.fillRect(sx, sy + h * 0.78, w, h * 0.22);
+      if (r.type === 'stairBridge') {
+        // Amber chevrons make the cross-floor passage visibly distinct from the stair flight.
+        ctx.strokeStyle = 'rgba(255,177,74,0.72)';
+        ctx.lineWidth = Math.max(1, ppm * 0.024);
+        const spacing = Math.max(12, ppm * 0.72);
+        for (let x = sx + spacing * 0.45; x < sx + w - spacing * 0.25; x += spacing) {
+          ctx.beginPath();
+          ctx.moveTo(x - spacing * 0.15, sy + h * 0.34);
+          ctx.lineTo(x + spacing * 0.05, sy + h * 0.50);
+          ctx.lineTo(x - spacing * 0.15, sy + h * 0.66);
+          ctx.stroke();
+        }
+      }
     } else if (r.type === 'wall') {
       ctx.fillStyle = '#3b4653';
       ctx.fillRect(sx, sy, w, h);
