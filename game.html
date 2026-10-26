@@ -505,8 +505,8 @@
       .menu-intel-row b { max-width: 100%; color: rgba(232,239,250,.9); font-size: 10px; letter-spacing: .25px; line-height: 1.55; overflow-wrap: anywhere; }
       .menu-intel-row b.warn { color: #ffc079; }
       .mission-bottom { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 15px; color: rgba(175,195,222,.38); font-size: 7px; letter-spacing: 1.3px; }
-      .mission-bottom .mission-secure { display: inline-flex; align-items: center; gap: 6px; color: rgba(164,219,177,.8); }
-      .mission-bottom .mission-secure::before { content: ""; width: 5px; height: 5px; background: #7ee0a0; border-radius: 50%; }
+      .mission-bottom .mission-secure { display: inline-flex; align-items: flex-start; gap: 6px; max-width: 72%; min-width: 0; flex-wrap: wrap; color: rgba(164,219,177,.8); line-height: 1.65; letter-spacing: .55px; overflow-wrap: anywhere; }
+      .mission-bottom .mission-secure::before { content: ""; width: 5px; height: 5px; flex: none; margin-top: 2px; background: #7ee0a0; border-radius: 50%; }
 
       .menu-deck { grid-column: 1 / -1; grid-row: 3; min-width: 0; position: relative; }
       .menu-deck-head { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
@@ -1055,7 +1055,7 @@
           <div class="menu-intel-row"><span>战场地形</span><b id="menuIntelTerrain">平台 / 箱体掩护</b></div>
           <div class="menu-intel-row"><span>行动收益</span><b id="menuIntelLoot">15 波 · 品质递增</b></div>
         </div>
-        <div class="mission-bottom"><span class="mission-secure">战术数据已同步</span><span>HERO // FIELD COMMAND</span></div>
+        <div class="mission-bottom"><span id="menuMissionProgress" class="mission-secure" aria-live="polite">战术数据已同步</span><span>HERO // FIELD COMMAND</span></div>
       </section>
 
       <section class="menu-deck" aria-label="选择作战区域">
