@@ -138,6 +138,7 @@ export class Player {
     this.facing = 1;
     this.grounded = false;
     this.wasGrounded = false;
+    this.lastStairVerticalSign = 0;
     this.crouch = false;   // S 按住:下蹲(低姿态)
     this.crouched = false; // 当前碰撞体状态(true = 矮胶囊已换上)
     this.roping = false;   // 绳降中(敌人专用):双手举过头抓绳
@@ -686,20 +687,34 @@ export class Player {
     return hit;
   }
 
-  // Return the angle of the actual supporting raid stair ramp, if any.
-  // This is more specific than grounded: flat landings must retain normal movement physics.
-  getStandingStairRampAngle() {
+  // Resolve the supporting ramp from authored endpoints rather than whichever overlapping
+  // fixture Planck happens to report first. At a switchback landing, two ramps meet at the
+  // same point; retain the prior vertical travel intent so reversing horizontal direction
+  // selects the *next* flight instead of climbing back up the ramp we just descended.
+  getStandingStairRampAngle(direction = 0, preferredVerticalSign = 0) {
     const p = this.torso.getPosition();
-    const self = this.selfSet || (this.selfSet = new Set(this.allBodies));
-    let rampAngle = null;
-    this.world.rayCast(p, Vec2(p.x, p.y - 0.92), (fixture) => {
-      const body = fixture.getBody();
-      if (self.has(body)) return -1;
-      if (body.getUserData()?.type !== 'stairRamp') return -1;
-      rampAngle = body.getAngle();
-      return 0;
-    });
-    return rampAngle;
+    let best = null;
+    for (let body = this.world.getBodyList(); body; body = body.getNext()) {
+      const data = body.getUserData?.();
+      if (data?.type !== 'stairRamp'
+          || !Number.isFinite(data.xStart) || !Number.isFinite(data.xEnd)
+          || !Number.isFinite(data.lowerTop) || data.xStart === data.xEnd) continue;
+      const minX = Math.min(data.xStart, data.xEnd);
+      const maxX = Math.max(data.xStart, data.xEnd);
+      if (p.x < minX - 0.36 || p.x > maxX + 0.36) continue;
+      const t = (p.x - data.xStart) / (data.xEnd - data.xStart);
+      const surfaceY = data.lowerTop + t * 3.5;
+      const verticalGap = p.y - surfaceY;
+      // A standing rig's torso center is roughly 0.7-0.9m above the stair surface.
+      if (verticalGap < 0.18 || verticalGap > 1.25) continue;
+      const angle = body.getAngle();
+      const gapError = Math.abs(verticalGap - 0.78);
+      const verticalIntent = direction === 0 ? 0 : Math.sign(direction * Math.tan(angle));
+      const intentMatch = preferredVerticalSign !== 0 && verticalIntent === preferredVerticalSign;
+      const score = gapError - (intentMatch ? 0.24 : 0);
+      if (!best || score < best.score) best = { angle, score };
+    }
+    return best?.angle ?? null;
   }
 
   // 姿态目标:全部按"朝右"局部空间给出,施加时乘 facing
@@ -807,8 +822,8 @@ export class Player {
     // Stabilize only while supported by the raid's inclined ramp. On flat ground and in free
     // ragdoll motion, keep the original physics feel; this prevents the torso capsule rolling
     // sideways and becoming wedged on the uphill collision surface.
-    const stairRampAngle = this.grounded ? this.getStandingStairRampAngle() : null;
-    if (stairRampAngle !== null) {
+    const supportRampAngle = this.grounded ? this.getStandingStairRampAngle() : null;
+    if (supportRampAngle !== null) {
       const angleError = wrapPi(torso.getAngle());
       const angularVelocity = torso.getAngularVelocity();
       torso.setAngularVelocity(clamp(-angleError * 7 - angularVelocity * 0.65, -5.5, 5.5));
@@ -856,6 +871,9 @@ export class Player {
       this.gunAnchor = { x: hand.x, y: hand.y };
     }
 
+    const stairRampAngle = this.grounded
+      ? this.getStandingStairRampAngle(dir, this.lastStairVerticalSign)
+      : null;
     const speed = (this.crouch ? 1.6 : 4.6) * (1 + (this.moveSpeedPct || 0) / 100);
     let targetVx = dir * speed;
     // 移动方向上有墙就不再硬塞速度,否则会和碰撞求解器打架,把角色弹飞
@@ -884,6 +902,9 @@ export class Player {
     const targetVy = onRampAndMoving
       ? clamp(targetVx * Math.tan(stairRampAngle), -7, 7)
       : v.y;
+    if (onRampAndMoving && Math.abs(targetVy) > 0.35) {
+      this.lastStairVerticalSign = Math.sign(targetVy);
+    }
     // 速度限幅:即使被边角蹭到也不会被高速弹飞
     torso.setLinearVelocity(Vec2(
       clamp(lerp(v.x, targetVx, k), -9, 9),
