@@ -74,6 +74,7 @@ export class Player {
       type: 'playerTorso',
       isMainPlayer: this.persistPlayerData,
       activeStairRampId: null,
+      stairTraversalIntent: false,
     });
     const torsoFixtureDef = {
       density: 5, friction: 0.02, restitution: 0,
@@ -143,7 +144,6 @@ export class Player {
     this.facing = 1;
     this.grounded = false;
     this.wasGrounded = false;
-    this.lastStairVerticalSign = 0;
     this.crouch = false;   // S 按住:下蹲(低姿态)
     this.crouched = false; // 当前碰撞体状态(true = 矮胶囊已换上)
     this.roping = false;   // 绳降中(敌人专用):双手举过头抓绳
@@ -715,6 +715,7 @@ export class Player {
       const angle = body.getAngle();
       const gapError = Math.abs(verticalGap - 0.78);
       const verticalIntent = direction === 0 ? 0 : Math.sign(direction * Math.tan(angle));
+      if (direction !== 0 && preferredVerticalSign !== 0 && verticalIntent !== preferredVerticalSign) continue;
       const intentMatch = preferredVerticalSign !== 0 && verticalIntent === preferredVerticalSign;
       // At the shared endpoint the next flight may sit slightly farther below the torso
       // than the current flight. Travel continuity must beat this small gap difference.
@@ -826,26 +827,36 @@ export class Player {
     // ---- 移动 ----
     this.wasGrounded = this.grounded;
     this.grounded = this.checkGrounded();
-    // Stabilize only while supported by the raid's inclined ramp. On flat ground and in free
-    // ragdoll motion, keep the original physics feel; this prevents the torso capsule rolling
-    // sideways and becoming wedged on the uphill collision surface.
-    const supportRamp = this.grounded ? this.getStandingStairRamp() : null;
-    this.torso.getUserData().activeStairRampId = supportRamp?.id ?? null;
-    if (supportRamp !== null) {
-      const angleError = wrapPi(torso.getAngle());
-      const angularVelocity = torso.getAngularVelocity();
-      torso.setAngularVelocity(clamp(-angleError * 7 - angularVelocity * 0.65, -5.5, 5.5));
-    }
-    this.coyote = this.grounded ? 0.1 : Math.max(0, this.coyote - dt);
-    this.jumpBuf = input.jumpPressed ? 0.12 : Math.max(0, this.jumpBuf - dt);
-
-    this.crouch = input.down && this.grounded;
-    if (this.crouch !== this.crouched) this.applyCrouch(this.crouch);
     const sniper = this.weapon === 'rifle' && this.gunDef.stats?.mode === 'hitscan';
     this.sniperStance = sniper;
     let dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (sniper) dir = 0; // 狙击站桩:持栓动枪时不能移动
     if (dir !== 0) this.facing = dir;
+
+    // Crossing a storey uses A/D alone. To enter the diagonal stair route intentionally,
+    // hold W+A/D to climb up or S+A/D to descend. The selected slope then owns the collider.
+    const requestedStairVerticalSign = input.jumpHeld ? 1 : input.down ? -1 : 0;
+    const stairRampSupport = this.grounded && dir !== 0 && requestedStairVerticalSign !== 0
+      ? this.getStandingStairRamp(dir, requestedStairVerticalSign)
+      : null;
+    const stairTraversalActive = !!stairRampSupport;
+    const stairRampAngle = stairRampSupport?.angle ?? null;
+    const torsoData = this.torso.getUserData();
+    torsoData.activeStairRampId = stairRampSupport?.id ?? null;
+    torsoData.stairTraversalIntent = stairTraversalActive;
+    // Stabilize only while the operator has deliberately selected an inclined stair surface.
+    // On horizontal bridges and in free movement, preserve the original active-ragdoll feel.
+    if (stairTraversalActive) {
+      const angleError = wrapPi(torso.getAngle());
+      const angularVelocity = torso.getAngularVelocity();
+      torso.setAngularVelocity(clamp(-angleError * 7 - angularVelocity * 0.65, -5.5, 5.5));
+    }
+    this.coyote = this.grounded ? 0.1 : Math.max(0, this.coyote - dt);
+    this.jumpBuf = stairTraversalActive ? 0
+      : input.jumpPressed ? 0.12 : Math.max(0, this.jumpBuf - dt);
+
+    this.crouch = input.down && this.grounded && !stairTraversalActive;
+    if (this.crouch !== this.crouched) this.applyCrouch(this.crouch);
 
     // 鼠标瞄准:枪臂直指光标,角色面向光标一侧
     this.aimAlpha = null;
@@ -879,11 +890,6 @@ export class Player {
       this.gunAnchor = { x: hand.x, y: hand.y };
     }
 
-    const stairRampSupport = this.grounded
-      ? this.getStandingStairRamp(dir, this.lastStairVerticalSign)
-      : null;
-    const stairRampAngle = stairRampSupport?.angle ?? null;
-    this.torso.getUserData().activeStairRampId = stairRampSupport?.id ?? null;
     const speed = (this.crouch ? 1.6 : 4.6) * (1 + (this.moveSpeedPct || 0) / 100);
     let targetVx = dir * speed;
     // 移动方向上有墙就不再硬塞速度,否则会和碰撞求解器打架,把角色弹飞
@@ -912,9 +918,6 @@ export class Player {
     const targetVy = onRampAndMoving
       ? clamp(targetVx * Math.tan(stairRampAngle), -7, 7)
       : v.y;
-    if (onRampAndMoving && Math.abs(targetVy) > 0.35) {
-      this.lastStairVerticalSign = Math.sign(targetVy);
-    }
     // 速度限幅:即使被边角蹭到也不会被高速弹飞
     torso.setLinearVelocity(Vec2(
       clamp(lerp(v.x, targetVx, k), -9, 9),
