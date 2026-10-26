@@ -173,6 +173,19 @@ try {
   await stairTraversalPage.waitForFunction(() => typeof window.__game === 'function' && typeof window.__raid === 'function', undefined, { timeout: 10000 });
   await stairTraversalPage.locator('#menuStart').click();
   await stairTraversalPage.waitForFunction(() => !window.__feel().menu && !window.__raid().rappel, undefined, { timeout: 12000 });
+  await stairTraversalPage.evaluate(() => {
+    const g = window.__game();
+    g.enemies.length = 0;
+    g.bullets.length = 0;
+    g.beams.length = 0;
+    if (g.waves) {
+      g.waves.queue = 0;
+      g.waves.roleQueue = [];
+      g.waves.heli = null;
+      g.waves.done = true;
+      g.waves.restT = 999999;
+    }
+  });
   const placeRig = async (x, y) => stairTraversalPage.evaluate(({ x, y }) => {
     const p = window.__game().player;
     const origin = p.torso.getPosition();
