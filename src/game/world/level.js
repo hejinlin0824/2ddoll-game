@@ -250,7 +250,12 @@ function installStairRampOneWayContacts(world) {
     // The ramp's walkable face points along (-sin(angle), cos(angle)).
     const signedDistance = (actorPos.x - rampPos.x) * -Math.sin(angle)
       + (actorPos.y - rampPos.y) * Math.cos(angle);
-    if (signedDistance < -0.05) {
+    // The rig torso is about 0.78m tall from center to foot. A tiny negative-only
+    // threshold lets the *next* flight's underside collide with the torso at switchback
+    // landings (the center can still be slightly above that ramp's mid-plane while the
+    // torso is physically underneath its top face). A valid top-side stance is ~0.8m
+    // above the ramp surface, so keep a generous center-clearance before enabling contact.
+    if (signedDistance < 0.58) {
       stats.disabledFromBelow++;
       contact.setEnabled(false);
     } else {
