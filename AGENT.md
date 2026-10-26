@@ -621,7 +621,7 @@ class,不写样式);设计令牌在 `:root`:--bg-0 #070b13 深钢蓝底 / --ambe
 
 ## 屋顶剿匪第一章与中央楼梯（2026-10-23）
 
-- 当前可玩章节标题：`夜幕行动：失联名单`。任务链为屋顶绳降 → 屋顶/三层/二层逐层清剿 → 按 E 回收二层 COMMS 终端中的失联名单 → 清理地面并发现门禁记录异常 → 回到地面入口配电柜旁按 E 发出撤离信号 → 播放结局无线电并写入 `contra-raid-campaign-v1` 完成记录。任务内目标写在 `#raidMissionStatus`，无线电字幕由 `#raidDialogue` 显示；重要对话必须等玩家点击或按 Enter 确认后推进，不能用短定时器自动消失。
+- 当前可玩章节标题：`夜幕行动：失联名单`。任务链为屋顶绳降 → 屋顶/三层/二层逐层清剿 → 按 E 回收二层 COMMS 终端中的失联名单 → 清理地面并发现门禁记录异常 → 回到地面入口配电柜旁按 E 发出撤离信号 → 播放结局无线电并写入 `contra-raid-campaign-v1` 完成记录。任务内目标写在 `#raidMissionStatus`，无线电字幕由 `#raidDialogue` 显示；重要对话必须等玩家点击或按 Enter 确认后推进，不能用短定时器自动消失。作战台读取 `contra-raid-checkpoint-v1` 显示已清理楼层和下一目标，读取 `contra-raid-campaign-v1` 的完成记录显示结章状态；“再次部署”必须走 `switchScene('raid')` 原地重建，不能只隐藏菜单。
 - 纯逻辑状态机在 `src/game/domain/raidCampaign.js`；标题、目标、无线电对白、楼层触发顺序和完成存档都集中在这里。状态由 `src/game/game.js` 每个游戏步更新，不要另外写一套 DOM 定时器或独立任务进度。
 - **中央楼梯井是共享几何契约**：`src/game/domain/raidLayout.js` 的 `RAID_STAIR_OPENING` 定义 `x=47..53`；楼板必须精确留出同一开口。每段 20 级视觉踏步（共 60 级），可视踏步设 `collision:false`，并配有 `type:'stairRamp'` 的隐藏旋转坡道；坡道顶边必须与两侧楼板端点共线，玩家仅靠 A/D 即可连续通行，不依赖重复跳跃。方向按左/右/左交替，落点与下一段起步侧相接。增援出生点避开 x=45..55；AI 守军还必须服从 `RAID_STAIR_ACTOR_CLEARANCE`（x=46.15..53.85），只在楼梯口两侧交战，不能驻留/追入唯一通行井道；`constrainRaidActorVelocity` 是其统一约束。屋顶掩体来自 `RAID_ROOF_TACTICAL_COVER`，不得占用楼梯接近区。
 - 楼梯落脚平台必须保留宽阔转向空间；靠近楼梯的隔墙应与落点留出足够横向净空。关卡布防可在平台两侧设置交叉火力，但 NPC 不能占住唯一竖向路线。每次改动几何/布防后，`tests/raid-layout.test.mjs` 必须验证净空与屋顶掩体；`tests/browser-smoke.mjs` 必须从真实楼层落点逐段走完楼梯，并确认 AI 没有进入预留通道。
