@@ -198,6 +198,21 @@ try {
   }));
   assert(completedMenu.label === '再次部署' && /第一章已完成/.test(completedMenu.status),
     `completed chapter status was not visible on the operation table: ${JSON.stringify(completedMenu)}`);
+
+  const expectedGarrisonCount = await progressPage.evaluate(() => {
+    const g = window.__game();
+    const count = g.enemies.filter((e) => e.raidMode && !e.isReinforcement).length;
+    g.enemies.length = 0; // Sentinel: clicking redeploy must rebuild the actual mission world.
+    return count;
+  });
+  assert(expectedGarrisonCount > 0, 'completed raid fixture has no initial garrison sentinel');
+  await progressPage.locator('#menuStart').click();
+  await progressPage.waitForFunction((expected) => {
+    const g = window.__game();
+    const raid = window.__raid();
+    const garrisons = g.enemies.filter((e) => e.raidMode && !e.isReinforcement);
+    return !window.__feel().menu && raid.campaign.stage === 'insertion' && garrisons.length >= expected;
+  }, expectedGarrisonCount, { timeout: 10000 });
   await progressPage.close();
 
   for (const key of ['renderError', 'renderLayerErrors', 'raidVisionError', 'frameError']) {
@@ -795,6 +810,22 @@ try {
     const inv = JSON.parse(localStorage.getItem('contra-inv') || 'null');
     return inv && inv.coins === coins - 50 && inv.items.length === count + 1;
   }, { coins: coinsBeforeBox, count: itemsBeforeBox }, { timeout: 5000 });
+  // Stop post-transaction combat/loot ticks before taking the reload-persistence snapshot.
+  // Otherwise a late NPC kill can legitimately award one more coin between two assertions.
+  await gameplayPage.evaluate(() => {
+    const g = window.__game();
+    g.enemies.length = 0;
+    g.pickups.length = 0;
+    g.bullets.length = 0;
+    g.beams.length = 0;
+    if (g.waves) {
+      g.waves.queue = 0;
+      g.waves.roleQueue = [];
+      g.waves.heli = null;
+      g.waves.done = true;
+      g.waves.restT = 999999;
+    }
+  });
   const economyEnd = await gameplayPage.evaluate(() => {
     const inv = JSON.parse(localStorage.getItem('contra-inv') || 'null');
     return { coins: inv.coins, itemCount: inv.items.length };
