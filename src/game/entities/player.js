@@ -70,6 +70,11 @@ export class Player {
     // 这样角色永远"站在碰撞体上":不会双腿插进地里、
     // 圆顶圆底跳跃撞平台边角会顺滑滑开、蹲姿/跑动也不会被直角卡住。
     this.torso = w.createBody({ type: 'dynamic', position: c(0, 0), angularDamping: 0.1 });
+    this.torso.setUserData({
+      type: 'playerTorso',
+      isMainPlayer: this.persistPlayerData,
+      activeStairRampId: null,
+    });
     const torsoFixtureDef = {
       density: 5, friction: 0.02, restitution: 0,
       filterCategoryBits: CAT.PLAYER, filterMaskBits: CAT.GROUND,
@@ -825,7 +830,7 @@ export class Player {
     // ragdoll motion, keep the original physics feel; this prevents the torso capsule rolling
     // sideways and becoming wedged on the uphill collision surface.
     const supportRamp = this.grounded ? this.getStandingStairRamp() : null;
-    this.world.__raidActiveStairRampId = supportRamp?.id ?? null;
+    this.torso.getUserData().activeStairRampId = supportRamp?.id ?? null;
     if (supportRamp !== null) {
       const angleError = wrapPi(torso.getAngle());
       const angularVelocity = torso.getAngularVelocity();
@@ -878,7 +883,7 @@ export class Player {
       ? this.getStandingStairRamp(dir, this.lastStairVerticalSign)
       : null;
     const stairRampAngle = stairRampSupport?.angle ?? null;
-    this.world.__raidActiveStairRampId = stairRampSupport?.id ?? null;
+    this.torso.getUserData().activeStairRampId = stairRampSupport?.id ?? null;
     const speed = (this.crouch ? 1.6 : 4.6) * (1 + (this.moveSpeedPct || 0) / 100);
     let targetVx = dir * speed;
     // 移动方向上有墙就不再硬塞速度,否则会和碰撞求解器打架,把角色弹飞
