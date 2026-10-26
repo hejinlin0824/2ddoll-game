@@ -391,6 +391,7 @@ try {
           position: { x: p.x, y: p.y, torsoAngle: player.torso.getAngle(), angularVelocity: player.torso.getAngularVelocity() },
           velocity: { x: v.x, y: v.y },
           rampControl: { rampAngle, intendedVx: intendedVx * walkingSpeed, expectedTangentVy: rampAngle === null ? null : intendedVx * walkingSpeed * Math.tan(rampAngle) },
+          stairRampContactStats: g.world.__raidStairRampContactStats ? { ...g.world.__raidStairRampContactStats } : null,
           grounded: player.grounded,
           rayGrounded: player.checkGrounded(),
           input: { left: input.left, right: input.right, jumpHeld: input.jumpHeld, jumpPressed: input.jumpPressed },
