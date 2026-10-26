@@ -244,6 +244,16 @@ function installStairRampOneWayContacts(world) {
     if (!(categoryBits & CAT.PLAYER)) { stats.rejectedCategories++; return; }
     stats.actorContacts++;
 
+    // At a switchback, the rig can touch both the old flight and the next flight at once.
+    // The movement controller names the intended support before the physics step; suppress
+    // adjacent-ramp contacts so the old stair cannot carry the torso back uphill.
+    const activeStairRampId = world.__raidActiveStairRampId;
+    if (activeStairRampId && rampBody.getUserData()?.stairRampId !== activeStairRampId) {
+      stats.disabledFromBelow++;
+      contact.setEnabled(false);
+      return;
+    }
+
     const rampPos = rampBody.getPosition();
     const actorPos = actorBody.getPosition();
     const angle = rampBody.getAngle();
