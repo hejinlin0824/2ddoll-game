@@ -839,7 +839,11 @@ export class Player {
       const self = this.selfSet || (this.selfSet = new Set(this.allBodies));
       let blocked = false;
       this.world.rayCast(p, Vec2(p.x + dir * 0.34, p.y), (fixture) => {
-        if (self.has(fixture.getBody())) return -1;
+        const body = fixture.getBody();
+        if (self.has(body)) return -1;
+        // The probe is horizontal: it intersects the side of an uphill stair ramp even when
+        // the ramp is the walkable floor under the operator. Do not treat that surface as a wall.
+        if (body.getUserData()?.type === 'stairRamp') return -1;
         blocked = true;
         return 0;
       });
