@@ -233,10 +233,11 @@ function installStairRampOneWayContacts(world) {
     if (!rampBody) return;
     stats.rampContacts++;
 
-    const rampFixture = rampBody === bodyA ? fixtureA : fixtureB;
     const actorFixture = rampBody === bodyA ? fixtureB : fixtureA;
     const actorBody = actorFixture.getBody();
-    const categoryBits = actorFixture.getFilterData?.().categoryBits || 0;
+    const categoryBits = typeof actorFixture.getFilterCategoryBits === 'function'
+      ? actorFixture.getFilterCategoryBits()
+      : (actorFixture.getFilterData?.()?.categoryBits || 0);
     if (actorBody.getType() !== 'dynamic') return;
     if (!(categoryBits & CAT.PLAYER)) { stats.rejectedCategories++; return; }
     stats.actorContacts++;
