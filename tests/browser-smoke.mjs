@@ -318,19 +318,54 @@ try {
       }, flight.targetY, { timeout: 8000 });
     } catch (error) {
       const diagnostic = await page.evaluate((route) => {
-        const { player, input } = window.__game();
+        const g = window.__game();
+        const { player, input } = g;
         const p = player.torso.getPosition();
         const v = player.torso.getLinearVelocity();
+        const rayHits = [];
+        const dir = route.direction === 'left' ? -1 : 1;
+        g.world.rayCast({ x: p.x, y: p.y }, { x: p.x + dir * 0.34, y: p.y }, (fixture) => {
+          const body = fixture.getBody();
+          const bp = body.getPosition();
+          const data = body.getUserData?.();
+          rayHits.push({
+            bodyType: body.getType?.(),
+            bodyPosition: { x: bp.x, y: bp.y },
+            bodyAngle: body.getAngle?.(),
+            userData: data && typeof data === 'object'
+              ? { type: data.type, stairRampId: data.stairRampId }
+              : data ?? null,
+            categoryBits: fixture.getFilterData?.()?.categoryBits,
+            maskBits: fixture.getFilterData?.()?.maskBits,
+          });
+          return -1;
+        });
+        const nearStaticBodies = [];
+        let body = g.world.getBodyList();
+        while (body) {
+          const bp = body.getPosition();
+          if (body.getType?.() === 'static' && Math.abs(bp.x - p.x) < 1.25 && Math.abs(bp.y - p.y) < 1.5) {
+            const data = body.getUserData?.();
+            nearStaticBodies.push({
+              position: { x: bp.x, y: bp.y }, angle: body.getAngle?.(),
+              userData: data && typeof data === 'object'
+                ? { type: data.type, stairRampId: data.stairRampId }
+                : data ?? null,
+            });
+          }
+          body = body.getNext();
+        }
         return {
           route,
-          position: { x: p.x, y: p.y },
+          position: { x: p.x, y: p.y, torsoAngle: player.torso.getAngle() },
           velocity: { x: v.x, y: v.y },
           grounded: player.grounded,
           rayGrounded: player.checkGrounded(),
           input: { left: input.left, right: input.right, jumpHeld: input.jumpHeld, jumpPressed: input.jumpPressed },
+          rayHits,
+          nearStaticBodies,
           ramps: window.__level().filter((r) => r.type === 'stairRamp')
-            .map((r) => ({ id: r.stairRampId, x: r.x, y: r.y, w: r.w, h: r.h, angle: r.angle,
-              bodyAngle: r.body?.getAngle?.(), bodyType: r.body?.getType?.() })),
+            .map((r) => ({ id: r.stairRampId, x: r.x, y: r.y, w: r.w, h: r.h, angle: r.angle })),
           scene: localStorage.getItem('contra-scene'),
           introActive: !!window.__raid()?.rappel,
         };
