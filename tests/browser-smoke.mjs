@@ -183,7 +183,17 @@ try {
   assert(/已清理 2\/4 层/.test(resumedMenu.status) && /清理二层/.test(resumedMenu.status),
     `operation table did not name the next saved objective: ${JSON.stringify(resumedMenu)}`);
 
-  await progressPage.evaluate(() => {
+  await progressPage.close();
+
+  // A separate browser context keeps the completion fixture independent of the resumed game's
+  // live checkpoint writer; seed storage before boot so there is no race with the RAF loop.
+  const completedPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  completedPage.on('pageerror', (error) => failures.push(`completed campaign pageerror: ${error.stack || error.message}`));
+  completedPage.on('console', (message) => {
+    if (message.type() === 'error') failures.push(`completed campaign console.error: ${message.text()}`);
+  });
+  await completedPage.addInitScript(() => {
+    localStorage.setItem('contra-scene', 'raid');
     localStorage.removeItem('contra-raid-checkpoint-v1');
     localStorage.setItem('contra-raid-campaign-v1', JSON.stringify({
       version: 1, campaign: '夜幕行动：失联名单', completed: true,
@@ -191,24 +201,25 @@ try {
       durationSeconds: 420, intelSecured: true, evidenceId: 'missing-list', outcome: 'extracted',
     }));
   });
-  await progressPage.reload({ waitUntil: 'networkidle', timeout: 30000 });
-  const completedMenu = await progressPage.evaluate(() => ({
+  const completedResponse = await completedPage.goto(baseURL + '/game.html', { waitUntil: 'networkidle', timeout: 30000 });
+  assert(!!completedResponse && completedResponse.status() === 200, 'completed campaign menu failed to load');
+  const completedMenu = await completedPage.evaluate(() => ({
     label: document.getElementById('menuStartLabel')?.textContent || '',
     status: document.getElementById('menuMissionProgress')?.textContent || '',
   }));
   assert(completedMenu.label === '再次部署' && /第一章已完成/.test(completedMenu.status),
     `completed chapter status was not visible on the operation table: ${JSON.stringify(completedMenu)}`);
 
-  const expectedGarrisonCount = await progressPage.evaluate(() => {
+  const expectedGarrisonCount = await completedPage.evaluate(() => {
     const g = window.__game();
     const count = g.enemies.filter((e) => e.raidMode && !e.isReinforcement).length;
     g.enemies.length = 0; // Sentinel: clicking redeploy must rebuild the actual mission world.
     return count;
   });
   assert(expectedGarrisonCount > 0, 'completed raid fixture has no initial garrison sentinel');
-  await progressPage.locator('#menuStart').click();
+  await completedPage.locator('#menuStart').click();
   try {
-    await progressPage.waitForFunction((expected) => {
+    await completedPage.waitForFunction((expected) => {
       const g = window.__game();
       const raid = window.__raid();
       const garrisons = g.enemies.filter((e) => e.raidMode && !e.isReinforcement);
@@ -218,7 +229,7 @@ try {
         && garrisons.length >= expected;
     }, expectedGarrisonCount, { timeout: 10000 });
   } catch (error) {
-    const redeployDiagnostic = await progressPage.evaluate(() => ({
+    const redeployDiagnostic = await completedPage.evaluate(() => ({
       menuOpen: !!window.__feel().menu,
       campaignStage: window.__raid().campaign.stage,
       campaignEnabled: window.__raid().campaign.enabled,
@@ -226,10 +237,11 @@ try {
       garrisonCount: window.__game().enemies.filter((e) => e.raidMode && !e.isReinforcement).length,
       checkpoint: localStorage.getItem('contra-raid-checkpoint-v1'),
       completedRecord: localStorage.getItem('contra-raid-campaign-v1'),
+      lastReplayError: window.__lastRaidReplayError || null,
     }));
     throw new Error(`raid redeploy did not rebuild a playable mission: ${JSON.stringify(redeployDiagnostic)}; ${error.message}`);
   }
-  await progressPage.close();
+  await completedPage.close();
 
   for (const key of ['renderError', 'renderLayerErrors', 'raidVisionError', 'frameError']) {
     if (boot[key] && (key !== 'renderLayerErrors' || Object.keys(boot[key]).length)) {
