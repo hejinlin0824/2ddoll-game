@@ -14,18 +14,19 @@ const BRIEFING = [
 ];
 const FLOOR_DIALOGUE = {
   3: [
-    { speaker: '指挥台 · 黑匣', text: '屋顶已清。中央楼梯贯通每一层；守军可能在楼梯平台交叉搜索，先确认落点，再进入房间。' },
+    { speaker: '夜隼', text: '屋顶岗哨的终端没有武器清单，只有三批转运时间和一个审批编号。这不像一伙匪徒，更像有人在按计划搬运人员。' },
+    { speaker: '指挥台 · 黑匣', text: '把编号记住，不要在公开频道重复。有人可能监听了这栋楼的通信。去三层查清被拔掉的线路。' },
   ],
   2: [
-    { speaker: '技术员 · 小麦', text: '三层的通信设备被拔走了，只剩断开的线缆。有人不想让这栋楼留下记录。继续向下。' },
+    { speaker: '技术员 · 小麦', text: '三层通信柜的线束是被整齐剪断的，不是交火损坏。封条批次也不像现场匪帮的东西。继续向下。' },
   ],
   1: [
     { speaker: '夜隼', text: '二层发现转运箱，里面的标签全被撕掉了。名单还没找到。' },
     { speaker: '技术员 · 小麦', text: '等等，二层 COMMS 机柜还有待机灯。真正的转运记录可能被藏进终端，不在那些箱子里。' },
   ],
   0: [
-    { speaker: '夜隼', text: '地面已清，通路安全。准备封存现场记录。' },
-    { speaker: '指挥台 · 黑匣', text: '别急着离开。返回地面入口的配电柜，按 E 发出撤离信号。' },
+    { speaker: '夜隼', text: '地面已清，通路安全。门禁日志里却有一次从内侧发出的解锁记录——现场至少有一个人不在守军名单里。' },
+    { speaker: '指挥台 · 黑匣', text: '记录和名单一起带回来。返回地面入口的配电柜，按 E 发出撤离信号。别把这次任务当成普通剿匪。' },
   ],
 };
 const INTEL_DIALOGUE = [
@@ -43,7 +44,8 @@ const EPILOGUE = [
 const CLEAR_ORDER = [3, 2, 1, 0];
 
 function copyLines(lines) {
-  return lines.map((line) => ({ ...line, duration: 5.8 }));
+  // Radio text is a player-facing beat, not a timed toast. Keep it visible until the player advances.
+  return lines.map((line) => ({ ...line, requiresAdvance: true }));
 }
 
 function enqueue(state, lines) {
@@ -140,8 +142,8 @@ export function restoreRaidCampaignCheckpoint(campaign, raw) {
             : cleared[3]
               ? '进度已恢复。屋顶已肃清，继续沿中央楼梯向下推进。'
               : '进度已恢复。绳降已经完成，屋顶守军仍是当前目标。';
-    campaign.activeDialogue = { speaker: '指挥台 · 黑匣', text: line, duration: 5.8 };
-    campaign.dialogueRemaining = 5.8;
+    campaign.activeDialogue = { speaker: '指挥台 · 黑匣', text: line, requiresAdvance: true };
+    campaign.dialogueRemaining = 0;
   }
   return checkpoint;
 }
@@ -185,12 +187,17 @@ export function updateRaidCampaign(campaign, dt, facts = {}) {
 
   if (facts.playerAlive) {
     if (campaign.activeDialogue) {
-      campaign.dialogueRemaining = Math.max(0, campaign.dialogueRemaining - safeDt);
-      if (campaign.dialogueRemaining <= 0) campaign.activeDialogue = null;
+      if (Number.isFinite(campaign.activeDialogue.duration)) {
+        campaign.dialogueRemaining = Math.max(0, campaign.dialogueRemaining - safeDt);
+        if (campaign.dialogueRemaining <= 0) campaign.activeDialogue = null;
+      } else {
+        // Text without a finite duration waits for an explicit player click / Enter.
+        campaign.dialogueRemaining = 0;
+      }
     }
     if (!campaign.activeDialogue && campaign.dialogueQueue.length) {
       campaign.activeDialogue = campaign.dialogueQueue.shift();
-      campaign.dialogueRemaining = campaign.activeDialogue.duration;
+      campaign.dialogueRemaining = Number.isFinite(campaign.activeDialogue.duration) ? campaign.activeDialogue.duration : 0;
     }
   }
   return campaign;
