@@ -6,6 +6,7 @@ import { Player } from './player.js';
 import { Vec2 } from 'planck';
 import { QUALITY, ARMOR_BASE_DUR, GUN_PRESETS, EQUIP_PRESETS } from '../domain/gunPresets.js';
 import { rollAffixes } from '../domain/affixes.js';
+import { constrainRaidActorVelocity } from '../domain/raidLayout.js';
 import { LEVEL, groundYAt } from '../world/level.js';
 import { hasLOS as segHasLOS } from '../systems/combat.js';
 
@@ -445,10 +446,12 @@ export class Dummy {
       this.face = this.patrolDir;
     }
 
+    // Each defender owns a floor/response lane. They can fire into the stair approach, but must
+    // not stack in the one narrow vertical route or chase the player into the switchback shaft.
+    // If knockback leaves an NPC inside the reserved clearance, steer it back to the nearer landing.
+    if (this.raidMode) vx = constrainRaidActorVelocity(tp.x, vx);
     if (vx < -0.05) ai.left = true;
     if (vx > 0.05) ai.right = true;
-
-    // Guards use the same continuous ramp collider as the player, so they can pursue between floors without stair-hop jitter.
 
     // 卡墙检测:想走但实际速度≈0 → 跳一下脱困 + 掉头(巡逻换向 / 战斗换边)
     const avx = Math.abs(this.p.torso.getLinearVelocity().x);
