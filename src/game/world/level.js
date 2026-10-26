@@ -217,8 +217,12 @@ const TILE = 0.25; // 可破坏块的细分粒度(米):碎块更小更密,弹坑
 // walkable surfaces for actor torsos: stand/collide on the top-normal side, pass freely underneath.
 const stairRampContactFilterWorlds = new WeakSet();
 function installStairRampOneWayContacts(world) {
-  if (stairRampContactFilterWorlds.has(world) || typeof world.on !== 'function') return;
+  if (stairRampContactFilterWorlds.has(world)) return;
+  const stats = { installed: false, preSolveCalls: 0, rampContacts: 0, actorContacts: 0, disabledFromBelow: 0, allowedFromTop: 0, rejectedCategories: 0 };
+  world.__raidStairRampContactStats = stats;
+  if (typeof world.on !== 'function') return;
   world.on('pre-solve', (contact) => {
+    stats.preSolveCalls++;
     const fixtureA = contact.getFixtureA();
     const fixtureB = contact.getFixtureB();
     const bodyA = fixtureA.getBody();
@@ -227,11 +231,15 @@ function installStairRampOneWayContacts(world) {
     const dataB = bodyB.getUserData?.();
     const rampBody = dataA?.type === 'stairRamp' ? bodyA : dataB?.type === 'stairRamp' ? bodyB : null;
     if (!rampBody) return;
+    stats.rampContacts++;
 
+    const rampFixture = rampBody === bodyA ? fixtureA : fixtureB;
     const actorFixture = rampBody === bodyA ? fixtureB : fixtureA;
     const actorBody = actorFixture.getBody();
     const categoryBits = actorFixture.getFilterData?.().categoryBits || 0;
-    if (actorBody.getType() !== 'dynamic' || !(categoryBits & CAT.PLAYER)) return;
+    if (actorBody.getType() !== 'dynamic') return;
+    if (!(categoryBits & CAT.PLAYER)) { stats.rejectedCategories++; return; }
+    stats.actorContacts++;
 
     const rampPos = rampBody.getPosition();
     const actorPos = actorBody.getPosition();
@@ -239,8 +247,14 @@ function installStairRampOneWayContacts(world) {
     // The ramp's walkable face points along (-sin(angle), cos(angle)).
     const signedDistance = (actorPos.x - rampPos.x) * -Math.sin(angle)
       + (actorPos.y - rampPos.y) * Math.cos(angle);
-    if (signedDistance < -0.05) contact.setEnabled(false);
+    if (signedDistance < -0.05) {
+      stats.disabledFromBelow++;
+      contact.setEnabled(false);
+    } else {
+      stats.allowedFromTop++;
+    }
   });
+  stats.installed = true;
   stairRampContactFilterWorlds.add(world);
 }
 
