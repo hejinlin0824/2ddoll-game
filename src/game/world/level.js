@@ -213,7 +213,39 @@ export function ensureRectHp(r) {
 
 const TILE = 0.25; // 可破坏块的细分粒度(米):碎块更小更密,弹坑更细腻(耐久按面积自动缩放)
 
+// Adjacent switchback flights overlap in the side-view projection. Treat stair ramps as one-sided
+// walkable surfaces for actor torsos: stand/collide on the top-normal side, pass freely underneath.
+const stairRampContactFilterWorlds = new WeakSet();
+function installStairRampOneWayContacts(world) {
+  if (stairRampContactFilterWorlds.has(world) || typeof world.on !== 'function') return;
+  world.on('pre-solve', (contact) => {
+    const fixtureA = contact.getFixtureA();
+    const fixtureB = contact.getFixtureB();
+    const bodyA = fixtureA.getBody();
+    const bodyB = fixtureB.getBody();
+    const dataA = bodyA.getUserData?.();
+    const dataB = bodyB.getUserData?.();
+    const rampBody = dataA?.type === 'stairRamp' ? bodyA : dataB?.type === 'stairRamp' ? bodyB : null;
+    if (!rampBody) return;
+
+    const actorFixture = rampBody === bodyA ? fixtureB : fixtureA;
+    const actorBody = actorFixture.getBody();
+    const categoryBits = actorFixture.getFilterData?.().categoryBits || 0;
+    if (actorBody.getType() !== 'dynamic' || !(categoryBits & CAT.PLAYER)) return;
+
+    const rampPos = rampBody.getPosition();
+    const actorPos = actorBody.getPosition();
+    const angle = rampBody.getAngle();
+    // The ramp's walkable face points along (-sin(angle), cos(angle)).
+    const signedDistance = (actorPos.x - rampPos.x) * -Math.sin(angle)
+      + (actorPos.y - rampPos.y) * Math.cos(angle);
+    if (signedDistance < -0.05) contact.setEnabled(false);
+  });
+  stairRampContactFilterWorlds.add(world);
+}
+
 export function buildLevel(world) {
+  installStairRampOneWayContacts(world);
   const bodies = [];
   // 先把可破坏块替换成 0.25m tile 网格(tile 也是小 rect,所有遍历点零改动),
   // 子弹命中某 tile 只碎那一片 —— 局部弹坑,而不是整块消失
