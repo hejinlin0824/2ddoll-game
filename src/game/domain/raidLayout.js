@@ -105,6 +105,9 @@ export function createSwitchbackRamp(xStart, xEnd, lowerTop, id) {
     angle,
     type: 'stairRamp',
     stairRampId: id,
+    xStart,
+    xEnd,
+    lowerTop,
     collisionOnly: true,
     destructible: false,
   };
