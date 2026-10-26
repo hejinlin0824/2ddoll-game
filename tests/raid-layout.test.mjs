@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RAID_FLOOR_Y, RAID_STAIR_NO_SPAWN_ZONE, RAID_STAIR_OPENING, RAID_STAIR_SHAFTS, RAID_STAIR_STEPS_PER_FLIGHT, createSwitchbackStairs, createRaidTraversalStairs, keepRaidSpawnOutOfStairwell } from '../src/game/domain/raidLayout.js';
+import { RAID_FLOOR_Y, RAID_STAIR_NO_SPAWN_ZONE, RAID_STAIR_ACTOR_CLEARANCE, RAID_STAIR_OPENING, RAID_STAIR_SHAFTS, RAID_STAIR_STEPS_PER_FLIGHT, RAID_ROOF_TACTICAL_COVER, constrainRaidActorVelocity, createSwitchbackStairs, createRaidTraversalStairs, keepRaidSpawnOutOfStairwell } from '../src/game/domain/raidLayout.js';
 
 test('each floor transition has a complete 3.5m switchback stair flight within its shaft', () => {
   const layout = createRaidTraversalStairs();
@@ -56,6 +56,34 @@ test('reinforcements never spawn in the stair shaft or its landing approaches', 
   assert.equal(keepRaidSpawnOutOfStairwell(56, 65), 56);
   assert.equal(keepRaidSpawnOutOfStairwell(-20, 30), 2.1);
   assert.equal(keepRaidSpawnOutOfStairwell(99, 65), 71.9);
+});
+
+
+
+test('raid defenders cannot camp in the one stairwell route', () => {
+  assert.deepEqual(RAID_STAIR_ACTOR_CLEARANCE, { left: 46.15, right: 53.85 });
+  assert.equal(constrainRaidActorVelocity(44.9, 1.2), 0, 'left-side defenders should hold their landing instead of entering the shaft');
+  assert.equal(constrainRaidActorVelocity(55.1, -1.2), 0, 'right-side defenders should hold their landing instead of entering the shaft');
+  assert.equal(constrainRaidActorVelocity(46.2, 0), -1.15, 'a raider displaced into the lane should clear toward the left landing');
+  assert.equal(constrainRaidActorVelocity(50, 0), 1.15, 'the center resolves deterministically toward the right landing');
+  assert.equal(constrainRaidActorVelocity(53.8, -2), 2, 'a raider already inside the right half should escape with sufficient speed');
+  assert.equal(constrainRaidActorVelocity(Number.NaN, 2), 0, 'invalid physics state must fail safely');
+});
+
+test('roof cover creates short tactical beats while keeping the stair approach open', () => {
+  assert.ok(RAID_ROOF_TACTICAL_COVER.length >= 5);
+  const ids = new Set();
+  for (const cover of RAID_ROOF_TACTICAL_COVER) {
+    assert.ok(cover.coverId && !ids.has(cover.coverId), 'roof cover needs a stable unique id');
+    ids.add(cover.coverId);
+    assert.ok(Math.abs((cover.y - cover.h / 2) - RAID_FLOOR_Y[3]) < 1e-9,
+      `${cover.coverId} must sit on the roof floor`);
+    const left = cover.x - cover.w / 2;
+    const right = cover.x + cover.w / 2;
+    assert.ok(right < RAID_STAIR_NO_SPAWN_ZONE.left || left > RAID_STAIR_NO_SPAWN_ZONE.right,
+      `${cover.coverId} must not intrude into the stair route`);
+    assert.ok(['steel', 'crate', 'concrete'].includes(cover.type));
+  }
 });
 
 test('each stair flight has a continuous physics-only ramp aligned to both floor landings', () => {
