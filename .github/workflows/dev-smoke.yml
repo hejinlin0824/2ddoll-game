@@ -22,7 +22,7 @@ jobs:
           set -euo pipefail
           git fetch origin main --no-tags
           actual_main="$(git rev-parse FETCH_HEAD)"
-          expected_main="dbbae29b41d63e18265c057f54f9488f659ec70a"
+          expected_main="017ddbd7478a7b16453b34e05f8ac5a932b30d9f"
           echo "main FETCH_HEAD=$actual_main"
           if [ "$actual_main" = "$expected_main" ]; then
             echo "PASS: main remains at the recorded baseline."
