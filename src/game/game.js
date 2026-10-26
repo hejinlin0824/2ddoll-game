@@ -172,7 +172,7 @@ const GARRISONS = {
   raid: [
     { x: 7.6, y: 0, floor: 0, face: 1, behavior: 'patrol', min: -1.7, max: 1.7, role: 'rifleman' },
     { x: 21.5, y: 0, floor: 0, face: -1, behavior: 'guard', role: 'support' },
-    { x: 37.4, y: 0, floor: 0, face: 1, behavior: 'patrol', min: -1.5, max: 1.5, role: 'rusher' },
+    { x: 32.8, y: 0, floor: 0, face: 1, behavior: 'patrol', min: -1.5, max: 1.5, role: 'rusher' },
     { x: 66.5, y: 0, floor: 0, face: -1, behavior: 'guard', role: 'rifleman' },
     { x: 8.2, y: 3.5, floor: 1, face: 1, behavior: 'guard', role: 'rifleman' },
     { x: 25.5, y: 3.5, floor: 1, face: -1, behavior: 'patrol', min: -1.2, max: 1.2, role: 'rusher' },
@@ -182,6 +182,7 @@ const GARRISONS = {
     { x: 31.5, y: 7, floor: 2, face: -1, behavior: 'guard', role: 'support' },
     { x: 57.5, y: 7, floor: 2, face: 1, behavior: 'guard', role: 'rifleman' },
     { x: 68.4, y: 7, floor: 2, face: -1, behavior: 'patrol', min: -1.1, max: 1.1, role: 'rusher' },
+    { x: 16.5, y: 10.5, floor: 3, face: 1, behavior: 'patrol', min: -1.5, max: 1.5, role: 'rifleman' },
     { x: 28.5, y: 10.5, floor: 3, face: 1, behavior: 'guard', role: 'rifleman' },
     { x: 61.5, y: 10.5, floor: 3, face: -1, behavior: 'patrol', min: -1.3, max: 1.3, role: 'support' },
   ],
