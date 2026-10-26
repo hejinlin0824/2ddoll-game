@@ -686,20 +686,20 @@ export class Player {
     return hit;
   }
 
-  // Uphill contact can rotate the free torso capsule until it wedges against the ramp.
-  // Identify the actual supporting ramp, rather than applying an upright constraint everywhere.
-  isStandingOnStairRamp() {
+  // Return the angle of the actual supporting raid stair ramp, if any.
+  // This is more specific than grounded: flat landings must retain normal movement physics.
+  getStandingStairRampAngle() {
     const p = this.torso.getPosition();
     const self = this.selfSet || (this.selfSet = new Set(this.allBodies));
-    let onRamp = false;
+    let rampAngle = null;
     this.world.rayCast(p, Vec2(p.x, p.y - 0.92), (fixture) => {
       const body = fixture.getBody();
       if (self.has(body)) return -1;
       if (body.getUserData()?.type !== 'stairRamp') return -1;
-      onRamp = true;
+      rampAngle = body.getAngle();
       return 0;
     });
-    return onRamp;
+    return rampAngle;
   }
 
   // 姿态目标:全部按"朝右"局部空间给出,施加时乘 facing
@@ -807,7 +807,8 @@ export class Player {
     // Stabilize only while supported by the raid's inclined ramp. On flat ground and in free
     // ragdoll motion, keep the original physics feel; this prevents the torso capsule rolling
     // sideways and becoming wedged on the uphill collision surface.
-    if (this.grounded && this.isStandingOnStairRamp()) {
+    const stairRampAngle = this.grounded ? this.getStandingStairRampAngle() : null;
+    if (stairRampAngle !== null) {
       const angleError = wrapPi(torso.getAngle());
       const angularVelocity = torso.getAngularVelocity();
       torso.setAngularVelocity(clamp(-angleError * 7 - angularVelocity * 0.65, -5.5, 5.5));
@@ -877,10 +878,16 @@ export class Player {
       if (blocked) targetVx = 0;
     }
     const k = this.grounded ? 0.4 : 0.14;
+    // Follow the ramp tangent while moving along the continuous stair collider. A horizontal-only
+    // controller can press the torso capsule into an incline until collision resolution stalls it.
+    const onRampAndMoving = stairRampAngle !== null && dir !== 0;
+    const targetVy = onRampAndMoving
+      ? clamp(targetVx * Math.tan(stairRampAngle), -7, 7)
+      : v.y;
     // 速度限幅:即使被边角蹭到也不会被高速弹飞
     torso.setLinearVelocity(Vec2(
       clamp(lerp(v.x, targetVx, k), -9, 9),
-      clamp(v.y, -22, 13)));
+      clamp(lerp(v.y, targetVy, onRampAndMoving ? k : 0), -22, 13)));
     const vy = torso.getLinearVelocity().y;
 
     // 落地检测(fallVy 归零前判断)
