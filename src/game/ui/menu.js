@@ -68,6 +68,40 @@ let bootAudio = () => {};      // main 注入 initAudio:菜单按钮点击就是
 let onSceneChange = null;      // main 注入:原地重建物理场景,不要硬刷新整页
 let started = false;           // false = 从未进过战场(开始);true = 战斗中回菜单(继续)
 
+const RAID_CAMPAIGN_TITLE = '夜幕行动：失联名单';
+const RAID_CHECKPOINT_KEY = 'contra-raid-checkpoint-v1';
+const RAID_RESULT_KEY = 'contra-raid-campaign-v1';
+
+function readRaidProgress() {
+  let checkpoint = null, result = null;
+  try { checkpoint = JSON.parse(localStorage.getItem(RAID_CHECKPOINT_KEY) || 'null'); } catch { /* corrupted save */ }
+  try { result = JSON.parse(localStorage.getItem(RAID_RESULT_KEY) || 'null'); } catch { /* corrupted result */ }
+  if (result?.version === 1 && result?.campaign === RAID_CAMPAIGN_TITLE && result.completed === true) {
+    return { completed: true, hasCheckpoint: false, status: '第一章已完成 · 失联名单已封存', startLabel: '再次部署' };
+  }
+  if (checkpoint?.version !== 1 || checkpoint?.campaign !== RAID_CAMPAIGN_TITLE
+      || !['insertion', 'assault', 'extract'].includes(checkpoint.stage)) {
+    return { completed: false, hasCheckpoint: false, status: '行动记录待建立 · 从屋顶绳降开始', startLabel: '开始剿匪' };
+  }
+
+  const cleared = checkpoint.clearedFloors || {};
+  const clearCount = [3, 2, 1, 0].filter((id) => cleared[id] === true).length;
+  let next = '目标：屋顶插入与清剿';
+  if (checkpoint.stage === 'extract') next = '下一步：地面入口配电柜撤离';
+  else if (!cleared[3]) next = '下一步：肃清屋顶守军';
+  else if (!cleared[2]) next = '下一步：清理三层';
+  else if (!cleared[1]) next = '下一步：清理二层 COMMS 区';
+  else if (!checkpoint.intelSecured) next = '下一步：回收 COMMS 终端名单';
+  else if (!cleared[0]) next = '下一步：清理地面入口';
+  else next = '下一步：返回配电柜呼叫撤离';
+  return {
+    completed: false,
+    hasCheckpoint: true,
+    status: `进度已保存 · 已清理 ${clearCount}/4 层 · ${next}`,
+    startLabel: '继续剿匪',
+  };
+}
+
 export function menuIsOpen() { return open; }
 export function helpIsOpen() { const h = document.getElementById('help'); return !!h && h.classList.contains('show'); }
 export function helpClose() { closeHelp(); }
@@ -96,8 +130,9 @@ export function menuShow() {
   m.classList.remove('menu-departing', 'menu-entering');
   m.style.display = 'grid';
   m.style.pointerEvents = '';
+  updateSceneBriefing(scene);
   const label = document.getElementById('menuStartLabel');
-  if (label) label.textContent = started ? '继续战斗' : '部署突击';
+  if (label && scene.id !== 'raid') label.textContent = started ? '继续战斗' : '部署突击';
   document.body.classList.add('in-menu');
   void m.offsetWidth;
   m.classList.add('menu-entering');
@@ -154,8 +189,21 @@ function updateSceneBriefing(s) {
   put('menuIntelAir', data.air);
   put('menuIntelTerrain', data.terrain);
   put('menuIntelLoot', data.loot);
-  put('menuStartLabel', started ? '继续战斗' : (s?.id === 'raid' ? '开始剿匪' : '部署突击'));
-  // 静态敌情剪影只放在简报面板；真正的敌人仍由 Player 骨骼/物理关节实时绘制。
+  if (s?.id === 'raid') {
+    const progress = readRaidProgress();
+    const progressLabel = document.querySelector('.mission-secure');
+    if (progressLabel) progressLabel.textContent = started && !progress.completed
+      ? progress.status.replace(/^进度已保存/, '当前行动')
+      : progress.status;
+    put('menuStartLabel', progress.completed ? '再次部署'
+      : started ? '继续战斗'
+        : progress.hasCheckpoint ? '继续剿匪' : '开始剿匪');
+  } else {
+    put('menuStartLabel', started ? '继续战斗' : '部署突击');
+    const progressLabel = document.querySelector('.mission-secure');
+    if (progressLabel) progressLabel.textContent = '战术数据已同步';
+  }
+  // Static enemy artwork is briefing-only; living enemies still use the active ragdoll rig.
   const threatArt = document.getElementById('menuThreatArt');
   const threatSrc = SCENE_THREAT[s?.id] || null;
   if (threatArt) {
