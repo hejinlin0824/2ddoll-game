@@ -672,7 +672,7 @@ export class Player {
     this.j.kneeB.setLimits(...(m ? [-0.02, 2.4] : [-2.4, -0.02]));
   }
 
-  // 沿世界 -y 打一条射线检测地面(站立时躯干中心离地约 0.8m)
+  // 沿世界 -y 检查脚下地面(站立时躯干中心离地约 0.8m)
   checkGrounded() {
     const p = this.torso.getPosition();
     const len = 0.92;
@@ -684,6 +684,22 @@ export class Player {
       return 0;
     });
     return hit;
+  }
+
+  // Uphill contact can rotate the free torso capsule until it wedges against the ramp.
+  // Identify the actual supporting ramp, rather than applying an upright constraint everywhere.
+  isStandingOnStairRamp() {
+    const p = this.torso.getPosition();
+    const self = this.selfSet || (this.selfSet = new Set(this.allBodies));
+    let onRamp = false;
+    this.world.rayCast(p, Vec2(p.x, p.y - 0.92), (fixture) => {
+      const body = fixture.getBody();
+      if (self.has(body)) return -1;
+      if (body.getUserData()?.type !== 'stairRamp') return -1;
+      onRamp = true;
+      return 0;
+    });
+    return onRamp;
   }
 
   // 姿态目标:全部按"朝右"局部空间给出,施加时乘 facing
@@ -788,6 +804,14 @@ export class Player {
     // ---- 移动 ----
     this.wasGrounded = this.grounded;
     this.grounded = this.checkGrounded();
+    // Stabilize only while supported by the raid's inclined ramp. On flat ground and in free
+    // ragdoll motion, keep the original physics feel; this prevents the torso capsule rolling
+    // sideways and becoming wedged on the uphill collision surface.
+    if (this.grounded && this.isStandingOnStairRamp()) {
+      const angleError = wrapPi(torso.getAngle());
+      const angularVelocity = torso.getAngularVelocity();
+      torso.setAngularVelocity(clamp(-angleError * 7 - angularVelocity * 0.65, -5.5, 5.5));
+    }
     this.coyote = this.grounded ? 0.1 : Math.max(0, this.coyote - dt);
     this.jumpBuf = input.jumpPressed ? 0.12 : Math.max(0, this.jumpBuf - dt);
 
