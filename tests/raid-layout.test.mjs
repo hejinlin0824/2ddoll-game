@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RAID_FLOOR_Y, RAID_STAIR_NO_SPAWN_ZONE, RAID_STAIR_ACTOR_CLEARANCE, RAID_STAIR_OPENING, RAID_STAIR_SHAFTS, RAID_STAIR_STEPS_PER_FLIGHT, RAID_ROOF_TACTICAL_COVER, constrainRaidActorVelocity, createSwitchbackStairs, createRaidTraversalStairs, keepRaidSpawnOutOfStairwell } from '../src/game/domain/raidLayout.js';
+import { RAID_FLOOR_Y, RAID_STAIR_NO_SPAWN_ZONE, RAID_STAIR_ACTOR_CLEARANCE, RAID_STAIR_OPENING, RAID_STAIR_SHAFTS, RAID_STAIR_STEPS_PER_FLIGHT, RAID_ROOF_TACTICAL_COVER, constrainRaidActorVelocity, createSwitchbackStairs, createRaidTraversalStairs, createRaidStairBridge, keepRaidSpawnOutOfStairwell } from '../src/game/domain/raidLayout.js';
 
 test('each floor transition has a complete 3.5m switchback stair flight within its shaft', () => {
   const layout = createRaidTraversalStairs();
@@ -106,4 +106,21 @@ test('each stair flight has a continuous physics-only ramp aligned to both floor
     assert.ok(Math.abs(topCenter.x - 50) < 1e-9);
     assert.ok(Math.abs(topCenter.y - (shaft.lowerTop + 1.75)) < 1e-9);
   }
+});
+
+
+test('every storey has a marked walkable crossing over the stairwell', () => {
+  const bridges = [10.25, 6.75, 3.25].map(createRaidStairBridge);
+  assert.equal(bridges.length, 3);
+  for (const bridge of bridges) {
+    assert.ok(bridge);
+    assert.equal(bridge.type, 'stairBridge');
+    assert.equal(bridge.destructible, false);
+    assert.equal(bridge.x, (RAID_STAIR_OPENING.left + RAID_STAIR_OPENING.right) / 2);
+    assert.equal(bridge.w, RAID_STAIR_OPENING.right - RAID_STAIR_OPENING.left);
+    assert.equal(bridge.h, 0.5);
+    assert.equal(bridge.y + bridge.h / 2, bridge.y + 0.25);
+    assert.ok(bridge.stairBridgeId);
+  }
+  assert.equal(createRaidStairBridge(Number.NaN), null, 'invalid crossing geometry must fail closed');
 });
