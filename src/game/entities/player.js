@@ -841,8 +841,11 @@ export class Player {
       this.world.rayCast(p, Vec2(p.x + dir * 0.34, p.y), (fixture) => {
         const body = fixture.getBody();
         if (self.has(body)) return -1;
-        // The probe is horizontal: it intersects the side of an uphill stair ramp even when
-        // the ramp is the walkable floor under the operator. Do not treat that surface as a wall.
+        // This probe only checks level geometry. NPCs, loose debris and other dynamic bodies
+        // must not behave like invisible walls or prevent the operator from passing a stair landing.
+        if (body.getType() !== 'static') return -1;
+        // The horizontal probe intersects the side of an uphill stair ramp even though the ramp
+        // is the walkable floor. Ignore that specially tagged inclined surface, but keep real walls.
         if (body.getUserData()?.type === 'stairRamp') return -1;
         blocked = true;
         return 0;
