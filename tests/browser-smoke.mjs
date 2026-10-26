@@ -155,6 +155,51 @@ try {
   assert(boot.intelObjective || !boot.campaign?.intelSecured, 'campaign HUD should indicate COMMS evidence before it is collected');
   assert(boot.dialogueElements, 'raid campaign HUD/dialogue elements are missing');
   assert(boot.scene === 'raid', `raid scene did not initialize: ${boot.scene}`);
+
+  // The operation table must surface a saved campaign when the page is reopened, not silently
+  // present the raid as a brand-new mission. Test both resume and completed-chapter states.
+  const progressPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  progressPage.on('pageerror', (error) => failures.push(`campaign menu pageerror: ${error.stack || error.message}`));
+  progressPage.on('console', (message) => {
+    if (message.type() === 'error') failures.push(`campaign menu console.error: ${message.text()}`);
+  });
+  await progressPage.addInitScript(() => {
+    localStorage.setItem('contra-scene', 'raid');
+    localStorage.setItem('contra-raid-checkpoint-v1', JSON.stringify({
+      version: 1, campaign: '夜幕行动：失联名单', stage: 'assault',
+      clearedFloors: { 3: true, 2: true, 1: false, 0: false },
+      intelSecured: false, elapsedSeconds: 47.8,
+    }));
+  });
+  const progressResponse = await progressPage.goto(baseURL + '/game.html', { waitUntil: 'networkidle', timeout: 30000 });
+  assert(!!progressResponse && progressResponse.status() === 200, 'saved progress menu failed to load');
+  const resumedMenu = await progressPage.evaluate(() => ({
+    label: document.getElementById('menuStartLabel')?.textContent || '',
+    status: document.getElementById('menuMissionProgress')?.textContent || '',
+    menuVisible: getComputedStyle(document.getElementById('menu')).display !== 'none',
+  }));
+  assert(resumedMenu.menuVisible && resumedMenu.label === '继续剿匪',
+    `operation table did not offer to resume saved campaign: ${JSON.stringify(resumedMenu)}`);
+  assert(/已清理 2\/4 层/.test(resumedMenu.status) && /清理二层/.test(resumedMenu.status),
+    `operation table did not name the next saved objective: ${JSON.stringify(resumedMenu)}`);
+
+  await progressPage.evaluate(() => {
+    localStorage.removeItem('contra-raid-checkpoint-v1');
+    localStorage.setItem('contra-raid-campaign-v1', JSON.stringify({
+      version: 1, campaign: '夜幕行动：失联名单', completed: true,
+      completedAt: '2026-10-26T00:00:00.000Z', clearedFloors: 4,
+      durationSeconds: 420, intelSecured: true, evidenceId: 'missing-list', outcome: 'extracted',
+    }));
+  });
+  await progressPage.reload({ waitUntil: 'networkidle', timeout: 30000 });
+  const completedMenu = await progressPage.evaluate(() => ({
+    label: document.getElementById('menuStartLabel')?.textContent || '',
+    status: document.getElementById('menuMissionProgress')?.textContent || '',
+  }));
+  assert(completedMenu.label === '再次部署' && /第一章已完成/.test(completedMenu.status),
+    `completed chapter status was not visible on the operation table: ${JSON.stringify(completedMenu)}`);
+  await progressPage.close();
+
   for (const key of ['renderError', 'renderLayerErrors', 'raidVisionError', 'frameError']) {
     if (boot[key] && (key !== 'renderLayerErrors' || Object.keys(boot[key]).length)) {
       failures.push(`${key}: ${JSON.stringify(boot[key])}`);
