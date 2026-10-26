@@ -72,6 +72,15 @@ const RAID_CAMPAIGN_TITLE = '夜幕行动：失联名单';
 const RAID_CHECKPOINT_KEY = 'contra-raid-checkpoint-v1';
 const RAID_RESULT_KEY = 'contra-raid-campaign-v1';
 
+function hasCompletedRaidRecord() {
+  try {
+    const result = JSON.parse(localStorage.getItem(RAID_RESULT_KEY) || 'null');
+    return result?.version === 1 && result?.campaign === RAID_CAMPAIGN_TITLE && result.completed === true;
+  } catch {
+    return false;
+  }
+}
+
 function readRaidProgress() {
   let checkpoint = null, result = null;
   try { checkpoint = JSON.parse(localStorage.getItem(RAID_CHECKPOINT_KEY) || 'null'); } catch { /* corrupted save */ }
@@ -321,11 +330,13 @@ function build() {
   updateSceneBriefing(scene);
   document.getElementById('menuStart').onclick = () => {
     uiSfx('click-b', 0.4);
-    const progress = scene.id === 'raid' ? readRaidProgress() : null;
-    if (progress?.completed && onSceneChange) {
-      // Re-entering after a completed chapter must rebuild the active world, not merely hide the menu.
+    const completedRecord = scene.id === 'raid' && hasCompletedRaidRecord();
+    if (completedRecord && onSceneChange) {
+      // A newly booted page may already have written an empty insertion checkpoint. The durable
+      // chapter result is authoritative for this button: rebuild the world first, then clear it.
       try {
         if (onSceneChange('raid') === false) return;
+        localStorage.removeItem(RAID_RESULT_KEY);
       } catch (error) {
         window.__lastRaidReplayError = String(error && error.stack || error);
         return;
