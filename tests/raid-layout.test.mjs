@@ -95,6 +95,9 @@ test('each stair flight has a continuous physics-only ramp aligned to both floor
     assert.ok(ramp, `missing collision ramp for ${shaft.id}`);
     assert.equal(ramp.collisionOnly, true);
     assert.equal(ramp.destructible, false);
+    assert.equal(ramp.xStart, shaft.xStart, 'collision ramp must retain its lower endpoint X');
+    assert.equal(ramp.xEnd, shaft.xEnd, 'collision ramp must retain its upper endpoint X');
+    assert.equal(ramp.lowerTop, shaft.lowerTop, 'collision ramp must retain its lower floor height');
     assert.ok(Math.abs(ramp.h - 0.24) < 1e-9);
     assert.ok(Math.abs(Math.abs(ramp.angle) - Math.atan2(3.5, 6)) < 1e-9);
     const upperNormalX = -Math.sin(ramp.angle);
