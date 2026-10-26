@@ -253,6 +253,10 @@ export function buildLevel(world) {
       filterCategoryBits: CAT.GROUND,
       filterMaskBits: 0xffff,
     });
+    if (r.type === 'stairRamp') {
+      // Player's horizontal wall probe must distinguish an inclined walkable surface from a wall.
+      b.setUserData({ type: 'stairRamp', stairRampId: r.stairRampId });
+    }
     r.body = b; // 破坏时 destroyBody 用(rect 与 body 同生命周期)
     bodies.push(b);
   }
