@@ -156,6 +156,91 @@ try {
   assert(boot.dialogueElements, 'raid campaign HUD/dialogue elements are missing');
   assert(boot.scene === 'raid', `raid scene did not initialize: ${boot.scene}`);
 
+  // Exercise the real physics route, not just the authored stair coordinates. Adjacent flights
+  // overlap in side view, so the torso must pass beneath the previous flight while descending.
+  const stairTraversalPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  stairTraversalPage.on('pageerror', (error) => failures.push(`stair traversal pageerror: ${error.stack || error.message}`));
+  stairTraversalPage.on('console', (message) => {
+    if (message.type() === 'error') failures.push(`stair traversal console.error: ${message.text()}`);
+  });
+  await stairTraversalPage.addInitScript(() => {
+    localStorage.setItem('contra-scene', 'raid');
+    localStorage.removeItem('contra-raid-checkpoint-v1');
+    localStorage.removeItem('contra-raid-campaign-v1');
+  });
+  const stairResponse = await stairTraversalPage.goto(baseURL + '/game.html', { waitUntil: 'networkidle', timeout: 30000 });
+  assert(!!stairResponse && stairResponse.status() === 200, 'stair traversal page failed to load');
+  await stairTraversalPage.waitForFunction(() => typeof window.__game === 'function' && typeof window.__raid === 'function', undefined, { timeout: 10000 });
+  await stairTraversalPage.locator('#menuStart').click();
+  await stairTraversalPage.waitForFunction(() => !window.__feel().menu && !window.__raid().rappel, undefined, { timeout: 12000 });
+  const placeRig = async (x, y) => stairTraversalPage.evaluate(({ x, y }) => {
+    const p = window.__game().player;
+    const origin = p.torso.getPosition();
+    const dx = x - origin.x, dy = y - origin.y;
+    for (const body of p.allBodies) {
+      const q = body.getPosition();
+      body.setTransform({ x: q.x + dx, y: q.y + dy }, body.getAngle());
+      body.setLinearVelocity({ x: 0, y: 0 });
+      body.setAngularVelocity(0);
+    }
+    p.grounded = false;
+    p.wasGrounded = false;
+    p.coyote = 0;
+    p.fallVy = 0;
+  }, { x, y });
+  const stopRig = async () => stairTraversalPage.evaluate(() => {
+    const p = window.__game().player;
+    for (const body of p.allBodies) {
+      body.setLinearVelocity({ x: 0, y: 0 });
+      body.setAngularVelocity(0);
+    }
+  });
+  const moveDownFlight = async (key, description, predicate) => {
+    await stairTraversalPage.keyboard.down(key);
+    try {
+      await stairTraversalPage.waitForFunction(predicate, undefined, { timeout: 6500 });
+    } catch (error) {
+      const position = await stairTraversalPage.evaluate(() => {
+        const g = window.__game();
+        const p = g.player.torso.getPosition();
+        return {
+          x: +p.x.toFixed(2), y: +p.y.toFixed(2),
+          vx: +g.player.torso.getLinearVelocity().x.toFixed(2),
+          vy: +g.player.torso.getLinearVelocity().y.toFixed(2),
+          grounded: g.player.grounded,
+          rampAngle: g.player.getStandingStairRampAngle(),
+          contacts: g.world?.__raidStairRampContactStats || null,
+        };
+      });
+      throw new Error(`could not traverse ${description}: ${JSON.stringify(position)}; ${error.message}`);
+    } finally {
+      await stairTraversalPage.keyboard.up(key);
+    }
+    await stopRig();
+  };
+
+  await placeRig(47, 11.32); // Roof landing, just above the top tread.
+  await stairTraversalPage.waitForTimeout(180);
+  await moveDownFlight('d', 'roof -> level 03', () => {
+    const p = window.__game().player.torso.getPosition();
+    return p.x >= 52.8 && p.y > 6.6 && p.y < 9.0;
+  });
+  await moveDownFlight('a', 'level 03 -> level 02', () => {
+    const p = window.__game().player.torso.getPosition();
+    return p.x <= 47.3 && p.y > 3.2 && p.y < 5.2;
+  });
+  await moveDownFlight('d', 'level 02 -> ground', () => {
+    const p = window.__game().player.torso.getPosition();
+    return p.x >= 52.7 && p.y > 0.15 && p.y < 1.9;
+  });
+  const stairTraversalResult = await stairTraversalPage.evaluate(() => {
+    const p = window.__game().player.torso.getPosition();
+    return { x: +p.x.toFixed(2), y: +p.y.toFixed(2) };
+  });
+  assert(stairTraversalResult.y < 1.9, `stair traversal did not reach ground level: ${JSON.stringify(stairTraversalResult)}`);
+  await stairTraversalPage.locator('#game').screenshot({ path: 'artifacts/raid-stair-descent.png' });
+  await stairTraversalPage.close();
+
   // The operation table must surface a saved campaign when the page is reopened, not silently
   // present the raid as a brand-new mission. Test both resume and completed-chapter states.
   const progressPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
