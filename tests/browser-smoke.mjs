@@ -124,6 +124,11 @@ try {
     frameError: window.__lastFrameError?.msg || null,
     fog: window.__fog.state(),
     stairCount: window.__level().filter((r) => r.type === 'stair').length,
+    roofCoverCount: window.__level().filter((r) => ['steel', 'crate', 'concrete'].includes(r.type)
+      && r.y > 10.5 && (r.x < 45 || r.x > 55)).length,
+    roofGuardCount: window.__game().enemies.filter((e) => e.raidMode && e.raidFloorId === 3 && !e.isReinforcement && e.alive).length,
+    stairwellEnemies: window.__game().enemies.filter((e) => e.raidMode && e.alive && e.p)
+      .map((e) => e.p.torso.getPosition().x).filter((x) => x >= 46.15 && x <= 53.85),
     campaign: window.__raid().campaign,
     dialogueElements: !!(document.getElementById('raidDialogue') && document.getElementById('raidMissionStatus')),
     intelTerminals: window.__level().filter((r) => r.type === 'intel').map((r) => ({ x: r.x, y: r.y, id: r.intelId, sensor: r.sensor })),
@@ -135,6 +140,9 @@ try {
   assert(boot.canvases >= 1, 'game canvas was not created');
   assert(boot.fog?.scene === 'raid' && boot.fog.visiblePixelCount > 100, 'raid fog of war did not reveal a local visibility region');
   assert(boot.stairCount === 60, `raid traversal stairs missing: ${boot.stairCount}`);
+  assert(boot.roofCoverCount >= 5, `roof combat space is still empty: ${boot.roofCoverCount} cover pieces`);
+  assert(boot.roofGuardCount >= 3, `roof insertion lacks a readable first engagement: ${boot.roofGuardCount} guards`);
+  assert(boot.stairwellEnemies.length === 0, `raiders spawned into the reserved stair route: ${JSON.stringify(boot.stairwellEnemies)}`);
   for (const [i, spans] of boot.stairLandings.entries()) {
     assert(spans.length === 2 && spans[0].left === 0 && spans[0].right === 47
       && spans[1].left === 53 && spans[1].right === 74,
@@ -217,6 +225,19 @@ try {
   assert(openingBriefing.dialogueVisible && /夜幕|失联名单/.test(openingBriefing.dialogueText),
     `opening radio briefing did not appear: ${JSON.stringify(openingBriefing)}`);
   assert(/目标 01\/04/.test(openingBriefing.objective), `initial mission objective missing: ${openingBriefing.objective}`);
+  const firstRadioLine = openingBriefing.dialogueText;
+  await page.waitForTimeout(6200);
+  const heldRadioLine = await page.evaluate(() => document.getElementById('raidDialogueText')?.textContent || '');
+  assert(heldRadioLine === firstRadioLine, `radio text disappeared before acknowledgement: ${heldRadioLine}`);
+  await page.keyboard.press('Enter');
+  await page.waitForFunction((previous) => (window.__raid().campaign.activeDialogue?.text || '') !== previous,
+    firstRadioLine, { timeout: 2500 });
+  const secondRadioLine = await page.evaluate(() => window.__raid().campaign.activeDialogue?.text || '');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction((previous) => (window.__raid().campaign.activeDialogue?.text || '') !== previous,
+    secondRadioLine, { timeout: 2500 });
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => !window.__raid().campaign.activeDialogue, undefined, { timeout: 2500 });
 
   await page.keyboard.press('n');
   await page.waitForTimeout(80);
@@ -420,6 +441,12 @@ try {
     assert(flight.direction === 'left' ? climb.x < flight.x : climb.x > flight.x,
       `${flight.floor} did not move in the direction of its switchback: ${JSON.stringify(climb)}`);
   }
+
+  const stairTraffic = await page.evaluate(() => window.__game().enemies
+    .filter((e) => e.raidMode && e.alive && e.p)
+    .map((e) => e.p.torso.getPosition().x)
+    .filter((x) => x >= 46.15 && x <= 53.85));
+  assert(stairTraffic.length === 0, `AI entered/camped in the stair route during traversal: ${JSON.stringify(stairTraffic)}`);
 
   // Move beside the main breaker and verify E toggles the same power state the renderer uses.
   await page.evaluate(() => {
